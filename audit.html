@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>ตรวจ 5ส | ระบบตรวจ 5ส</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="padding-bottom:calc(var(--bottom-nav) + 70px)">
+
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="loading-spinner"><div class="spinner"></div><span class="loading-msg">กำลังโหลด...</span></div>
+</div>
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- Top Nav -->
+<nav class="top-nav">
+  <button class="btn-icon" onclick="confirmBack()"><i class="bi bi-arrow-left"></i></button>
+  <div style="flex:1;margin-left:8px">
+    <div style="color:#fff;font-size:0.75rem;opacity:0.85" id="auditPlantName">-</div>
+    <div style="color:#fff;font-weight:700;font-size:0.95rem" id="auditAreaName">-</div>
+  </div>
+  <div style="text-align:right;color:#fff">
+    <div style="font-size:0.7rem;opacity:0.8">ตอบแล้ว</div>
+    <div style="font-size:0.95rem;font-weight:700"><span id="answeredCount">0</span>/<span id="totalItemCount">0</span></div>
+  </div>
+</nav>
+
+<!-- Content -->
+<div class="page-content" style="padding-top:calc(var(--nav-height) + 80px)">
+
+  <!-- Audit Info Bar -->
+  <div style="position:fixed;top:var(--nav-height);left:0;right:0;background:#fff;
+              padding:10px 16px;z-index:900;border-bottom:1px solid var(--gray-200);
+              box-shadow:0 2px 4px rgba(0,0,0,0.06)">
+    <div style="display:flex;align-items:center;gap:10px;max-width:768px;margin:0 auto">
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:0.75rem;font-weight:600;color:var(--gray-600)">ความคืบหน้า</span>
+          <span style="font-size:0.75rem;font-weight:700;color:var(--primary)" id="progressPct">0%</span>
+        </div>
+        <div class="progress-bar-custom">
+          <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+        </div>
+      </div>
+      <div style="flex-shrink:0">
+        <input type="date" id="auditDate" class="form-control" style="padding:6px 10px;font-size:0.8rem;width:130px">
+      </div>
+    </div>
+  </div>
+
+  <!-- Checklist Container -->
+  <div id="checklistContainer">
+    <!-- Dynamic checklist from Criteria_Master -->
+    <div class="skeleton" style="height:200px;border-radius:12px;margin-bottom:8px"></div>
+    <div class="skeleton" style="height:200px;border-radius:12px;margin-bottom:8px"></div>
+  </div>
+
+</div>
+
+<!-- Submit Bar -->
+<div class="submit-bar">
+  <button class="btn btn-primary btn-block" id="submitBtn" onclick="submitAudit()" disabled style="height:48px">
+    ตอบแล้ว 0/0 ข้อ
+  </button>
+</div>
+
+<!-- Bottom Nav -->
+<nav class="bottom-nav">
+  <button class="bottom-nav-item" onclick="navigate('home.html')"><i class="bi bi-house"></i><span>หน้าหลัก</span></button>
+  <button class="bottom-nav-item active"><i class="bi bi-clipboard-check"></i><span>ตรวจ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('history.html')"><i class="bi bi-clock-history"></i><span>ประวัติ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('dashboard.html')"><i class="bi bi-bar-chart"></i><span>Dashboard</span></button>
+</nav>
+
+<script src="js/app.js"></script>
+<script>
+  function confirmBack() {
+    if (confirm('คุณต้องการออกจากหน้าตรวจ?\nข้อมูลที่กรอกไว้จะหายทั้งหมด')) {
+      history.back();
+    }
+  }
+</script>
+</body>
+</html>
