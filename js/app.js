@@ -94,29 +94,6 @@ const API = {
       throw new Error('Server returned invalid response');
     }
   },
-
-  /**
-   * Write operations — ห้าม cache เด็ดขาด
-   * ใช้แทน API.get() สำหรับทุก action ที่เขียนข้อมูลลง Sheets
-   */
-  async write(action, params = {}) {
-    const url = new URL(CONFIG.API_URL);
-    url.searchParams.set('action', action);
-    url.searchParams.set('token', AppState.token || '');
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-
-    console.log(`[API.write] action=${action}`, params);
-    const res  = await fetch(url.toString(), { redirect: 'follow' });
-    const text = await res.text();
-    try {
-      const data = JSON.parse(text);
-      console.log(`[API.write] response:`, data);
-      return data;
-    } catch(e) {
-      console.error(`GAS write response (not JSON) action=${action}:`, text.slice(0, 300));
-      throw new Error('Server returned invalid response');
-    }
-  },
 };
 
 // ============================================================
@@ -691,13 +668,12 @@ async function addPhoto(criteriaId, file) {
     AppState.auditAnswers[criteriaId].photos = [];
   }
 
-  const photoId = `${criteriaId}_${Date.now()}`;
   const photoData = {
-    id:       photoId,
-    base64:   compressed,
+    base64: compressed,
     filename: `photo_${criteriaId}_${Date.now()}.jpg`,
+    preview: compressed,
     uploaded: false,
-    url:      null,
+    url: null,
   };
 
   AppState.auditAnswers[criteriaId].photos.push(photoData);
@@ -707,7 +683,7 @@ async function addPhoto(criteriaId, file) {
   div.className = 'photo-thumb';
   div.innerHTML = `
     <img src="${compressed}" alt="photo">
-    <button class="remove-photo" onclick="removePhotoById('${criteriaId}', '${photoId}', this)">
+    <button class="remove-photo" onclick="removePhoto('${criteriaId}', ${AppState.auditAnswers[criteriaId].photos.length - 1}, this)">
       <i class="bi bi-x"></i>
     </button>
   `;
@@ -722,21 +698,7 @@ async function addPhoto(criteriaId, file) {
 }
 
 function removePhoto(criteriaId, idx, btn) {
-  // เก็บไว้ backward compatible แต่ใช้ removePhotoById แทนแล้ว
   AppState.auditAnswers[criteriaId].photos.splice(idx, 1);
-  btn.closest('.photo-thumb').remove();
-  const countBadge = document.getElementById('photoCount-' + criteriaId);
-  const count = AppState.auditAnswers[criteriaId].photos.length;
-  if (countBadge) {
-    countBadge.textContent   = count;
-    countBadge.style.display = count > 0 ? 'inline' : 'none';
-  }
-}
-
-/** ลบรูปด้วย unique ID — ป้องกัน index เพี้ยนหลัง splice */
-function removePhotoById(criteriaId, photoId, btn) {
-  AppState.auditAnswers[criteriaId].photos =
-    AppState.auditAnswers[criteriaId].photos.filter(p => p.id !== photoId);
   btn.closest('.photo-thumb').remove();
   const countBadge = document.getElementById('photoCount-' + criteriaId);
   const count = AppState.auditAnswers[criteriaId].photos.length;
@@ -754,44 +716,42 @@ function removePhotoById(criteriaId, photoId, btn) {
  * รับ base64 string → คืน URL ของรูปบน imgBB
  */
 async function uploadToImgBB(base64) {
+  console.log('[imgBB] 🟡 เริ่ม Upload รูป...');
+  console.log('[imgBB] API Key:', CONFIG.IMGBB_API_KEY ? CONFIG.IMGBB_API_KEY.slice(0,6) + '...' : 'ไม่มี');
+
   if (!CONFIG.IMGBB_API_KEY || CONFIG.IMGBB_API_KEY === 'YOUR_IMGBB_API_KEY_HERE') {
-    console.warn('[ImgBB] API Key ยังไม่ได้ตั้งค่า — ข้ามการ Upload รูป');
-    UI.toast('ยังไม่ได้ตั้งค่า ImgBB API Key', 'warning');
+    console.warn('[imgBB] ❌ API Key ยังไม่ได้ตั้งค่า — ข้ามการ Upload รูป');
     return null;
   }
 
   try {
-    console.log('[ImgBB] เริ่มอัปโหลด, key 6 ตัวท้าย:', CONFIG.IMGBB_API_KEY.slice(-6));
-    console.log('[ImgBB] ขนาด base64:', base64?.length, 'ตัวอักษร');
-
     // ตัด prefix "data:image/jpeg;base64," ออก
     const base64Data = base64.replace(/^data:[^;]+;base64,/, '');
+    console.log('[imgBB] Base64 length:', base64Data.length, 'chars');
 
     const formData = new FormData();
     formData.append('image', base64Data);
     formData.append('key', CONFIG.IMGBB_API_KEY);
 
+    console.log('[imgBB] 🟡 กำลังส่งไปยัง imgBB API...');
     const res  = await fetch('https://api.imgbb.com/1/upload', {
       method: 'POST',
       body: formData
     });
 
-    console.log('[ImgBB] HTTP Status:', res.status);
+    console.log('[imgBB] HTTP Status:', res.status);
     const data = await res.json();
-    console.log('[ImgBB] Response:', JSON.stringify(data));
+    console.log('[imgBB] Response:', JSON.stringify(data).slice(0, 200));
 
     if (data.success) {
-      console.log('[ImgBB] ✅ Upload สำเร็จ:', data.data.url);
+      console.log('[imgBB] ✅ Upload สำเร็จ! URL:', data.data.url);
       return data.data.url;
     } else {
-      const errMsg = data?.error?.message || JSON.stringify(data.error) || 'Unknown error';
-      console.error('[ImgBB] ❌ Upload ล้มเหลว:', errMsg);
-      UI.toast(`อัปโหลดรูปไม่สำเร็จ: ${errMsg}`, 'error', 6000);
+      console.error('[imgBB] ❌ Upload ล้มเหลว:', data);
       return null;
     }
   } catch(err) {
-    console.error('[ImgBB] ❌ Network error:', err);
-    UI.toast('ไม่สามารถเชื่อมต่อ ImgBB ได้: ' + err.message, 'error', 6000);
+    console.error('[imgBB] ❌ Error:', err.message);
     return null;
   }
 }
@@ -840,49 +800,38 @@ async function submitAudit() {
     const totalPhotos = Object.values(AppState.auditAnswers)
       .reduce((sum, a) => sum + (a.photos?.length || 0), 0);
 
+    console.log('[Submit] 📸 จำนวนรูปทั้งหมด:', totalPhotos);
+
     if (totalPhotos > 0) {
       UI.showLoading(`กำลัง Upload รูปภาพ... (0/${totalPhotos})`);
-      let uploaded    = 0;
-      let failedCount = 0;
+      let uploaded = 0;
 
       for (const [criteriaId, answer] of Object.entries(AppState.auditAnswers)) {
         for (const photo of (answer.photos || [])) {
-          if (!photo.uploaded && photo.base64) {
-            console.log(`[SUBMIT] กำลังอัปโหลดรูป criteria: ${criteriaId} (${uploaded+1}/${totalPhotos})`);
-            const url = await uploadToImgBB(photo.base64);
-            uploaded++;
-
+          console.log(`[Submit] รูปของ ${criteriaId}: uploaded=${photo.uploaded}, hasPreview=${!!photo.preview}, previewLen=${photo.preview?.length || 0}`);
+          if (!photo.uploaded && photo.preview) {
+            const url = await uploadToImgBB(photo.preview);
             if (url) {
               photo.url      = url;
               photo.uploaded = true;
-              console.log(`[SUBMIT] ✅ รูปที่ ${uploaded} สำเร็จ: ${url}`);
+              console.log(`[Submit] ✅ รูป ${criteriaId} → ${url}`);
             } else {
-              failedCount++;
-              console.error(`[SUBMIT] ❌ รูปที่ ${uploaded} ล้มเหลว criteria: ${criteriaId}`);
+              console.warn(`[Submit] ⚠️ Upload รูป ${criteriaId} ล้มเหลว`);
             }
-
+            uploaded++;
             UI.showLoading(`กำลัง Upload รูปภาพ... (${uploaded}/${totalPhotos})`);
           }
         }
       }
-
-      if (failedCount > 0) {
-        const continueAnyway = await showConfirm(
-          `อัปโหลดรูปล้มเหลว ${failedCount} รูป`,
-          'ต้องการ Submit ต่อโดยไม่มีรูปที่อัปโหลดล้มเหลวหรือไม่?'
-        );
-        if (!continueAnyway) {
-          UI.hideLoading();
-          return;
-        }
-      }
+    } else {
+      console.log('[Submit] ℹ️ ไม่มีรูปภาพ — ข้ามขั้นตอน Upload');
     }
 
     // STEP 1: สร้าง Audit Header → รับ auditId กลับมา
     // ============================================================
     UI.showLoading('กำลังสร้างรายการตรวจ... (1/3)');
 
-    const headerRes = await API.write('submitAuditHeader', {
+    const headerRes = await API.get('submitAuditHeader', {
       plantId:    getParam('plantId'),
       areaId:     getParam('areaId'),
       auditorId:  AppState.user?.userId || 'unknown',
@@ -919,8 +868,7 @@ async function submitAudit() {
 
       UI.showLoading(`กำลังบันทึกข้อมูล... (${chunkNum}/${totalChunks})`);
 
-      console.log(`[SUBMIT] ส่ง chunk ${chunkNum}/${totalChunks}, details:`, JSON.stringify(chunk));
-      const detailRes = await API.write('submitAuditDetails', {
+      const detailRes = await API.get('submitAuditDetails', {
         auditId: auditId,
         details: JSON.stringify(chunk)
       });
@@ -937,7 +885,7 @@ async function submitAudit() {
     // ============================================================
     UI.showLoading('กำลังคำนวณคะแนน... (3/3)');
 
-    const finalRes = await API.write('finalizeAudit', { auditId });
+    const finalRes = await API.get('finalizeAudit', { auditId });
 
     UI.hideLoading();
 
