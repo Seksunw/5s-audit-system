@@ -9,7 +9,8 @@
 // CONFIG - แก้ API_URL ให้ตรงกับ Google Apps Script URL
 // ============================================================
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycby2pJ2pv7OTnn2wKtWUJU3uC0rNRDQBc2prMQR0d3PtaoolwsDZEHVLYdtl9YSIu20Y/exec',  // แทนที่ด้วย URL จาก GAS Deploy
+  API_URL: 'https://script.google.com/macros/s/AKfycby2pJ2pv7OTnn2wKtWUJU3uC0rNRDQBc2prMQR0d3PtaoolwsDZEHVLYdtl9YSIu20Y/exec',
+  IMGBB_API_KEY: '8449d25d43f8b34c3b7b046ec9a5451f',  // ← ใส่ API Key จาก api.imgbb.com
   APP_NAME: 'ระบบตรวจ 5ส',
   VERSION: '1.0.0',
   SESSION_KEY: '5s_session',
@@ -710,6 +711,42 @@ function removePhoto(criteriaId, idx, btn) {
 /**
  * Compress image ก่อน upload
  */
+/**
+ * Upload รูปไปยัง imgBB (ฟรี, ไม่มี CORS)
+ * รับ base64 string → คืน URL ของรูปบน imgBB
+ */
+async function uploadToImgBB(base64) {
+  if (!CONFIG.IMGBB_API_KEY || CONFIG.IMGBB_API_KEY === 'YOUR_IMGBB_API_KEY_HERE') {
+    console.warn('imgBB API Key ยังไม่ได้ตั้งค่า — ข้ามการ Upload รูป');
+    return null;
+  }
+
+  try {
+    // ตัด prefix "data:image/jpeg;base64," ออก
+    const base64Data = base64.replace(/^data:[^;]+;base64,/, '');
+
+    const formData = new FormData();
+    formData.append('image', base64Data);
+    formData.append('key', CONFIG.IMGBB_API_KEY);
+
+    const res  = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      return data.data.url; // URL รูปที่ใช้ใน Sheet
+    } else {
+      console.error('imgBB upload failed:', data);
+      return null;
+    }
+  } catch(err) {
+    console.error('imgBB upload error:', err);
+    return null;
+  }
+}
+
 function compressImage(file, maxSize = 1024, quality = 0.8) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -750,6 +787,29 @@ async function submitAudit() {
 
   try {
     // ============================================================
+    // STEP 0: Upload รูปภาพทั้งหมดไปยัง imgBB ก่อน
+    const totalPhotos = Object.values(AppState.auditAnswers)
+      .reduce((sum, a) => sum + (a.photos?.length || 0), 0);
+
+    if (totalPhotos > 0) {
+      UI.showLoading(`กำลัง Upload รูปภาพ... (0/${totalPhotos})`);
+      let uploaded = 0;
+
+      for (const [criteriaId, answer] of Object.entries(AppState.auditAnswers)) {
+        for (const photo of (answer.photos || [])) {
+          if (!photo.uploaded && photo.preview) {
+            const url = await uploadToImgBB(photo.preview);
+            if (url) {
+              photo.url      = url;
+              photo.uploaded = true;
+            }
+            uploaded++;
+            UI.showLoading(`กำลัง Upload รูปภาพ... (${uploaded}/${totalPhotos})`);
+          }
+        }
+      }
+    }
+
     // STEP 1: สร้าง Audit Header → รับ auditId กลับมา
     // ============================================================
     UI.showLoading('กำลังสร้างรายการตรวจ... (1/3)');
