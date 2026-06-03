@@ -34,6 +34,7 @@ const AppState = {
 
 // ============================================================
 // API SERVICE - ติดต่อกับ Google Apps Script
+// GAS Web App ต้องการ redirect:'follow' และรับ text ก่อน parse JSON
 // ============================================================
 const API = {
   /**
@@ -51,8 +52,16 @@ const API = {
     url.searchParams.set('token', AppState.token || '');
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
-    const res  = await fetch(url.toString());
-    const data = await res.json();
+    // GAS ส่ง redirect → ต้องใช้ redirect:'follow' และรับ text ก่อน
+    const res  = await fetch(url.toString(), { redirect: 'follow' });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch(e) {
+      console.error('GAS response (not JSON):', text.slice(0, 300));
+      throw new Error('Server returned invalid response. ตรวจสอบว่า Deploy GAS ถูกต้องแล้ว');
+    }
 
     if (data.success) {
       AppState.cache[cacheKey] = { data, time: Date.now() };
@@ -63,14 +72,26 @@ const API = {
 
   /**
    * เรียก API แบบ POST
+   * GAS Web App: POST ต้องส่งเป็น application/x-www-form-urlencoded
+   * หรือส่ง JSON ผ่าน query param แทน (เพื่อหลีกเลี่ยง preflight CORS)
    */
   async post(action, body = {}) {
-    const res = await fetch(CONFIG.API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, token: AppState.token, ...body }),
-    });
-    return await res.json();
+    const payload = JSON.stringify({ action, token: AppState.token, ...body });
+
+    // ส่งเป็น GET พร้อม payload ใน query string เพื่อหลีกเลี่ยง CORS preflight
+    const url = new URL(CONFIG.API_URL);
+    url.searchParams.set('action', action);
+    url.searchParams.set('token', AppState.token || '');
+    url.searchParams.set('payload', payload);
+
+    const res  = await fetch(url.toString(), { redirect: 'follow' });
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch(e) {
+      console.error('GAS POST response (not JSON):', text.slice(0, 300));
+      throw new Error('Server returned invalid response');
+    }
   },
 };
 
