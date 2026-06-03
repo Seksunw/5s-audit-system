@@ -40,28 +40,32 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch: Cache First for static, Network First for API
+// Fetch: ปล่อย GAS API ผ่านตรงๆ ไม่ intercept
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // API calls: Network First
-  if (url.hostname.includes('script.google.com') || url.pathname.includes('/exec')) {
-    event.respondWith(
-      fetch(event.request)
-        .catch(() => new Response(JSON.stringify({ success: false, error: 'Offline - ไม่มีอินเตอร์เน็ต' }), {
-          headers: { 'Content-Type': 'application/json' }
-        }))
-    );
+  // ❌ ไม่ intercept GAS / Google APIs — ให้ browser จัดการเอง
+  if (url.hostname.includes('script.google.com') ||
+      url.hostname.includes('googleusercontent.com') ||
+      url.hostname.includes('googleapis.com')) {
     return;
   }
 
-  // Static assets: Cache First
+  // ❌ ไม่ intercept cross-origin requests อื่นๆ
+  if (url.origin !== location.origin) {
+    return;
+  }
+
+  // ✅ Static assets เท่านั้น: Cache First
   event.respondWith(
     caches.match(event.request)
       .then(cached => cached || fetch(event.request)
         .then(response => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          // Cache เฉพาะ response ที่ดี
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          }
           return response;
         })
       )
