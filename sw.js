@@ -5,26 +5,29 @@
 
 const CACHE_NAME = '5s-audit-v1.0';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/home.html',
-  '/plant.html',
-  '/area.html',
-  '/audit.html',
-  '/summary.html',
-  '/history.html',
-  '/dashboard.html',
-  '/css/style.css',
-  '/js/app.js',
-  '/manifest.json'
+  'index.html',
+  'home.html',
+  'plant.html',
+  'area.html',
+  'audit.html',
+  'summary.html',
+  'history.html',
+  'dashboard.html',
+  'css/style.css',
+  'js/app.js',
+  'manifest.json'
 ];
 
-// Install: cache static assets
+// Install: cache แบบ safe — ไม่หยุดถ้าบางไฟล์ไม่มี
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => {
+      return Promise.allSettled(
+        STATIC_ASSETS.map(url =>
+          cache.add(url).catch(() => console.log('[SW] skip:', url))
+        )
+      );
+    }).then(() => self.skipWaiting())
   );
 });
 
