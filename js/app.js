@@ -740,71 +740,89 @@ async function submitAudit() {
 
   if (unanswered.length > 0) {
     UI.toast(`ยังไม่ได้ให้คะแนน ${unanswered.length} ข้อ`, 'warning');
-    // Scroll ไปข้อที่ยังไม่ตอบ
     const firstUnanswered = document.getElementById('item-' + unanswered[0].Criteria_ID);
     if (firstUnanswered) firstUnanswered.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
 
-  const confirm = await showConfirm('ยืนยันการ Submit?', 'คุณต้องการบันทึกผลการตรวจนี้หรือไม่?');
-  if (!confirm) return;
-
-  UI.showLoading('กำลัง Upload รูปภาพ...');
-
-  // Upload ภาพทั้งหมดก่อน
-  const auditId = 'TEMP-' + Date.now();
-  for (const [criteriaId, answer] of Object.entries(AppState.auditAnswers)) {
-    for (const photo of (answer.photos || [])) {
-      if (!photo.uploaded) {
-        try {
-          const res = await API.post('uploadPhoto', {
-            base64: photo.base64,
-            filename: photo.filename,
-            mimeType: 'image/jpeg',
-            auditId: auditId
-          });
-          if (res.success) {
-            photo.url      = res.url;
-            photo.uploaded = true;
-          }
-        } catch(e) { /* ถ้า upload ไม่สำเร็จ ข้ามไป */ }
-      }
-    }
-  }
-
-  UI.showLoading('กำลังบันทึกผลการตรวจ...');
-
-  // เตรียมข้อมูล details
-  const details = AppState.criteria.map(c => ({
-    criteriaId: c.Criteria_ID,
-    score:      AppState.auditAnswers[c.Criteria_ID]?.score ?? 0,
-    maxScore:   c.Max_Score || 2,
-    remark:     AppState.auditAnswers[c.Criteria_ID]?.remark || '',
-    photoUrl:   (AppState.auditAnswers[c.Criteria_ID]?.photos || [])
-                  .map(p => p.url).filter(Boolean).join(',')
-  }));
+  const ok = await showConfirm('ยืนยันการ Submit?', 'คุณต้องการบันทึกผลการตรวจนี้หรือไม่?');
+  if (!ok) return;
 
   try {
-    const res = await API.post('submitAudit', {
-      plantId:   getParam('plantId'),
-      areaId:    getParam('areaId'),
-      auditorId: AppState.user?.userId,
-      auditDate: document.getElementById('auditDate')?.value || new Date().toISOString().split('T')[0],
-      details
+    // ============================================================
+    // STEP 1: สร้าง Audit Header → รับ auditId กลับมา
+    // ============================================================
+    UI.showLoading('กำลังสร้างรายการตรวจ... (1/3)');
+
+    const headerRes = await API.get('submitAuditHeader', {
+      plantId:    getParam('plantId'),
+      areaId:     getParam('areaId'),
+      auditorId:  AppState.user?.userId || 'unknown',
+      auditDate:  document.getElementById('auditDate')?.value || new Date().toISOString().split('T')[0],
+      totalItems: AppState.criteria.length
     });
 
+    if (!headerRes.success) {
+      UI.hideLoading();
+      UI.toast(headerRes.error || 'สร้าง Header ไม่สำเร็จ', 'error');
+      return;
+    }
+
+    const auditId = headerRes.auditId;
+
+    // ============================================================
+    // STEP 2: ส่ง Details เป็น Chunk ทีละ 15 ข้อ
+    // แก้ปัญหา URL ยาวเกิน (400 Bad Request)
+    // ============================================================
+    const details = AppState.criteria.map(c => ({
+      criteriaId: c.Criteria_ID,
+      score:      AppState.auditAnswers[c.Criteria_ID]?.score ?? 0,
+      remark:     (AppState.auditAnswers[c.Criteria_ID]?.remark || '').slice(0, 200),
+      photoUrl:   (AppState.auditAnswers[c.Criteria_ID]?.photos || [])
+                    .map(p => p.url).filter(Boolean).join(',')
+    }));
+
+    const CHUNK_SIZE = 15;
+    const totalChunks = Math.ceil(details.length / CHUNK_SIZE);
+
+    for (let i = 0; i < details.length; i += CHUNK_SIZE) {
+      const chunk     = details.slice(i, i + CHUNK_SIZE);
+      const chunkNum  = Math.floor(i / CHUNK_SIZE) + 1;
+
+      UI.showLoading(`กำลังบันทึกข้อมูล... (${chunkNum}/${totalChunks})`);
+
+      const detailRes = await API.get('submitAuditDetails', {
+        auditId: auditId,
+        details: JSON.stringify(chunk)
+      });
+
+      if (!detailRes.success) {
+        UI.hideLoading();
+        UI.toast('บันทึก Details ล้มเหลว chunk ' + chunkNum, 'error');
+        return;
+      }
+    }
+
+    // ============================================================
+    // STEP 3: Finalize — คำนวณคะแนนรวมและ Update Header
+    // ============================================================
+    UI.showLoading('กำลังคำนวณคะแนน... (3/3)');
+
+    const finalRes = await API.get('finalizeAudit', { auditId });
+
     UI.hideLoading();
 
-    if (res.success) {
-      // เก็บผลไว้แสดงหน้า summary
-      sessionStorage.setItem('lastAuditResult', JSON.stringify(res));
-      navigate('summary.html', { auditId: res.auditId });
+    if (finalRes.success) {
+      sessionStorage.setItem('lastAuditResult', JSON.stringify(finalRes));
+      navigate('summary.html', { auditId: finalRes.auditId });
     } else {
-      UI.toast(res.error || 'บันทึกไม่สำเร็จ', 'error');
+      UI.toast(finalRes.error || 'Finalize ไม่สำเร็จ', 'error');
     }
+
   } catch(err) {
     UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error');
+    console.error('submitAudit error:', err);
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
   }
 }
 
