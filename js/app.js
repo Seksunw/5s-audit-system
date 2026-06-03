@@ -94,6 +94,29 @@ const API = {
       throw new Error('Server returned invalid response');
     }
   },
+
+  /**
+   * Write operations — ห้าม cache เด็ดขาด
+   * ใช้แทน API.get() สำหรับทุก action ที่เขียนข้อมูลลง Sheets
+   */
+  async write(action, params = {}) {
+    const url = new URL(CONFIG.API_URL);
+    url.searchParams.set('action', action);
+    url.searchParams.set('token', AppState.token || '');
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+
+    console.log(`[API.write] action=${action}`, params);
+    const res  = await fetch(url.toString(), { redirect: 'follow' });
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      console.log(`[API.write] response:`, data);
+      return data;
+    } catch(e) {
+      console.error(`GAS write response (not JSON) action=${action}:`, text.slice(0, 300));
+      throw new Error('Server returned invalid response');
+    }
+  },
 };
 
 // ============================================================
@@ -668,12 +691,13 @@ async function addPhoto(criteriaId, file) {
     AppState.auditAnswers[criteriaId].photos = [];
   }
 
+  const photoId = `${criteriaId}_${Date.now()}`;
   const photoData = {
-    base64: compressed,
+    id:       photoId,
+    base64:   compressed,
     filename: `photo_${criteriaId}_${Date.now()}.jpg`,
-    preview: compressed,
     uploaded: false,
-    url: null,
+    url:      null,
   };
 
   AppState.auditAnswers[criteriaId].photos.push(photoData);
@@ -683,7 +707,7 @@ async function addPhoto(criteriaId, file) {
   div.className = 'photo-thumb';
   div.innerHTML = `
     <img src="${compressed}" alt="photo">
-    <button class="remove-photo" onclick="removePhoto('${criteriaId}', ${AppState.auditAnswers[criteriaId].photos.length - 1}, this)">
+    <button class="remove-photo" onclick="removePhotoById('${criteriaId}', '${photoId}', this)">
       <i class="bi bi-x"></i>
     </button>
   `;
@@ -698,7 +722,21 @@ async function addPhoto(criteriaId, file) {
 }
 
 function removePhoto(criteriaId, idx, btn) {
+  // เก็บไว้ backward compatible แต่ใช้ removePhotoById แทนแล้ว
   AppState.auditAnswers[criteriaId].photos.splice(idx, 1);
+  btn.closest('.photo-thumb').remove();
+  const countBadge = document.getElementById('photoCount-' + criteriaId);
+  const count = AppState.auditAnswers[criteriaId].photos.length;
+  if (countBadge) {
+    countBadge.textContent   = count;
+    countBadge.style.display = count > 0 ? 'inline' : 'none';
+  }
+}
+
+/** ลบรูปด้วย unique ID — ป้องกัน index เพี้ยนหลัง splice */
+function removePhotoById(criteriaId, photoId, btn) {
+  AppState.auditAnswers[criteriaId].photos =
+    AppState.auditAnswers[criteriaId].photos.filter(p => p.id !== photoId);
   btn.closest('.photo-thumb').remove();
   const countBadge = document.getElementById('photoCount-' + criteriaId);
   const count = AppState.auditAnswers[criteriaId].photos.length;
@@ -717,11 +755,15 @@ function removePhoto(criteriaId, idx, btn) {
  */
 async function uploadToImgBB(base64) {
   if (!CONFIG.IMGBB_API_KEY || CONFIG.IMGBB_API_KEY === 'YOUR_IMGBB_API_KEY_HERE') {
-    console.warn('imgBB API Key ยังไม่ได้ตั้งค่า — ข้ามการ Upload รูป');
+    console.warn('[ImgBB] API Key ยังไม่ได้ตั้งค่า — ข้ามการ Upload รูป');
+    UI.toast('ยังไม่ได้ตั้งค่า ImgBB API Key', 'warning');
     return null;
   }
 
   try {
+    console.log('[ImgBB] เริ่มอัปโหลด, key 6 ตัวท้าย:', CONFIG.IMGBB_API_KEY.slice(-6));
+    console.log('[ImgBB] ขนาด base64:', base64?.length, 'ตัวอักษร');
+
     // ตัด prefix "data:image/jpeg;base64," ออก
     const base64Data = base64.replace(/^data:[^;]+;base64,/, '');
 
@@ -733,16 +775,23 @@ async function uploadToImgBB(base64) {
       method: 'POST',
       body: formData
     });
+
+    console.log('[ImgBB] HTTP Status:', res.status);
     const data = await res.json();
+    console.log('[ImgBB] Response:', JSON.stringify(data));
 
     if (data.success) {
-      return data.data.url; // URL รูปที่ใช้ใน Sheet
+      console.log('[ImgBB] ✅ Upload สำเร็จ:', data.data.url);
+      return data.data.url;
     } else {
-      console.error('imgBB upload failed:', data);
+      const errMsg = data?.error?.message || JSON.stringify(data.error) || 'Unknown error';
+      console.error('[ImgBB] ❌ Upload ล้มเหลว:', errMsg);
+      UI.toast(`อัปโหลดรูปไม่สำเร็จ: ${errMsg}`, 'error', 6000);
       return null;
     }
   } catch(err) {
-    console.error('imgBB upload error:', err);
+    console.error('[ImgBB] ❌ Network error:', err);
+    UI.toast('ไม่สามารถเชื่อมต่อ ImgBB ได้: ' + err.message, 'error', 6000);
     return null;
   }
 }
@@ -793,19 +842,38 @@ async function submitAudit() {
 
     if (totalPhotos > 0) {
       UI.showLoading(`กำลัง Upload รูปภาพ... (0/${totalPhotos})`);
-      let uploaded = 0;
+      let uploaded    = 0;
+      let failedCount = 0;
 
       for (const [criteriaId, answer] of Object.entries(AppState.auditAnswers)) {
         for (const photo of (answer.photos || [])) {
-          if (!photo.uploaded && photo.preview) {
-            const url = await uploadToImgBB(photo.preview);
+          if (!photo.uploaded && photo.base64) {
+            console.log(`[SUBMIT] กำลังอัปโหลดรูป criteria: ${criteriaId} (${uploaded+1}/${totalPhotos})`);
+            const url = await uploadToImgBB(photo.base64);
+            uploaded++;
+
             if (url) {
               photo.url      = url;
               photo.uploaded = true;
+              console.log(`[SUBMIT] ✅ รูปที่ ${uploaded} สำเร็จ: ${url}`);
+            } else {
+              failedCount++;
+              console.error(`[SUBMIT] ❌ รูปที่ ${uploaded} ล้มเหลว criteria: ${criteriaId}`);
             }
-            uploaded++;
+
             UI.showLoading(`กำลัง Upload รูปภาพ... (${uploaded}/${totalPhotos})`);
           }
+        }
+      }
+
+      if (failedCount > 0) {
+        const continueAnyway = await showConfirm(
+          `อัปโหลดรูปล้มเหลว ${failedCount} รูป`,
+          'ต้องการ Submit ต่อโดยไม่มีรูปที่อัปโหลดล้มเหลวหรือไม่?'
+        );
+        if (!continueAnyway) {
+          UI.hideLoading();
+          return;
         }
       }
     }
@@ -814,7 +882,7 @@ async function submitAudit() {
     // ============================================================
     UI.showLoading('กำลังสร้างรายการตรวจ... (1/3)');
 
-    const headerRes = await API.get('submitAuditHeader', {
+    const headerRes = await API.write('submitAuditHeader', {
       plantId:    getParam('plantId'),
       areaId:     getParam('areaId'),
       auditorId:  AppState.user?.userId || 'unknown',
@@ -851,7 +919,8 @@ async function submitAudit() {
 
       UI.showLoading(`กำลังบันทึกข้อมูล... (${chunkNum}/${totalChunks})`);
 
-      const detailRes = await API.get('submitAuditDetails', {
+      console.log(`[SUBMIT] ส่ง chunk ${chunkNum}/${totalChunks}, details:`, JSON.stringify(chunk));
+      const detailRes = await API.write('submitAuditDetails', {
         auditId: auditId,
         details: JSON.stringify(chunk)
       });
@@ -868,7 +937,7 @@ async function submitAudit() {
     // ============================================================
     UI.showLoading('กำลังคำนวณคะแนน... (3/3)');
 
-    const finalRes = await API.get('finalizeAudit', { auditId });
+    const finalRes = await API.write('finalizeAudit', { auditId });
 
     UI.hideLoading();
 
