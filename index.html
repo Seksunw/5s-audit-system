@@ -92,21 +92,6 @@
       </button>
     </form>
 
-    <!-- Demo accounts -->
-    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--gray-200)">
-      <p style="font-size:0.75rem;color:var(--gray-600);text-align:center;margin-bottom:8px">
-        ทดลองใช้งาน (Demo)
-      </p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-        <button class="btn btn-outline btn-sm" onclick="fillDemo('admin@company.com','admin1234')">
-          👑 Admin
-        </button>
-        <button class="btn btn-outline btn-sm" onclick="fillDemo('bon@company.com','pass1234')">
-          📋 Auditor
-        </button>
-      </div>
-    </div>
-
     <!-- Version -->
     <p style="text-align:center;font-size:0.7rem;color:var(--gray-600);margin-top:16px;margin-bottom:0">
       v1.0.0| มาตรฐาน 5ส Draft 26.05.2026 by Kao
@@ -115,11 +100,5 @@
 </div>
 
 <script src="js/app.js"></script>
-<script>
-  function fillDemo(email, pass) {
-    document.getElementById('email').value    = email;
-    document.getElementById('password').value = pass;
-  }
-</script>
 </body>
 </html>
