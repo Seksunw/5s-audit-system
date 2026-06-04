@@ -77,10 +77,16 @@
 
       <div class="form-group">
         <label class="form-label">รหัสผ่าน</label>
-        <div class="input-group">
+        <div class="input-group" style="position:relative;">
           <i class="bi bi-lock input-icon"></i>
           <input type="password" id="password" class="form-control"
-                 placeholder="กรอกรหัสผ่าน" required autocomplete="current-password">
+                 placeholder="กรอกรหัสผ่าน" required autocomplete="current-password"
+                 style="padding-right:42px;">
+          <button type="button" id="togglePassword"
+                  onclick="(function(){var i=document.getElementById('password'),b=document.getElementById('togglePasswordIcon');if(i.type==='password'){i.type='text';b.className='bi bi-eye-slash';}else{i.type='password';b.className='bi bi-eye';}})()"
+                  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0;color:var(--text-muted,#888);z-index:5;">
+            <i id="togglePasswordIcon" class="bi bi-eye"></i>
+          </button>
         </div>
       </div>
 
@@ -94,7 +100,7 @@
 
     <!-- Version -->
     <p style="text-align:center;font-size:0.7rem;color:var(--gray-600);margin-top:16px;margin-bottom:0">
-      v1.0.0| มาตรฐาน 5ส Draft 26.05.2026 by Kao
+      v1.0.0| มาตรฐาน 5ส Draft 26.05.2026 By Hakao
     </p>
   </div>
 </div>
