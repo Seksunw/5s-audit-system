@@ -1159,6 +1159,12 @@ function updateUserUI() {
   setEl('userName', user.name || user.email);
   setEl('userRole', user.role || '');
   setEl('userInitial', (user.name || 'U')[0].toUpperCase());
+
+  // แสดง admin link เฉพาะ admin users
+  const adminNav = document.getElementById('adminNav');
+  if (adminNav) {
+    adminNav.style.display = user.role === 'Admin' ? 'flex' : 'none';
+  }
 }
 
 /** Logout */
@@ -1226,5 +1232,334 @@ document.addEventListener('DOMContentLoaded', () => {
     case 'summary':            initSummary();   break;
     case 'history':            initHistory();   break;
     case 'dashboard':          initDashboard(); break;
+    case 'admin':              initAdmin();     break;
   }
 });
+
+// ============================================================
+// ADMIN PAGE - จัดการผู้ใช้งาน
+// ============================================================
+let allUsers = [];
+let allPlants = [];
+let allAreas = [];
+
+async function initAdmin() {
+  if (!Session.requireLogin()) return;
+
+  // ตรวจสอบ Admin role
+  if (AppState.user?.role !== 'Admin') {
+    UI.toast('⛔ เข้าถึงได้เฉพาะ Admin เท่านั้น', 'error');
+    setTimeout(() => navigate('home.html'), 1500);
+    return;
+  }
+
+  updateUserUI();
+  UI.setActiveNav('admin');
+
+  // โหลดข้อมูล
+  try {
+    UI.showLoading('โหลดข้อมูล...');
+
+    const [usersRes, plantsRes, areasRes] = await Promise.all([
+      API.get('getUsers'),
+      API.get('getPlants'),
+      API.get('getAreas', {})
+    ]);
+
+    UI.hideLoading();
+
+    if (!usersRes.success) { UI.toast(usersRes.error, 'error'); return; }
+    if (!plantsRes.success) { UI.toast(plantsRes.error, 'error'); return; }
+    if (!areasRes.success) { UI.toast(areasRes.error, 'error'); return; }
+
+    allUsers = usersRes.data || [];
+    allPlants = plantsRes.data || [];
+    allAreas = areasRes.data || [];
+
+    // Render user list
+    renderUserList(allUsers);
+
+    // Populate modal checkboxes
+    populatePlantCheckboxes();
+    populateAreaCheckboxes();
+
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message, 'error');
+  }
+}
+
+function renderUserList(users) {
+  const container = document.getElementById('userList');
+  if (!container) return;
+
+  if (!users || users.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <i class="bi bi-people"></i>
+        <p>ยังไม่มีผู้ใช้งาน</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = users.map(user => `
+    <div class="user-card">
+      <div class="user-avatar">${(user.name || user.email || 'U')[0].toUpperCase()}</div>
+      <div class="user-info">
+        <div class="user-name">${escHtml(user.name || '-')}</div>
+        <div class="user-meta">
+          <span class="badge-role ${user.role ? user.role.toLowerCase().replace(/ /g,'-') : ''}" style="${getRoleBadgeStyle(user.role)}">
+            ${escHtml(user.role || '-')}
+          </span>
+          ${user.email ? `<span style="font-size:0.75rem;color:var(--gray-600)">${escHtml(user.email)}</span>` : ''}
+        </div>
+      </div>
+      <div class="user-actions">
+        <button class="btn-icon" onclick="editUser('${user.userId}')" title="แก้ไข">
+          <i class="bi bi-pencil" style="color:var(--primary)"></i>
+        </button>
+        <button class="btn-icon" onclick="deleteUserConfirm('${user.userId}','${escHtml(user.name)}')" title="ลบ">
+          <i class="bi bi-trash" style="color:var(--danger)"></i>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function getRoleBadgeStyle(role) {
+  if (!role) return '';
+  const lowerRole = role.toLowerCase();
+  if (lowerRole.includes('auditor')) {
+    return 'background:#e3f2fd;color:#1565c0';
+  } else if (lowerRole.includes('manager') || lowerRole.includes('supervisor')) {
+    return 'background:#f3e5f5;color:#7b1fa2';
+  } else if (lowerRole.includes('admin')) {
+    return 'background:#ffebee;color:#c62828';
+  }
+  return '';
+}
+
+function populatePlantCheckboxes() {
+  const container = document.getElementById('plantsCheckbox');
+  if (!container) return;
+
+  if (!allPlants || allPlants.length === 0) {
+    container.innerHTML = '<p style="color:var(--gray-600);font-size:0.85rem">ไม่พบ Plant</p>';
+    return;
+  }
+
+  container.innerHTML = allPlants.map(plant => `
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+      <input type="checkbox" value="${plant.Plant_ID}" class="plantCheckbox"
+             style="width:18px;height:18px;cursor:pointer">
+      <span style="flex:1">${escHtml(plant.Plant_Name)} (${plant.Plant_ID})</span>
+    </label>
+  `).join('');
+}
+
+function populateAreaCheckboxes() {
+  const container = document.getElementById('areasCheckbox');
+  if (!container) return;
+
+  if (!allAreas || allAreas.length === 0) {
+    container.innerHTML = '<p style="color:var(--gray-600);font-size:0.85rem">ไม่พบ Area</p>';
+    return;
+  }
+
+  container.innerHTML = allAreas.map(area => `
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+      <input type="checkbox" value="${area.Area_ID}" class="areaCheckbox"
+             style="width:18px;height:18px;cursor:pointer">
+      <span style="flex:1">${escHtml(area.Area_Name)} (${area.Area_ID})</span>
+    </label>
+  `).join('');
+}
+
+function filterUsers() {
+  const searchText = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  const roleFilter = document.getElementById('filterRole')?.value || '';
+  const statusFilter = document.getElementById('filterStatus')?.value || '';
+
+  const filtered = allUsers.filter(user => {
+    const matchSearch = !searchText ||
+      (user.name && user.name.toLowerCase().includes(searchText)) ||
+      (user.email && user.email.toLowerCase().includes(searchText));
+
+    const matchRole = !roleFilter || user.role === roleFilter;
+    const matchStatus = !statusFilter || (user.status || 'active') === statusFilter;
+
+    return matchSearch && matchRole && matchStatus;
+  });
+
+  renderUserList(filtered);
+}
+
+function openUserModal(userId) {
+  const modal = document.getElementById('userModal');
+  if (!modal) return;
+
+  const form = document.getElementById('userForm');
+  const title = document.getElementById('modalTitle');
+  const idInput = document.getElementById('editUserId');
+
+  if (userId) {
+    // Edit mode
+    const user = allUsers.find(u => u.userId === userId);
+    if (!user) {
+      UI.toast('ไม่พบผู้ใช้งาน', 'error');
+      return;
+    }
+
+    title.textContent = 'แก้ไขผู้ใช้งาน';
+    idInput.value = userId;
+    document.getElementById('userName').value = user.name || '';
+    document.getElementById('userEmail').value = user.email || '';
+    document.getElementById('userPassword').value = '';
+    document.getElementById('userPassword').required = false;
+    document.getElementById('userPassword').placeholder = 'ไม่กรอก = ไม่เปลี่ยนรหัสผ่าน';
+    document.getElementById('userRole').value = user.role || '';
+    document.getElementById('userStatus').value = user.status || 'active';
+
+    // Check assigned plants
+    const assignedPlants = user.assignedPlants ? user.assignedPlants.split(',') : [];
+    document.querySelectorAll('.plantCheckbox').forEach(cb => {
+      cb.checked = assignedPlants.includes(cb.value);
+    });
+
+    // Check assigned areas
+    const assignedAreas = user.assignedAreas ? user.assignedAreas.split(',') : [];
+    document.querySelectorAll('.areaCheckbox').forEach(cb => {
+      cb.checked = assignedAreas.includes(cb.value);
+    });
+  } else {
+    // Create mode
+    title.textContent = 'เพิ่มผู้ใช้งานใหม่';
+    idInput.value = '';
+    form.reset();
+    document.getElementById('userPassword').required = true;
+    document.getElementById('userPassword').placeholder = 'ตั้งรหัสผ่าน';
+    document.querySelectorAll('.plantCheckbox, .areaCheckbox').forEach(cb => cb.checked = false);
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeUserModal() {
+  const modal = document.getElementById('userModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function saveUser(e) {
+  e.preventDefault();
+
+  const userId = document.getElementById('editUserId').value;
+  const name = document.getElementById('userName').value.trim();
+  const email = document.getElementById('userEmail').value.trim();
+  const password = document.getElementById('userPassword').value;
+  const role = document.getElementById('userRole').value;
+  const status = document.getElementById('userStatus').value;
+
+  if (!name) { UI.toast('กรุณากรอกชื่อ', 'warning'); return; }
+  if (!email) { UI.toast('กรุณากรอก email', 'warning'); return; }
+  if (!role) { UI.toast('กรุณาเลือก role', 'warning'); return; }
+
+  // เก็บ plants/areas
+  const assignedPlants = Array.from(document.querySelectorAll('.plantCheckbox:checked'))
+    .map(cb => cb.value).join(',');
+  const assignedAreas = Array.from(document.querySelectorAll('.areaCheckbox:checked'))
+    .map(cb => cb.value).join(',');
+
+  try {
+    UI.showLoading(`${userId ? 'กำลังอัปเดต...' : 'กำลังสร้าง...'}`);
+
+    let res;
+    if (userId) {
+      // Update
+      res = await API.post('updateUser', {
+        userId,
+        name,
+        email,
+        password: password || undefined,
+        role,
+        status,
+        assignedPlants,
+        assignedAreas
+      });
+    } else {
+      // Create
+      if (!password) { UI.toast('กรุณาตั้งรหัสผ่าน', 'warning'); return; }
+      res = await API.post('createUser', {
+        name,
+        email,
+        password,
+        role,
+        status,
+        assignedPlants,
+        assignedAreas
+      });
+    }
+
+    UI.hideLoading();
+
+    if (res.success) {
+      UI.toast(`${userId ? 'อัปเดต' : 'สร้าง'}สำเร็จ ✅`, 'success');
+      closeUserModal();
+      // Reload user list
+      setTimeout(() => {
+        const usersRes = API.get('getUsers');
+        usersRes.then(r => {
+          if (r.success) {
+            allUsers = r.data || [];
+            renderUserList(allUsers);
+            filterUsers();
+          }
+        });
+      }, 500);
+    } else {
+      UI.toast(res.error || 'บันทึกไม่สำเร็จ', 'error');
+    }
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}
+
+function editUser(userId) {
+  openUserModal(userId);
+}
+
+function deleteUserConfirm(userId, userName) {
+  const ok = confirm(`ยืนยันการลบ "${userName}" หรือไม่?\n\nผู้ใช้นี้จะเปลี่ยนเป็น Inactive`);
+  if (!ok) return;
+  deleteUser(userId);
+}
+
+async function deleteUser(userId) {
+  try {
+    UI.showLoading('กำลังลบ...');
+
+    const res = await API.post('deleteUser', { userId });
+
+    UI.hideLoading();
+
+    if (res.success) {
+      UI.toast('ลบสำเร็จ ✅', 'success');
+      // Reload user list
+      setTimeout(() => {
+        const usersRes = API.get('getUsers');
+        usersRes.then(r => {
+          if (r.success) {
+            allUsers = r.data || [];
+            renderUserList(allUsers);
+            filterUsers();
+          }
+        });
+      }, 500);
+    } else {
+      UI.toast(res.error || 'ลบไม่สำเร็จ', 'error');
+    }
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}

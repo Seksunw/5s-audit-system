@@ -1255,6 +1255,178 @@ body {
 }
 
 /* ============================================================
+   MODAL DIALOG
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-card {
+  background: #fff;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-xl);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--gray-200);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+@media (min-width: 768px) {
+  .modal-overlay {
+    align-items: center;
+  }
+
+  .modal-card {
+    border-radius: var(--radius-lg);
+    width: auto;
+    min-width: 400px;
+    max-height: 80vh;
+  }
+}
+
+/* ============================================================
+   ADMIN PAGE SPECIFIC
+   ============================================================ */
+.user-card {
+  background: #fff;
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s;
+}
+
+.user-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.user-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-meta {
+  font-size: 0.8rem;
+  color: var(--gray-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.user-actions .btn-icon {
+  padding: 6px;
+  font-size: 0.95rem;
+}
+
+.user-actions .btn-icon:hover {
+  background: var(--gray-100);
+  border-radius: var(--radius-sm);
+}
+
+.badge-role {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.badge-role.auditor {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.badge-role.manager {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.badge-role.admin {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--gray-600);
+}
+
+.empty-state i {
+  font-size: 3rem;
+  color: var(--gray-300);
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* ============================================================
    PRINT STYLES (สำหรับ PDF Export)
    ============================================================ */
 @media print {
