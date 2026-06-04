@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v1.3'; // เพิ่ม version เมื่อแก้ไขโค้ด เพื่อ invalidate cache เก่า
+const CACHE_NAME = '5s-audit-v1.4'; // เพิ่ม version เมื่อแก้ไขโค้ด เพื่อ invalidate cache เก่า
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
