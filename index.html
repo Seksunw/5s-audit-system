@@ -23,6 +23,11 @@
 
   <style>
     body { padding-bottom: 0 !important; }
+    .lang-pill.active {
+      background: var(--primary) !important;
+      color: #fff !important;
+      border-color: var(--primary) !important;
+    }
     .login-wave {
       position: absolute; bottom: 0; left: 0; right: 0;
       height: 120px; overflow: hidden;
@@ -36,7 +41,7 @@
 <div id="loadingOverlay" class="loading-overlay">
   <div class="loading-spinner">
     <div class="spinner"></div>
-    <span class="loading-msg">กำลังโหลด...</span>
+    <span class="loading-msg" data-i18n="loading">กำลังโหลด...</span>
   </div>
 </div>
 
@@ -53,6 +58,24 @@
               background:rgba(255,255,255,0.05);border-radius:50%;"></div>
 
   <div class="login-card">
+    <!-- Language Pills -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:6px">
+      <button class="lang-pill" data-lang="th"
+        onclick="I18n.setLang('th')"
+        style="padding:4px 14px;border-radius:20px;border:1.5px solid var(--gray-300);
+               background:#fff;font-size:0.78rem;font-weight:700;cursor:pointer;
+               color:var(--gray-600);transition:all 0.2s">
+        🇹🇭 TH
+      </button>
+      <button class="lang-pill" data-lang="en"
+        onclick="I18n.setLang('en')"
+        style="padding:4px 14px;border-radius:20px;border:1.5px solid var(--gray-300);
+               background:#fff;font-size:0.78rem;font-weight:700;cursor:pointer;
+               color:var(--gray-600);transition:all 0.2s">
+        🇬🇧 EN
+      </button>
+    </div>
+
     <!-- Logo -->
     <div class="login-logo">
       <div style="width:72px;height:72px;background:linear-gradient(135deg,#1a73e8,#34a853);
@@ -61,13 +84,13 @@
         5ส
       </div>
       <div class="app-name mt-2">ระบบตรวจ 5ส</div>
-      <div class="app-sub">Factory 5S Audit System | Draft 2026</div>
+      <div class="app-sub" data-i18n="login.app_sub">Factory 5S Audit System | Draft 2026</div>
     </div>
 
     <!-- Form -->
     <form id="loginForm" autocomplete="off">
       <div class="form-group">
-        <label class="form-label">อีเมล</label>
+        <label class="form-label" data-i18n="login.email_label">อีเมล</label>
         <div class="input-group">
           <i class="bi bi-envelope input-icon"></i>
           <input type="email" id="email" class="form-control"
@@ -76,17 +99,12 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">รหัสผ่าน</label>
-        <div class="input-group" style="position:relative;">
+        <label class="form-label" data-i18n="login.pass_label">รหัสผ่าน</label>
+        <div class="input-group">
           <i class="bi bi-lock input-icon"></i>
           <input type="password" id="password" class="form-control"
-                 placeholder="กรอกรหัสผ่าน" required autocomplete="current-password"
-                 style="padding-right:42px;">
-          <button type="button" id="togglePassword"
-                  onclick="(function(){var i=document.getElementById('password'),b=document.getElementById('togglePasswordIcon');if(i.type==='password'){i.type='text';b.className='bi bi-eye-slash';}else{i.type='password';b.className='bi bi-eye';}})()"
-                  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0;color:var(--text-muted,#888);z-index:5;">
-            <i id="togglePasswordIcon" class="bi bi-eye"></i>
-          </button>
+                 data-i18n-ph="login.pass_ph"
+                 placeholder="กรอกรหัสผ่าน" required autocomplete="current-password">
         </div>
       </div>
 
@@ -94,17 +112,79 @@
       <div id="loginError" style="color:var(--danger);font-size:0.85rem;margin-bottom:12px;min-height:20px;"></div>
 
       <button type="submit" id="loginBtn" class="btn btn-primary btn-block btn-lg">
-        <i class="bi bi-box-arrow-in-right"></i> เข้าสู่ระบบ
+        <i class="bi bi-box-arrow-in-right"></i> <span data-i18n="login.btn">เข้าสู่ระบบ</span>
       </button>
     </form>
 
+    <!-- Quick Login (สำหรับ Dev/Test เท่านั้น — ลบออกก่อน Deploy Production) -->
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--gray-200)">
+      <p style="font-size:0.75rem;color:var(--gray-600);text-align:center;margin-bottom:10px"
+         data-i18n="login.quick_title">
+        🔧 Dev Mode — เข้าสู่ระบบด่วน
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+
+        <!-- Quick Login Admin — DEV ONLY: ลบออกก่อน Production -->
+        <button class="btn btn-sm" id="quickAdminBtn"
+          onclick="quickLogin('admin@company.com','admin1234',this)"
+          style="background:#1a73e8;color:#fff;border-radius:10px;padding:12px 8px;
+                 display:flex;flex-direction:column;align-items:center;gap:4px;border:none">
+          <span style="font-size:1.4rem">👑</span>
+          <span style="font-size:0.8rem;font-weight:700">Admin</span>
+          <span style="font-size:0.65rem;opacity:0.85">Dev Only</span>
+        </button>
+
+        <!-- Quick Login Auditor — DEV ONLY: ลบออกก่อน Production -->
+        <button class="btn btn-sm" id="quickAuditorBtn"
+          onclick="quickLogin('bon@company.com','pass1234',this)"
+          style="background:#34a853;color:#fff;border-radius:10px;padding:12px 8px;
+                 display:flex;flex-direction:column;align-items:center;gap:4px;border:none">
+          <span style="font-size:1.4rem">📋</span>
+          <span style="font-size:0.8rem;font-weight:700">Auditor</span>
+          <span style="font-size:0.65rem;opacity:0.85">Dev Only</span>
+        </button>
+
+      </div>
+    </div>
+
     <!-- Version -->
     <p style="text-align:center;font-size:0.7rem;color:var(--gray-600);margin-top:16px;margin-bottom:0">
-      v1.0.0| มาตรฐาน 5ส Draft 26.05.2026 By Hakao
+      v1.0.0 | มาตรฐาน 5ส Draft 26.05.2026
     </p>
   </div>
 </div>
 
-<script src="js/app.js"></script>
+<script src="js/app.js?v=3"></script>
+<script>
+  // Quick Login — กดปุ่มเดียว Login ได้เลย ไม่ต้องพิมพ์รหัส
+  async function quickLogin(email, password, btn) {
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+
+    const errorEl = document.getElementById('loginError');
+    errorEl.textContent = '';
+
+    try {
+      UI.showLoading(I18n.t('msg.verifying'));
+      const res = await API.post('login', { email, password });
+      UI.hideLoading();
+
+      if (res.success) {
+        Session.save(res.token, res.user);
+        UI.toast(`${I18n.t('msg.welcome')} ${res.user.name} 👋`, 'success');
+        setTimeout(() => navigate('home.html'), 800);
+      } else {
+        errorEl.textContent = res.error || I18n.t('msg.login_failed');
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      }
+    } catch(err) {
+      UI.hideLoading();
+      errorEl.textContent = I18n.t('msg.no_connection');
+      btn.disabled = false;
+      btn.style.opacity = '1';
+    }
+  }
+</script>
 </body>
 </html>

@@ -10,14 +10,13 @@
 </head>
 <body>
 <div id="loadingOverlay" class="loading-overlay">
-  <div class="loading-spinner"><div class="spinner"></div><span class="loading-msg">กำลังโหลด...</span></div>
+  <div class="loading-spinner"><div class="spinner"></div><span class="loading-msg" data-i18n="loading">กำลังโหลด...</span></div>
 </div>
 <div id="toastContainer" class="toast-container"></div>
 
 <nav class="top-nav">
   <button class="btn-icon" onclick="navigate('home.html')"><i class="bi bi-arrow-left"></i></button>
-  <div class="brand" style="margin-left:8px">ประวัติการตรวจ</div>
-  <button class="bottom-nav-item" onclick="navigate('admin.html')" id="adminNav" style="display:none"><i class="bi bi-gear"></i><span>Admin</span></button>
+  <div class="brand" style="margin-left:8px" data-i18n="history.title">ประวัติการตรวจ</div>
 </nav>
 
 <div class="page-content">
@@ -25,25 +24,25 @@
   <!-- Filter Bar -->
   <div class="filter-bar">
     <select id="filterPlant" class="filter-select" onchange="applyHistoryFilter()">
-      <option value="">🏭 ทุก Plant</option>
+      <option value="" data-i18n="history.all_plant">🏭 ทุก Plant</option>
     </select>
     <select id="filterMonth" class="filter-select" onchange="applyHistoryFilter()">
-      <option value="">📅 ทุกเดือน</option>
-      <option value="1">มกราคม</option>
-      <option value="2">กุมภาพันธ์</option>
-      <option value="3">มีนาคม</option>
-      <option value="4">เมษายน</option>
-      <option value="5">พฤษภาคม</option>
-      <option value="6">มิถุนายน</option>
-      <option value="7">กรกฎาคม</option>
-      <option value="8">สิงหาคม</option>
-      <option value="9">กันยายน</option>
-      <option value="10">ตุลาคม</option>
-      <option value="11">พฤศจิกายน</option>
-      <option value="12">ธันวาคม</option>
+      <option value="" data-i18n="history.all_month">📅 ทุกเดือน</option>
+      <option value="1" data-i18n="month.1">มกราคม</option>
+      <option value="2" data-i18n="month.2">กุมภาพันธ์</option>
+      <option value="3" data-i18n="month.3">มีนาคม</option>
+      <option value="4" data-i18n="month.4">เมษายน</option>
+      <option value="5" data-i18n="month.5">พฤษภาคม</option>
+      <option value="6" data-i18n="month.6">มิถุนายน</option>
+      <option value="7" data-i18n="month.7">กรกฎาคม</option>
+      <option value="8" data-i18n="month.8">สิงหาคม</option>
+      <option value="9" data-i18n="month.9">กันยายน</option>
+      <option value="10" data-i18n="month.10">ตุลาคม</option>
+      <option value="11" data-i18n="month.11">พฤศจิกายน</option>
+      <option value="12" data-i18n="month.12">ธันวาคม</option>
     </select>
     <select id="filterYear" class="filter-select" onchange="applyHistoryFilter()">
-      <option value="">📆 ทุกปี</option>
+      <option value="" data-i18n="history.all_year">📆 ทุกปี</option>
       <option value="2026">2026</option>
       <option value="2025">2025</option>
     </select>
@@ -62,13 +61,12 @@
 </div>
 
 <nav class="bottom-nav">
-  <button class="bottom-nav-item" onclick="navigate('home.html')"><i class="bi bi-house"></i><span>หน้าหลัก</span></button>
-  <button class="bottom-nav-item" onclick="navigate('plant.html')"><i class="bi bi-clipboard-check"></i><span>ตรวจ</span></button>
-  <button class="bottom-nav-item active"><i class="bi bi-clock-history"></i><span>ประวัติ</span></button>
-  <button class="bottom-nav-item" onclick="navigate('dashboard.html')"><i class="bi bi-bar-chart"></i><span>Dashboard</span></button>
-  <button class="bottom-nav-item" onclick="navigate('admin.html')" id="adminNav" style="display:none"><i class="bi bi-gear"></i><span>Admin</span></button>
+  <button class="bottom-nav-item" onclick="navigate('home.html')"><i class="bi bi-house"></i><span data-i18n="nav.home">หน้าหลัก</span></button>
+  <button class="bottom-nav-item" onclick="navigate('plant.html')"><i class="bi bi-clipboard-check"></i><span data-i18n="nav.audit">ตรวจ</span></button>
+  <button class="bottom-nav-item active"><i class="bi bi-clock-history"></i><span data-i18n="nav.history">ประวัติ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('dashboard.html')"><i class="bi bi-bar-chart"></i><span data-i18n="nav.dashboard">Dashboard</span></button>
 </nav>
 
-<script src="js/app.js"></script>
+<script src="js/app.js?v=3"></script>
 </body>
 </html>

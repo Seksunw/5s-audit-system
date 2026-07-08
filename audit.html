@@ -11,7 +11,7 @@
 <body style="padding-bottom:calc(var(--bottom-nav) + 70px)">
 
 <div id="loadingOverlay" class="loading-overlay">
-  <div class="loading-spinner"><div class="spinner"></div><span class="loading-msg">กำลังโหลด...</span></div>
+  <div class="loading-spinner"><div class="spinner"></div><span class="loading-msg" data-i18n="loading">กำลังโหลด...</span></div>
 </div>
 <div id="toastContainer" class="toast-container"></div>
 
@@ -23,10 +23,9 @@
     <div style="color:#fff;font-weight:700;font-size:0.95rem" id="auditAreaName">-</div>
   </div>
   <div style="text-align:right;color:#fff">
-    <div style="font-size:0.7rem;opacity:0.8">ตอบแล้ว</div>
+    <div style="font-size:0.7rem;opacity:0.8" data-i18n="audit.nav_answered">ตอบแล้ว</div>
     <div style="font-size:0.95rem;font-weight:700"><span id="answeredCount">0</span>/<span id="totalItemCount">0</span></div>
   </div>
-  <button class="bottom-nav-item" onclick="navigate('admin.html')" id="adminNav" style="display:none"><i class="bi bi-gear"></i><span>Admin</span></button>
 </nav>
 
 <!-- Content -->
@@ -39,7 +38,7 @@
     <div style="display:flex;align-items:center;gap:10px;max-width:768px;margin:0 auto">
       <div style="flex:1">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-size:0.75rem;font-weight:600;color:var(--gray-600)">ความคืบหน้า</span>
+          <span style="font-size:0.75rem;font-weight:600;color:var(--gray-600)" data-i18n="audit.progress">ความคืบหน้า</span>
           <span style="font-size:0.75rem;font-weight:700;color:var(--primary)" id="progressPct">0%</span>
         </div>
         <div class="progress-bar-custom">
@@ -63,6 +62,7 @@
 
 <!-- Submit Bar -->
 <div class="submit-bar">
+  <div id="auditRemainingPanel" class="audit-remaining-panel" style="display:none"></div>
   <button class="btn btn-primary btn-block" id="submitBtn" onclick="submitAudit()" disabled style="height:48px">
     ตอบแล้ว 0/0 ข้อ
   </button>
@@ -70,17 +70,16 @@
 
 <!-- Bottom Nav -->
 <nav class="bottom-nav">
-  <button class="bottom-nav-item" onclick="navigate('home.html')"><i class="bi bi-house"></i><span>หน้าหลัก</span></button>
-  <button class="bottom-nav-item active"><i class="bi bi-clipboard-check"></i><span>ตรวจ</span></button>
-  <button class="bottom-nav-item" onclick="navigate('history.html')"><i class="bi bi-clock-history"></i><span>ประวัติ</span></button>
-  <button class="bottom-nav-item" onclick="navigate('dashboard.html')"><i class="bi bi-bar-chart"></i><span>Dashboard</span></button>
-  <button class="bottom-nav-item" onclick="navigate('admin.html')" id="adminNav" style="display:none"><i class="bi bi-gear"></i><span>Admin</span></button>
+  <button class="bottom-nav-item" onclick="navigate('home.html')"><i class="bi bi-house"></i><span data-i18n="nav.home">หน้าหลัก</span></button>
+  <button class="bottom-nav-item active"><i class="bi bi-clipboard-check"></i><span data-i18n="nav.audit">ตรวจ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('history.html')"><i class="bi bi-clock-history"></i><span data-i18n="nav.history">ประวัติ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('dashboard.html')"><i class="bi bi-bar-chart"></i><span data-i18n="nav.dashboard">Dashboard</span></button>
 </nav>
 
-<script src="js/app.js"></script>
+<script src="js/app.js?v=3"></script>
 <script>
   function confirmBack() {
-    if (confirm('คุณต้องการออกจากหน้าตรวจ?\nข้อมูลที่กรอกไว้จะหายทั้งหมด')) {
+    if (confirm(I18n.t('audit.confirm_back'))) {
       history.back();
     }
   }
