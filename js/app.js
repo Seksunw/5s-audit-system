@@ -2214,6 +2214,8 @@ function openUserModal(userId) {
   const searchEl = document.getElementById('assignedAreasSearch');
   if (searchEl) searchEl.value = '';
 
+  const delBtn = document.getElementById('deleteUserBtn');
+
   if (userId) {
     const u = _allUsers.find(x => x.User_ID === userId);
     if (!u) return;
@@ -2228,12 +2230,46 @@ function openUserModal(userId) {
     document.getElementById('fPassword').value  = '';
     const sr = document.querySelector(`input[name="fStatus"][value="${u.Status}"]`);
     if (sr) sr.checked = true;
+    // แสดงปุ่มลบเฉพาะตอนแก้ไข และห้ามลบบัญชีตัวเอง
+    if (delBtn) delBtn.style.display = (u.User_ID === AppState.user?.userId) ? 'none' : 'block';
   } else {
     title.textContent = I18n.t('modal.add_user');
     const sr = document.querySelector('input[name="fStatus"][value="Active"]');
     if (sr) sr.checked = true;
+    if (delBtn) delBtn.style.display = 'none';
   }
   modal.classList.add('show');
+}
+
+// ลบผู้ใช้ (ออกจากทั้งแอปและ Google Sheet)
+async function deleteUser() {
+  const userId = document.getElementById('editUserId').value.trim();
+  if (!userId) return;
+  const u = _allUsers.find(x => x.User_ID === userId);
+
+  const ok = await showConfirm(
+    'ยืนยันการลบผู้ใช้',
+    `ต้องการลบ "${u?.Name || userId}" ออกจากระบบและ Google Sheet ถาวรหรือไม่?`
+  );
+  if (!ok) return;
+
+  try {
+    UI.showLoading('กำลังลบผู้ใช้...');
+    const res = await API.get('deleteUser', { userId });
+    UI.hideLoading();
+    if (res.success) {
+      UI.toast('ลบผู้ใช้สำเร็จ', 'success');
+      closeUserModal();
+      _allUsers = _allUsers.filter(x => x.User_ID !== userId);
+      _updateUserStats();
+      _renderUsers(_allUsers);
+    } else {
+      UI.toast(res.error || 'ลบไม่สำเร็จ', 'error');
+    }
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
 }
 
 function toggleAssignedAreasDropdown() {

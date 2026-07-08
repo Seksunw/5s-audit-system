@@ -93,6 +93,7 @@ function handleRequest(e) {
       case 'getUsers':           return createResponse(apiGetUsers(auth, e.parameter));
       // saveUser รับจาก body (POST) เพื่อให้ password ไม่ปรากฏใน URL
       case 'saveUser':           return createResponse(apiSaveUser(Object.assign({}, e.parameter, body), auth));
+      case 'deleteUser':         return createResponse(apiDeleteUser(Object.assign({}, e.parameter, body), auth));
       case 'getScheduleAdmin':   return createResponse(apiGetScheduleAdmin(auth));
       case 'saveSchedule':       return createResponse(apiSaveSchedule(Object.assign({}, e.parameter, body), auth));
       case 'deleteSchedule':     return createResponse(apiDeleteSchedule(e.parameter, auth));
@@ -831,6 +832,56 @@ function apiSaveUser(params, auth) {
   setCol('Updated_Date',    today);
   sheet.appendRow(newRow);
   return { success: true, userId: newId, message: 'เพิ่มผู้ใช้สำเร็จ' };
+}
+
+// ลบผู้ใช้ออกจาก User_Master (hard delete — หายจาก Google Sheet ด้วย)
+function apiDeleteUser(params, auth) {
+  if (!auth.valid)           return { success: false, error: 'Unauthorized', code: 401 };
+  if (auth.role !== 'Admin') return { success: false, error: 'Permission denied', code: 403 };
+
+  const userId = params.userId;
+  if (!userId) return { success: false, error: 'Missing userId' };
+  if (String(userId) === String(auth.userId)) {
+    return { success: false, error: 'ลบบัญชีของตัวเองไม่ได้' };
+  }
+
+  const ss      = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const sheet   = ss.getSheetByName(SHEETS.USER_MASTER);
+  if (!sheet) return { success: false, error: 'ไม่พบ User_Master' };
+
+  return withLock_(() => {
+    const data      = sheet.getDataRange().getValues();
+    const headers   = data[0];
+    const uIdx      = headers.indexOf('User_ID');
+    const roleIdx   = headers.indexOf('Role');
+    const statusIdx = headers.indexOf('Status');
+    if (uIdx < 0) return { success: false, error: 'User_Master ผิดโครงสร้าง' };
+
+    let targetRow = -1, targetRole = '', targetName = '';
+    const nameIdx = headers.indexOf('Name');
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][uIdx]) === String(userId)) {
+        targetRow  = i + 1;
+        targetRole = String(data[i][roleIdx] || '');
+        targetName = nameIdx >= 0 ? String(data[i][nameIdx] || '') : '';
+        break;
+      }
+    }
+    if (targetRow < 0) return { success: false, error: 'ไม่พบผู้ใช้' };
+
+    // กันลบ Admin คนสุดท้ายที่ยัง Active (ป้องกันระบบล็อกตัวเอง)
+    if (targetRole.toLowerCase() === 'admin' && roleIdx >= 0) {
+      const activeAdmins = data.slice(1).filter(r =>
+        String(r[roleIdx] || '').toLowerCase() === 'admin' &&
+        (statusIdx < 0 || String(r[statusIdx] || '') === 'Active')
+      ).length;
+      if (activeAdmins <= 1) return { success: false, error: 'ลบ Admin คนสุดท้ายไม่ได้' };
+    }
+
+    sheet.deleteRow(targetRow);
+    logAction(auth.userId, 'USER_DELETE', 'Deleted user ' + userId + ' (' + targetName + ')');
+    return { success: true, deleted: userId };
+  });
 }
 
 function getUserById_(ss, userId) {

@@ -209,11 +209,17 @@
           <i class="bi bi-check-lg"></i> <span data-i18n="form.save">บันทึก</span>
         </button>
       </div>
+      <!-- ปุ่มลบ — แสดงเฉพาะตอนแก้ไขผู้ใช้ที่มีอยู่ -->
+      <button type="button" id="deleteUserBtn" class="btn btn-block"
+              style="display:none;margin-top:10px;background:var(--danger);color:#fff"
+              onclick="deleteUser()">
+        <i class="bi bi-trash"></i> <span>ลบผู้ใช้นี้</span>
+      </button>
     </form>
   </div>
 </div>
 
 <!-- โหลด app.js เพียงไฟล์เดียว — Logic อยู่ใน app.js ทั้งหมด -->
-<script src="js/app.js?v=8"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>
