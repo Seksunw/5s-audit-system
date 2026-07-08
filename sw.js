@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v1.6'; // v1.6: schedule + criteria pages, assigned tasks, Admin board
+const CACHE_NAME = '5s-audit-v1.7'; // v1.7: force cache refresh
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
