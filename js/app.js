@@ -1002,8 +1002,9 @@ async function initHome() {
   updateUserUI();
 
   // แสดง/ซ่อน menu ตาม role
-  const auth = Session.load();
-  const isAdmin = auth && auth.role?.toLowerCase() === 'admin';
+  // FIX: Session.load() คืน boolean — ต้องอ่าน role/userId จาก AppState.user
+  const user = AppState.user || {};
+  const isAdmin = String(user.role || '').toLowerCase() === 'admin';
   const menuSched = document.getElementById('menuSchedule');
   const menuUsers = document.getElementById('menuUsers');
   if (menuSched) menuSched.style.display = isAdmin ? 'block' : 'none';
@@ -1027,7 +1028,7 @@ async function initHome() {
 
     // แสดง Assigned Tasks สำหรับ Auditor
     if (schedRes.success && schedRes.data.length) {
-      const userId = auth ? auth.userId : null;
+      const userId = user.userId || null;
       // กรอง schedules ที่ user นี้ถูก assign
       const myTasks = schedRes.data.filter(s => {
         if (!userId) return false;
@@ -1098,9 +1099,10 @@ async function initPlant() {
   updateUserUI();
 
   // แสดงปุ่ม "มอบหมายงาน" เฉพาะ Admin
-  const auth = Session.load();
+  // FIX: อ่าน role จาก AppState.user (Session.load() คืน boolean)
+  const user = AppState.user || {};
   const btnSched = document.getElementById('btnSchedule');
-  if (btnSched && auth && auth.role?.toLowerCase() === 'admin') btnSched.style.display = 'block';
+  if (btnSched && String(user.role || '').toLowerCase() === 'admin') btnSched.style.display = 'block';
 
   UI.showLoading(I18n.t('msg.loading_plant'));
   try {
@@ -2418,8 +2420,9 @@ let _schedSelectedAuds = new Set();
 
 async function initSchedule() {
   if (!Session.requireLogin()) return;
-  const auth = Session.load();
-  if (!auth || auth.role?.toLowerCase() !== 'admin') {
+  // FIX: อ่าน role จาก AppState.user (Session.load() คืน boolean)
+  const user = AppState.user || {};
+  if (String(user.role || '').toLowerCase() !== 'admin') {
     UI.toast('เฉพาะ Admin เท่านั้น', 'error');
     navigate('home.html');
     return;
