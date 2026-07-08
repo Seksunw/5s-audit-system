@@ -1,1 +1,17 @@
 .DS_Store
+
+# Non-app files merged from Obsidian workspace (not part of the app)
+.obsidian/
+5S/
+5S Brain/
+*.canvas
+*.base
+*.docx
+Criteria_Master.csv
+Promt AI 5S.txt
+URL*.txt
+export_to_obsidian.py
+sync_commits.py
+github-obsidian-brain.plugin
+ARCHITECTURE_AUDIT_2026.md
+backup_*/

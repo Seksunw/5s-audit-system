@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v1.7'; // v1.7: force cache refresh
+const CACHE_NAME = '5s-audit-v1.9'; // v1.9: JS always fresh from network
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
@@ -17,11 +17,11 @@ const STATIC_ASSETS = [
   'schedule.html',    // ← Admin assignment board
   'criteria.html',    // ← 5ส standards viewer
   'css/style.css',
-  'js/app.js',
   'manifest.json'
+  // js/app.js intentionally excluded — always fetch fresh from network
 ];
 
-// Install: cache แบบ safe — ไม่หยุดถ้าบางไฟล์ไม่มี
+// Install: cache HTML/CSS only, skip JS
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
@@ -34,37 +34,45 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate: clean old caches
+// Activate: delete ALL old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
 
-// Fetch: ปล่อย GAS API ผ่านตรงๆ ไม่ intercept
+// Fetch handler
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // ❌ ไม่ intercept GAS / Google APIs — ให้ browser จัดการเอง
+  // ❌ ไม่ intercept GAS / Google APIs
   if (url.hostname.includes('script.google.com') ||
       url.hostname.includes('googleusercontent.com') ||
       url.hostname.includes('googleapis.com')) {
     return;
   }
 
-  // ❌ ไม่ intercept cross-origin requests อื่นๆ
+  // ❌ ไม่ intercept cross-origin
   if (url.origin !== location.origin) {
     return;
   }
 
-  // ✅ Static assets เท่านั้น: Cache First
+  // ❌ JS files: always fetch from network (no-store) — ไม่ cache เพื่อให้ได้ version ใหม่เสมอ
+  if (url.pathname.endsWith('.js') || url.search.includes('v=')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+        .catch(() => caches.match(event.request)) // fallback to cache if offline
+    );
+    return;
+  }
+
+  // ✅ HTML/CSS: Cache First
   event.respondWith(
     caches.match(event.request)
       .then(cached => cached || fetch(event.request)
         .then(response => {
-          // Cache เฉพาะ response ที่ดี
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));

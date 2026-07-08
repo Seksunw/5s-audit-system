@@ -710,21 +710,11 @@ const AppState = {
 // ============================================================
 const API = {
   /**
-   * เรียก API แบบ GET
+   * Core fetch + parse + central auth handling.
+   * GAS ส่งทุก response เป็น HTTP 200 — สถานะจริงอยู่ใน body (success/code)
+   * ดังนั้นต้องเช็ค data.code === 401/403 เองที่นี่
    */
-  async get(action, params = {}) {
-    const cacheKey = action + JSON.stringify(params);
-    const cached   = AppState.cache[cacheKey];
-    if (cached && (Date.now() - cached.time < CONFIG.CACHE_TTL)) {
-      return cached.data;
-    }
-
-    const url = new URL(CONFIG.API_URL);
-    url.searchParams.set('action', action);
-    url.searchParams.set('token', AppState.token || '');
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-
-    // GAS ส่ง redirect → ต้องใช้ redirect:'follow' และรับ text ก่อน
+  async _request(url) {
     const res  = await fetch(url.toString(), { redirect: 'follow' });
     const text = await res.text();
     let data;
@@ -735,35 +725,60 @@ const API = {
       throw new Error('Server returned invalid response. ตรวจสอบว่า Deploy GAS ถูกต้องแล้ว');
     }
 
-    if (data.success) {
-      AppState.cache[cacheKey] = { data, time: Date.now() };
+    // Central 401/403 handling — session หมดอายุ / ไม่มีสิทธิ์
+    if (data && data.success === false && (data.code === 401 || data.code === 403)) {
+      // 401 = session ตาย → logout + เด้งกลับ login; 403 = login อยู่แต่ไม่มีสิทธิ์
+      if (data.code === 401) {
+        Session.clear();
+        const onLogin = /(?:^|\/)index\.html$/.test(location.pathname) ||
+                        location.pathname.endsWith('/');
+        if (!onLogin) {
+          try { UI.toast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'warning', 3000); } catch(_){}
+          setTimeout(() => navigate('index.html'), 800);
+        }
+      }
+      const err = new Error(data.error || (data.code === 401 ? 'Unauthorized' : 'Forbidden'));
+      err.code = data.code;
+      throw err;
     }
 
     return data;
   },
 
   /**
+   * เรียก API แบบ GET
+   */
+  async get(action, params = {}) {
+    // cacheKey ผูกกับ token ด้วย — กัน stale cache ข้ามผู้ใช้
+    const cacheKey = action + JSON.stringify(params) + '|' + (AppState.token || '');
+    const cached   = AppState.cache[cacheKey];
+    if (cached && (Date.now() - cached.time < CONFIG.CACHE_TTL)) {
+      return cached.data;
+    }
+
+    const url = new URL(CONFIG.API_URL);
+    url.searchParams.set('action', action);
+    url.searchParams.set('token', AppState.token || '');
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+
+    const data = await this._request(url);
+    if (data.success) {
+      AppState.cache[cacheKey] = { data, time: Date.now() };
+    }
+    return data;
+  },
+
+  /**
    * เรียก API แบบ POST
-   * GAS Web App: POST ต้องส่งเป็น application/x-www-form-urlencoded
-   * หรือส่ง JSON ผ่าน query param แทน (เพื่อหลีกเลี่ยง preflight CORS)
+   * ส่ง JSON ผ่าน query param (payload) เพื่อหลีกเลี่ยง CORS preflight ของ GAS
    */
   async post(action, body = {}) {
     const payload = JSON.stringify({ action, token: AppState.token, ...body });
-
-    // ส่งเป็น GET พร้อม payload ใน query string เพื่อหลีกเลี่ยง CORS preflight
     const url = new URL(CONFIG.API_URL);
     url.searchParams.set('action', action);
     url.searchParams.set('token', AppState.token || '');
     url.searchParams.set('payload', payload);
-
-    const res  = await fetch(url.toString(), { redirect: 'follow' });
-    const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch(e) {
-      console.error('GAS POST response (not JSON):', text.slice(0, 300));
-      throw new Error('Server returned invalid response');
-    }
+    return this._request(url);
   },
 };
 
@@ -1701,6 +1716,13 @@ async function submitAudit() {
 
     const auditId = headerRes.auditId;
 
+    // Rollback helper — ลบ header/details ที่ค้าง ถ้า submit ล้มเหลวกลางทาง (atomic)
+    const rollbackAudit = async (reason) => {
+      console.warn('[Submit] rollback audit', auditId, reason);
+      try { await API.get('deleteAudit', { auditId }); }
+      catch (e) { console.error('[Submit] rollback failed:', e.message); }
+    };
+
     // ============================================================
     // STEP 2: ส่ง Details เป็น Chunk ทีละ 15 ข้อ
     // แก้ปัญหา URL ยาวเกิน (400 Bad Request)
@@ -1728,6 +1750,7 @@ async function submitAudit() {
       });
 
       if (!detailRes.success) {
+        await rollbackAudit('detail chunk ' + chunkNum + ' failed');
         UI.hideLoading();
         UI.toast(I18n.t('msg.detail_failed') + chunkNum, 'error');
         return;
@@ -1747,6 +1770,7 @@ async function submitAudit() {
       sessionStorage.setItem('lastAuditResult', JSON.stringify(finalRes));
       navigate('summary.html', { auditId: finalRes.auditId });
     } else {
+      await rollbackAudit('finalize failed');
       UI.toast(finalRes.error || I18n.t('msg.finalize_failed'), 'error');
     }
 

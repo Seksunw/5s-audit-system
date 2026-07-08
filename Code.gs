@@ -82,8 +82,9 @@ function handleRequest(e) {
       case 'getCriteria':        return createResponse(apiGetCriteria(e.parameter));
       case 'getSchedule':        return createResponse(apiGetSchedule(e.parameter));
       case 'submitAuditHeader':  return createResponse(apiSubmitAuditHeader(e.parameter, auth));
-      case 'submitAuditDetails': return createResponse(apiSubmitAuditDetails(e.parameter));
-      case 'finalizeAudit':      return createResponse(apiFinalizeAudit(e.parameter));
+      case 'submitAuditDetails': return createResponse(apiSubmitAuditDetails(e.parameter, auth));
+      case 'finalizeAudit':      return createResponse(apiFinalizeAudit(e.parameter, auth));
+      case 'deleteAudit':        return createResponse(apiDeleteAudit(e.parameter, auth));
       case 'submitAudit':        return createResponse(apiSubmitAudit(body, auth));
       case 'getHistory':         return createResponse(apiGetHistory(e.parameter));
       case 'getAuditDetail':     return createResponse(apiGetAuditDetail(e.parameter));
@@ -452,46 +453,59 @@ function apiSubmitAuditHeader(params, auth) {
 
   const ss      = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   if (!canUserAuditArea_(ss, auth, plantId, areaId)) {
-    return { success: false, error: 'คุณไม่มีสิทธิ์ตรวจพื้นที่นี้' };
+    return { success: false, error: 'คุณไม่มีสิทธิ์ตรวจพื้นที่นี้', code: 403 };
   }
 
   const auditId = 'AUD-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss') + '-' +
                   Math.random().toString(36).substring(2, 6).toUpperCase();
 
-  ss.getSheetByName(SHEETS.AUDIT_HEADER).appendRow([
-    auditId, plantId, areaId, auditorId,
-    auditDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'),
-    0, 0, 0, 'Pending'
-  ]);
+  // FIX: serialize write เพื่อกัน race condition ระหว่างผู้ตรวจหลายคน
+  withLock_(() => {
+    ss.getSheetByName(SHEETS.AUDIT_HEADER).appendRow([
+      auditId, plantId, areaId, auditorId,
+      auditDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'),
+      0, 0, 0, 'Pending'
+    ]);
+  });
   return { success: true, auditId };
 }
 
-function apiSubmitAuditDetails(params) {
+function apiSubmitAuditDetails(params, auth) {
   const { auditId, details: detailsStr } = params;
   if (!auditId || !detailsStr) return { success: false, error: 'ข้อมูล Details ไม่ครบ' };
 
   let details;
   try { details = JSON.parse(detailsStr); } catch(e) { return { success: false, error: 'รูปแบบ details ไม่ถูกต้อง' }; }
 
-  const ss          = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  // FIX IDOR: ตรวจว่า auditId เป็นของผู้ใช้จริง
+  const own = assertAuditOwner_(ss, auditId, auth);
+  if (!own.ok) return { success: false, error: own.error, code: own.code || 403 };
+
   const detailSheet = ss.getSheetByName(SHEETS.AUDIT_DETAIL);
-  // ใช้ lastRow + counter เพื่อป้องกัน Detail_ID ชน
-  const startRow = detailSheet.getLastRow();
-  const rows = details.map((d, i) => [
-    auditId + '-' + String(startRow + i + 1).padStart(4, '0'),
-    auditId, d.criteriaId, d.score, d.remark || '', d.photoUrl || ''
-  ]);
-  if (rows.length > 0) {
-    detailSheet.getRange(detailSheet.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
-  }
-  return { success: true, saved: rows.length };
+  // FIX: serialize อ่าน lastRow + เขียน ภายใน lock เดียว กัน Detail_ID ชน/แถวสลับ
+  return withLock_(() => {
+    const startRow = detailSheet.getLastRow();
+    const rows = details.map((d, i) => [
+      auditId + '-' + String(startRow + i + 1).padStart(4, '0'),
+      auditId, d.criteriaId, d.score, d.remark || '', d.photoUrl || ''
+    ]);
+    if (rows.length > 0) {
+      detailSheet.getRange(startRow + 1, 1, rows.length, 6).setValues(rows);
+    }
+    return { success: true, saved: rows.length };
+  });
 }
 
-function apiFinalizeAudit(params) {
+function apiFinalizeAudit(params, auth) {
   const { auditId } = params;
   if (!auditId) return { success: false, error: 'Missing auditId' };
 
   const ss      = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  // FIX IDOR: ตรวจสิทธิ์เจ้าของก่อน finalize
+  const own = assertAuditOwner_(ss, auditId, auth);
+  if (!own.ok) return { success: false, error: own.error, code: own.code || 403 };
+
   const details = sheetToObjects(ss.getSheetByName(SHEETS.AUDIT_DETAIL)).filter(d => d.Audit_ID === auditId);
 
   // โหลด Criteria_Master เพื่อใช้ Max_Score จริง (ไม่ hardcode = 2)
@@ -567,16 +581,22 @@ function apiSubmitAudit(body, auth) {
                   Math.random().toString(36).substring(2, 6).toUpperCase();
   const status  = percent >= 90 ? 'Excellent' : percent >= 75 ? 'Good' : 'Need Improvement';
 
-  ss.getSheetByName(SHEETS.AUDIT_HEADER).appendRow([
-    auditId, plantId, areaId, auditorId,
-    auditDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'),
-    totalScore, maxScore, percent, status
-  ]);
+  // FIX: เขียน header + details ทั้งหมดใน lock เดียว (atomic ต่อ 1 submit)
+  withLock_(() => {
+    ss.getSheetByName(SHEETS.AUDIT_HEADER).appendRow([
+      auditId, plantId, areaId, auditorId,
+      auditDate || Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'),
+      totalScore, maxScore, percent, status
+    ]);
 
-  const detailSheet = ss.getSheetByName(SHEETS.AUDIT_DETAIL);
-  details.forEach((d, idx) => {
-    detailSheet.appendRow([auditId + '-' + String(idx+1).padStart(3,'0'),
-      auditId, d.criteriaId, d.score, d.remark || '', d.photoUrl || '']);
+    const detailSheet = ss.getSheetByName(SHEETS.AUDIT_DETAIL);
+    const rows = details.map((d, idx) => [
+      auditId + '-' + String(idx + 1).padStart(4, '0'),
+      auditId, d.criteriaId, d.score, d.remark || '', d.photoUrl || ''
+    ]);
+    if (rows.length > 0) {
+      detailSheet.getRange(detailSheet.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
+    }
   });
 
   return { success: true, auditId, totalScore, maxScore, percent, status, message: 'บันทึกสำเร็จ' };
@@ -604,6 +624,42 @@ function apiGetAuditDetail(params) {
   const cMap     = {};
   criteria.forEach(c => cMap[c.Criteria_ID] = c);
   return { success: true, header, details: details.map(d => ({ ...d, criteria: cMap[d.Criteria_ID] || {} })) };
+}
+
+// ลบ audit (header + details) — ใช้สำหรับ rollback เมื่อ submit ล้มเหลวกลางทาง
+function apiDeleteAudit(params, auth) {
+  const { auditId } = params;
+  if (!auditId) return { success: false, error: 'Missing auditId' };
+
+  const ss  = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const own = assertAuditOwner_(ss, auditId, auth);
+  if (!own.ok) return { success: false, error: own.error, code: own.code || 403 };
+
+  return withLock_(() => {
+    // ลบ detail rows ของ auditId
+    const dSheet = ss.getSheetByName(SHEETS.AUDIT_DETAIL);
+    if (dSheet) {
+      const dData = dSheet.getDataRange().getValues();
+      const dIdx  = dData[0].indexOf('Audit_ID');
+      if (dIdx >= 0) {
+        for (let i = dData.length - 1; i >= 1; i--) {
+          if (String(dData[i][dIdx]) === String(auditId)) dSheet.deleteRow(i + 1);
+        }
+      }
+    }
+    // ลบ header row
+    const hSheet = ss.getSheetByName(SHEETS.AUDIT_HEADER);
+    if (hSheet) {
+      const hData = hSheet.getDataRange().getValues();
+      const hIdx  = hData[0].indexOf('Audit_ID');
+      if (hIdx >= 0) {
+        for (let i = hData.length - 1; i >= 1; i--) {
+          if (String(hData[i][hIdx]) === String(auditId)) { hSheet.deleteRow(i + 1); break; }
+        }
+      }
+    }
+    return { success: true, deleted: auditId };
+  });
 }
 
 // ============================================================
@@ -848,6 +904,31 @@ function ensureUserAssignmentColumns_(sheet) {
 // ============================================================
 // UTILITIES
 // ============================================================
+// Serialize การเขียน Sheet เพื่อกัน race condition (หลายผู้ตรวจพร้อมกัน)
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000); // รอ lock สูงสุด 30 วินาที
+  try {
+    return fn();
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+// ตรวจสิทธิ์ว่า auditId เป็นของผู้ใช้ (หรือเป็น Admin/Manager) — กัน IDOR
+function assertAuditOwner_(ss, auditId, auth) {
+  if (!auth || !auth.valid) return { ok: false, error: 'Unauthorized', code: 401 };
+  const h = sheetToObjects(ss.getSheetByName(SHEETS.AUDIT_HEADER))
+              .find(r => String(r.Audit_ID) === String(auditId));
+  if (!h) return { ok: false, error: 'ไม่พบ Audit', code: 404 };
+  const role = String(auth.role || '').toLowerCase();
+  if (role === 'admin' || role === 'manager') return { ok: true };
+  if (String(h.Auditor_ID) !== String(auth.userId)) {
+    return { ok: false, error: 'คุณไม่มีสิทธิ์แก้ไข Audit นี้', code: 403 };
+  }
+  return { ok: true };
+}
+
 // Hash password ด้วย SHA-256 (เหมือนกับที่ใช้ใน Sheet ปัจจุบัน)
 function hashPassword(password) {
   return Utilities.base64Encode(

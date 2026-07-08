@@ -116,37 +116,6 @@
       </button>
     </form>
 
-    <!-- Quick Login (สำหรับ Dev/Test เท่านั้น — ลบออกก่อน Deploy Production) -->
-    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--gray-200)">
-      <p style="font-size:0.75rem;color:var(--gray-600);text-align:center;margin-bottom:10px"
-         data-i18n="login.quick_title">
-        🔧 Dev Mode — เข้าสู่ระบบด่วน
-      </p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-
-        <!-- Quick Login Admin — DEV ONLY: ลบออกก่อน Production -->
-        <button class="btn btn-sm" id="quickAdminBtn"
-          onclick="quickLogin('admin@company.com','admin1234',this)"
-          style="background:#1a73e8;color:#fff;border-radius:10px;padding:12px 8px;
-                 display:flex;flex-direction:column;align-items:center;gap:4px;border:none">
-          <span style="font-size:1.4rem">👑</span>
-          <span style="font-size:0.8rem;font-weight:700">Admin</span>
-          <span style="font-size:0.65rem;opacity:0.85">Dev Only</span>
-        </button>
-
-        <!-- Quick Login Auditor — DEV ONLY: ลบออกก่อน Production -->
-        <button class="btn btn-sm" id="quickAuditorBtn"
-          onclick="quickLogin('bon@company.com','pass1234',this)"
-          style="background:#34a853;color:#fff;border-radius:10px;padding:12px 8px;
-                 display:flex;flex-direction:column;align-items:center;gap:4px;border:none">
-          <span style="font-size:1.4rem">📋</span>
-          <span style="font-size:0.8rem;font-weight:700">Auditor</span>
-          <span style="font-size:0.65rem;opacity:0.85">Dev Only</span>
-        </button>
-
-      </div>
-    </div>
-
     <!-- Version -->
     <p style="text-align:center;font-size:0.7rem;color:var(--gray-600);margin-top:16px;margin-bottom:0">
       v1.0.0 | มาตรฐาน 5ส Draft 26.05.2026
@@ -154,37 +123,6 @@
   </div>
 </div>
 
-<script src="js/app.js?v=4"></script>
-<script>
-  // Quick Login — กดปุ่มเดียว Login ได้เลย ไม่ต้องพิมพ์รหัส
-  async function quickLogin(email, password, btn) {
-    btn.disabled = true;
-    btn.style.opacity = '0.7';
-
-    const errorEl = document.getElementById('loginError');
-    errorEl.textContent = '';
-
-    try {
-      UI.showLoading(I18n.t('msg.verifying'));
-      const res = await API.post('login', { email, password });
-      UI.hideLoading();
-
-      if (res.success) {
-        Session.save(res.token, res.user);
-        UI.toast(`${I18n.t('msg.welcome')} ${res.user.name} 👋`, 'success');
-        setTimeout(() => navigate('home.html'), 800);
-      } else {
-        errorEl.textContent = res.error || I18n.t('msg.login_failed');
-        btn.disabled = false;
-        btn.style.opacity = '1';
-      }
-    } catch(err) {
-      UI.hideLoading();
-      errorEl.textContent = I18n.t('msg.no_connection');
-      btn.disabled = false;
-      btn.style.opacity = '1';
-    }
-  }
-</script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>
