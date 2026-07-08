@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>มาตรฐาน 5ส | ระบบตรวจ 5ส</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Search bar */
+    .criteria-search {
+      position: sticky;
+      top: 56px;
+      z-index: 50;
+      background: #fff;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .criteria-search-inner {
+      position: relative;
+    }
+    .criteria-search-inner i {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--gray-500);
+      font-size: 0.9rem;
+    }
+    .criteria-search-inner input {
+      width: 100%;
+      border: 1.5px solid var(--gray-300);
+      border-radius: var(--radius-md);
+      padding: 9px 12px 9px 36px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: var(--dark);
+      background: #fff;
+    }
+    .criteria-search-inner input:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    /* Type filter chips */
+    .type-filter-bar {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 8px 16px;
+      background: var(--gray-100);
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .type-filter-bar::-webkit-scrollbar { display: none; }
+    .type-chip {
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 1.5px solid var(--gray-300);
+      background: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      color: var(--gray-700);
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .type-chip.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    /* Category accordion */
+    .category-block {
+      background: #fff;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .category-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .category-header:hover { background: var(--gray-100); }
+    .category-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      background: rgba(26,115,232,0.1);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .category-title {
+      flex: 1;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+    .category-count {
+      font-size: 0.72rem;
+      color: var(--gray-600);
+      background: var(--gray-100);
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .category-chevron {
+      color: var(--gray-500);
+      font-size: 0.85rem;
+      transition: transform 0.25s;
+    }
+    .category-block.open .category-chevron { transform: rotate(180deg); }
+
+    /* Criteria list */
+    .criteria-list {
+      display: none;
+      border-top: 1px solid var(--gray-200);
+    }
+    .category-block.open .criteria-list { display: block; }
+    .criteria-item-view {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--gray-100);
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .criteria-item-view:last-child { border-bottom: none; }
+    .criteria-num {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--primary);
+      background: rgba(26,115,232,0.08);
+      padding: 3px 7px;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .criteria-text { flex: 1; }
+    .criteria-question {
+      font-size: 0.84rem;
+      font-weight: 600;
+      margin-bottom: 3px;
+      line-height: 1.4;
+    }
+    .criteria-desc {
+      font-size: 0.76rem;
+      color: var(--gray-600);
+      line-height: 1.4;
+    }
+    .criteria-type-badge {
+      font-size: 0.62rem;
+      color: var(--gray-600);
+      background: var(--gray-100);
+      padding: 1px 6px;
+      border-radius: 20px;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    /* Stats bar */
+    .criteria-stats {
+      display: flex;
+      gap: 16px;
+      padding: 10px 16px;
+      background: #fff;
+      border-bottom: 1px solid var(--gray-200);
+      font-size: 0.78rem;
+      color: var(--gray-600);
+    }
+    .criteria-stats strong { color: var(--primary); }
+
+    /* Empty state */
+    .empty-search {
+      text-align: center;
+      padding: 40px 16px;
+      color: var(--gray-500);
+    }
+    .empty-search i { font-size: 2rem; margin-bottom: 8px; display: block; }
+  </style>
+</head>
+<body>
+
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="loading-spinner">
+    <div class="spinner"></div>
+    <span class="loading-msg">กำลังโหลด...</span>
+  </div>
+</div>
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- Top Nav -->
+<nav class="top-nav">
+  <button class="btn-icon" onclick="navigate('plant.html')"><i class="bi bi-arrow-left"></i></button>
+  <div class="brand" style="margin-left:8px">
+    <i class="bi bi-book me-1"></i>มาตรฐาน 5ส
+  </div>
+  <span style="background:rgba(255,255,255,0.2);color:#fff;font-size:0.68rem;
+               padding:3px 8px;border-radius:20px;font-weight:600;">อ่านอย่างเดียว</span>
+</nav>
+
+<!-- Search -->
+<div class="criteria-search">
+  <div class="criteria-search-inner">
+    <i class="bi bi-search"></i>
+    <input type="search" id="criteriaSearch" placeholder="ค้นหาข้อมูลมาตรฐาน..."
+           oninput="filterCriteria(this.value)">
+  </div>
+</div>
+
+<!-- Type Filter -->
+<div class="type-filter-bar" id="typeFilterBar">
+  <button class="type-chip active" onclick="setTypeFilter('All', this)">ทั้งหมด</button>
+  <button class="type-chip" onclick="setTypeFilter('Office', this)">💼 Office</button>
+  <button class="type-chip" onclick="setTypeFilter('Production', this)">🏭 Production</button>
+  <button class="type-chip" onclick="setTypeFilter('Warehouse', this)">📦 Warehouse</button>
+  <button class="type-chip" onclick="setTypeFilter('Maintenance', this)">🔧 Maintenance</button>
+  <button class="type-chip" onclick="setTypeFilter('Cafeteria', this)">🍽️ Cafeteria</button>
+  <button class="type-chip" onclick="setTypeFilter('Outdoor', this)">🌿 Outdoor</button>
+</div>
+
+<!-- Stats -->
+<div class="criteria-stats">
+  <span><strong id="statItems">-</strong> ข้อ</span>
+  <span><strong id="statCats">-</strong> หมวด</span>
+  <span id="filterLabel">ทุกประเภทพื้นที่</span>
+</div>
+
+<!-- Content -->
+<div class="page-content" style="padding-top:12px;padding-bottom:80px;">
+  <div id="criteriaContent">
+    <div class="skeleton" style="height:56px;border-radius:var(--radius-md);margin-bottom:8px"></div>
+    <div class="skeleton" style="height:56px;border-radius:var(--radius-md);margin-bottom:8px"></div>
+    <div class="skeleton" style="height:56px;border-radius:var(--radius-md);margin-bottom:8px"></div>
+  </div>
+</div>
+
+<!-- Bottom Nav -->
+<nav class="bottom-nav">
+  <button class="bottom-nav-item" onclick="navigate('home.html')"><i class="bi bi-house"></i><span>หน้าหลัก</span></button>
+  <button class="bottom-nav-item active" onclick="navigate('plant.html')"><i class="bi bi-clipboard-check"></i><span>ตรวจ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('history.html')"><i class="bi bi-clock-history"></i><span>ประวัติ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('dashboard.html')"><i class="bi bi-bar-chart"></i><span>Dashboard</span></button>
+</nav>
+
+<script src="js/app.js"></script>
+</body>
+</html>

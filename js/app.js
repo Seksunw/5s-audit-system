@@ -10,11 +10,682 @@
 // ============================================================
 const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycby2pJ2pv7OTnn2wKtWUJU3uC0rNRDQBc2prMQR0d3PtaoolwsDZEHVLYdtl9YSIu20Y/exec',
-  IMGBB_API_KEY: '8449d25d43f8b34c3b7b046ec9a5451f',  // ← ใส่ API Key จาก api.imgbb.com
+  IMGBB_API_KEY: '8449d25d43f8b34c3b7b046ec9a5451f',
   APP_NAME: 'ระบบตรวจ 5ส',
   VERSION: '1.0.0',
   SESSION_KEY: '5s_session',
-  CACHE_TTL: 5 * 60 * 1000,  // 5 นาที (ms)
+  LANG_KEY:    '5s_lang',
+  CACHE_TTL: 5 * 60 * 1000,
+};
+
+// ============================================================
+// TRANSLATIONS — TH / EN
+// ============================================================
+const TRANSLATIONS = {
+  th: {
+    // Common
+    'nav.home':        'หน้าหลัก',
+    'nav.audit':       'ตรวจ',
+    'nav.history':     'ประวัติ',
+    'nav.dashboard':   'Dashboard',
+    'nav.users':       'ผู้ใช้',
+    'btn.logout':      'ออกจากระบบ',
+    'btn.refresh':     'รีเฟรช',
+    'loading':         'กำลังโหลด...',
+    // Login
+    'login.app_sub':       'Factory 5S Audit System | Draft 2026',
+    'login.email_label':   'อีเมล',
+    'login.pass_label':    'รหัสผ่าน',
+    'login.pass_ph':       'กรอกรหัสผ่าน',
+    'login.btn':           'เข้าสู่ระบบ',
+    'login.quick_title':   '🔧 Dev Mode — เข้าสู่ระบบด่วน',
+    // Home
+    'home.greeting':       'สวัสดี 👋',
+    'home.total_audit':    'การตรวจทั้งหมด',
+    'home.avg_score':      'คะแนนเฉลี่ย',
+    'home.pass_rate':      'อัตราผ่าน',
+    'home.excellent':      'Excellent',
+    'home.next_schedule':  'กำหนดการตรวจถัดไป',
+    'home.round':          'รอบการตรวจ',
+    'home.date':           'วันที่',
+    'home.start_btn':      'เริ่มตรวจ 5ส',
+    'home.quick_menu':     'เมนูด่วน',
+    'home.menu_history':   'ประวัติ',
+    'home.menu_plant':     'เลือก Plant',
+    'home.score_title':    'เกณฑ์คะแนน',
+    'home.score_ex':       '90-100% — Excellent 🏆',
+    'home.score_good':     '75-89% — Good ✅',
+    'home.score_imp':      '0-74% — Need Improvement ⚠️',
+    'home.score_desc':     'คะแนนแต่ละข้อ:',
+    // Plant
+    'plant.page_title':    'เลือก Plant',
+    'plant.section':       'เลือกโรงงานที่ต้องการตรวจ',
+    'plant.desc':          'รองรับ 3 Plant ตามมาตรฐาน 5ส Draft 2026',
+    'plant.steps_title':   'ขั้นตอนการตรวจ',
+    'plant.step1':         'เลือก Plant — โรงงานที่ต้องการตรวจ',
+    'plant.step2':         'เลือกพื้นที่ (Area) ที่ต้องการตรวจ',
+    'plant.step3':         'ทำ Checklist และให้คะแนน',
+    'plant.step4':         'Submit และดูผล',
+    // Area
+    'area.section':        'เลือกพื้นที่ที่ต้องการตรวจ',
+    'area.desc':           'Checklist จะโหลดอัตโนมัติตามประเภทพื้นที่',
+    // Audit
+    'audit.progress':      'ความคืบหน้า',
+    'audit.score_0':       'ไม่ทำ',
+    'audit.score_1':       'บางส่วน',
+    'audit.score_2':       'ผ่าน',
+    'audit.remark_ph':     'หมายเหตุ (ไม่บังคับ)',
+    'audit.photo_btn':     'ถ่ายรูปประกอบ',
+    'audit.confirm_back':  'คุณต้องการออกจากหน้าตรวจ?\nข้อมูลที่กรอกไว้จะหายทั้งหมด',
+    'audit.confirm_title': 'ยืนยันการ Submit?',
+    'audit.confirm_msg':   'คุณต้องการบันทึกผลการตรวจนี้หรือไม่?',
+    // Summary
+    'summary.title':       'ผลการตรวจ',
+    'summary.score_label': 'คะแนนที่ได้',
+    'summary.audit_id':    'Audit ID',
+    'summary.btn_other':   'ตรวจพื้นที่อื่น',
+    'summary.btn_history': 'ดูประวัติการตรวจทั้งหมด',
+    'summary.btn_dash':    'ดู Dashboard',
+    'summary.criteria':    'เกณฑ์คะแนน',
+    // History
+    'history.title':       'ประวัติการตรวจ',
+    'history.all_plant':   '🏭 ทุก Plant',
+    'history.all_month':   '📅 ทุกเดือน',
+    'history.all_year':    '📆 ทุกปี',
+    'history.empty':       'ไม่พบประวัติการตรวจ',
+    // Dashboard
+    'dash.title':          'Dashboard',
+    'dash.overview':       'ภาพรวม',
+    'dash.total':          'การตรวจทั้งหมด',
+    'dash.avg':            'คะแนนเฉลี่ย',
+    'dash.pass':           'อัตราผ่าน',
+    'dash.dist':           'การกระจายผล',
+    'dash.best':           '🏆 สูงสุด',
+    'dash.worst':          '⚠️ ต้องปรับปรุง',
+    'dash.monthly':        'แนวโน้มรายเดือน',
+    'dash.plant_rank':     'Plant Ranking',
+    'dash.area_rank':      'Area Ranking (Top 10)',
+    'dash.looker':         'Looker Studio Dashboard',
+    'dash.looker_desc':    'ดูรายงานเชิงลึกแบบ Interactive ใน Looker Studio',
+    'dash.looker_btn':     'เปิด Looker Studio',
+    // Users
+    'users.title':         'จัดการผู้ใช้งาน',
+    'users.add_btn':       'เพิ่มผู้ใช้งานใหม่',
+    'users.all_role':      '👥 ทุก Role',
+    'users.all_status':    '🔵 ทุกสถานะ',
+    // Status
+    'status.excellent':    'ดีเยี่ยม (Excellent)',
+    'status.good':         'ผ่าน (Good)',
+    'status.need_improve': 'ต้องปรับปรุง (Need Improvement)',
+    'badge.excellent':     'Excellent',
+    'badge.good':          'Good',
+    'badge.need_improve':  'Need Improvement',
+    // Area types (TH) — แก้ไข: ย้ายกลับมาอยู่ใน th section ที่ถูกต้อง
+    'area.type.Warehouse':   'คลังสินค้า',
+    'area.type.Production':  'ไลน์ผลิต',
+    'area.type.Office':      'ออฟฟิศ',
+    'area.type.Maintenance': 'ช่าง/ยูทิลิตี้',
+    'area.type.Cafeteria':   'โรงอาหาร',
+    'area.type.Outdoor':     'รอบอาคาร',
+    'login.btn.loading':   'กำลังเข้าสู่ระบบ...',
+    'login.btn.reset':     'เข้าสู่ระบบ',
+    'msg.verifying':       'กำลังตรวจสอบ...',
+    'msg.login_failed':    'เข้าสู่ระบบไม่สำเร็จ',
+    'msg.no_connection':   'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่',
+    'msg.welcome':         'ยินดีต้อนรับ',
+    'msg.loading_home':       'กำลังโหลดข้อมูล...',
+    'msg.loading_plant':      'โหลดข้อมูล Plant...',
+    'msg.loading_area':       'โหลดพื้นที่ตรวจ...',
+    'msg.loading_checklist':  'โหลด Checklist...',
+    'msg.loading_history':    'โหลดประวัติการตรวจ...',
+    'msg.loading_dashboard':  'โหลด Dashboard...',
+    'msg.loading_users':      'โหลดรายชื่อผู้ใช้...',
+    'msg.loading_saving':     'บันทึกข้อมูล...',
+    'msg.loading_step1':      'กำลังสร้างรายการตรวจ... (1/3)',
+    'msg.loading_step3':      'กำลังคำนวณคะแนน... (3/3)',
+    'msg.load_failed':        'ไม่สามารถโหลดข้อมูลได้',
+    'msg.load_error':         'โหลดข้อมูลไม่สำเร็จ',
+    'msg.checklist_failed':   'โหลด Checklist ไม่สำเร็จ',
+    'msg.dash_failed':        'โหลด Dashboard ไม่สำเร็จ',
+    'msg.history_failed':     'โหลดไม่สำเร็จ',
+    'msg.users_failed':       'โหลดไม่สำเร็จ',
+    'msg.header_failed':      'สร้าง Header ไม่สำเร็จ',
+    'msg.finalize_failed':    'Finalize ไม่สำเร็จ',
+    'msg.save_failed':        'บันทึกไม่สำเร็จ',
+    'msg.error_prefix':       'เกิดข้อผิดพลาด: ',
+    'msg.no_criteria':        'ไม่มีรายการ Checklist กรุณาติดต่อผู้ดูแลระบบ เพื่อเพิ่มข้อมูลใน Criteria_Master',
+    'msg.uploading':          'กำลัง Upload รูปภาพ...',
+    'msg.saving_chunk':       'กำลังบันทึกข้อมูล...',
+    'msg.detail_failed':      'บันทึก Details ล้มเหลว chunk ',
+    'audit.no_criteria_btn':  'ไม่มีรายการ Checklist',
+    'audit.answered_prefix':  'ตอบแล้ว',
+    'audit.answered_suffix':  'ข้อ',
+    'audit.submit_btn':       '✅ Submit ผลการตรวจ',
+    'audit.unanswered_prefix':'ยังไม่ได้ให้คะแนน',
+    'audit.unanswered_help':  'ยังมีข้อที่ยังไม่ได้ตรวจ แตะรหัสข้อเพื่อข้ามไปทันที',
+    'audit.complete_hint':    'ตรวจครบแล้ว พร้อม Submit',
+    'modal.edit_user':        'แก้ไขผู้ใช้งาน',
+    'modal.add_user':         'เพิ่มผู้ใช้งานใหม่',
+    'msg.save_success_edit':  'แก้ไขสำเร็จ ✅',
+    'msg.save_success_add':   'เพิ่มผู้ใช้สำเร็จ ✅',
+    'msg.saving_btn':         'กำลังบันทึก...',
+    'val.name':               'กรุณากรอกชื่อ',
+    'val.email':              'กรุณากรอก Email',
+    'val.role':               'กรุณาเลือก Role',
+    'val.password':           'กรุณากรอกรหัสผ่าน',
+    'msg.admin_only':         'เฉพาะ Admin เท่านั้น',
+    'msg.your_role':          'Role ของคุณ: ',
+    'msg.go_home':            'กลับหน้าหลัก',
+    'msg.no_users':           'ไม่พบผู้ใช้งาน',
+    'msg.no_history':         'ไม่พบประวัติการตรวจ',
+    'msg.no_data':            'ยังไม่มีข้อมูล',
+    'form.full_name':         'ชื่อ-นามสกุล',
+    'form.password_label':    'รหัสผ่าน',
+    'form.dept':              'แผนก',
+    'form.emp_id':            'รหัสพนักงาน',
+    'form.role_label':        'บทบาท (Role)',
+    'form.status':            'สถานะ',
+    'form.select_role':       '-- เลือก Role --',
+    'form.pass_hint':         'ปล่อยว่างถ้าไม่ต้องการเปลี่ยน',
+    'form.cancel':            'ยกเลิก',
+    'form.save':              'บันทึก',
+    'summary.ex_desc':        'ทำตามข้อกำหนดครบถ้วน',
+    'summary.good_desc':      'ทำได้ดีแต่ยังมีที่ปรับปรุง',
+    'summary.imp_desc':       'ต้องปรับปรุงอย่างเร่งด่วน',
+    'summary.processing':     'ประมวลผล...',
+    'month.1':'มกราคม','month.2':'กุมภาพันธ์','month.3':'มีนาคม',
+    'month.4':'เมษายน','month.5':'พฤษภาคม','month.6':'มิถุนายน',
+    'month.7':'กรกฎาคม','month.8':'สิงหาคม','month.9':'กันยายน',
+    'month.10':'ตุลาคม','month.11':'พฤศจิกายน','month.12':'ธันวาคม',
+    'users.stat_all':         'ทั้งหมด',
+    'audit.progress_label':   'ตอบแล้ว',
+    // Tooltip + new UI keys (TH) — ต้องอยู่ใน th: section
+    'img.alt_photo':          'รูปประกอบ',
+    'area.default_title':     'เลือกพื้นที่',
+    'form.name_ph':           'คุณสมชาย ใจดี',
+    'btn.tooltip_logout':     'ออกจากระบบ',
+    'btn.tooltip_refresh':    'รีเฟรช',
+    'btn.tooltip_add_user':   'เพิ่มผู้ใช้',
+    'home.score_desc_html':   'คะแนนแต่ละข้อ: <strong>2</strong>=ผ่าน &nbsp; <strong>1</strong>=บางส่วน &nbsp; <strong>0</strong>=ไม่ผ่าน',
+    'role.admin_desc':        '👑 Admin — จัดการทุกอย่าง',
+    'role.manager_desc':      '🏢 Manager — ดู Dashboard + ประวัติ',
+    'role.area_mgr_desc':     '🗂️ Area Manager — จัดการพื้นที่ที่รับผิดชอบ',
+    'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส',
+    'role.viewer_desc':       '👁️ Viewer — ดูอย่างเดียว',
+    'audit.nav_answered':     'ตอบแล้ว',
+  },
+  en: {
+    // Common
+    'nav.home':        'Home',
+    'nav.audit':       'Audit',
+    'nav.history':     'History',
+    'nav.dashboard':   'Dashboard',
+    'nav.users':       'Users',
+    'btn.logout':      'Logout',
+    'btn.refresh':     'Refresh',
+    'loading':         'Loading...',
+    // Login
+    'login.app_sub':       'Factory 5S Audit System | Draft 2026',
+    'login.email_label':   'Email',
+    'login.pass_label':    'Password',
+    'login.pass_ph':       'Enter password',
+    'login.btn':           'Sign In',
+    'login.quick_title':   '🔧 Dev Mode — Quick Login',
+    // Home
+    'home.greeting':       'Hello 👋',
+    'home.total_audit':    'Total Audits',
+    'home.avg_score':      'Avg Score',
+    'home.pass_rate':      'Pass Rate',
+    'home.excellent':      'Excellent',
+    'home.next_schedule':  'Next Audit Schedule',
+    'home.round':          'Round',
+    'home.date':           'Date',
+    'home.start_btn':      'Start 5S Audit',
+    'home.quick_menu':     'Quick Menu',
+    'home.menu_history':   'History',
+    'home.menu_plant':     'Select Plant',
+    'home.score_title':    'Score Criteria',
+    'home.score_ex':       '90-100% — Excellent 🏆',
+    'home.score_good':     '75-89% — Good ✅',
+    'home.score_imp':      '0-74% — Need Improvement ⚠️',
+    'home.score_desc':     'Score per item:',
+    // Plant
+    'plant.page_title':    'Select Plant',
+    'plant.section':       'Select factory to audit',
+    'plant.desc':          'Supporting 3 Plants — 5S Standard Draft 2026',
+    'plant.steps_title':   'Audit Steps',
+    'plant.step1':         'Select Plant — factory to audit',
+    'plant.step2':         'Select Area to audit',
+    'plant.step3':         'Complete Checklist and score',
+    'plant.step4':         'Submit and view results',
+    // Area
+    'area.section':        'Select area to audit',
+    'area.desc':           'Checklist loads automatically by area type',
+    // Audit
+    'audit.progress':      'Progress',
+    'audit.score_0':       'None',
+    'audit.score_1':       'Partial',
+    'audit.score_2':       'Pass',
+    'audit.remark_ph':     'Remark (optional)',
+    'audit.photo_btn':     'Take photo',
+    'audit.confirm_back':  'Leave audit page?\nAll entered data will be lost.',
+    'audit.confirm_title': 'Confirm Submit?',
+    'audit.confirm_msg':   'Do you want to save this audit result?',
+    // Summary
+    'summary.title':       'Audit Result',
+    'summary.score_label': 'Score',
+    'summary.audit_id':    'Audit ID',
+    'summary.btn_other':   'Audit Another Area',
+    'summary.btn_history': 'View All History',
+    'summary.btn_dash':    'View Dashboard',
+    'summary.criteria':    'Score Criteria',
+    // History
+    'history.title':       'Audit History',
+    'history.all_plant':   '🏭 All Plants',
+    'history.all_month':   '📅 All Months',
+    'history.all_year':    '📆 All Years',
+    'history.empty':       'No audit history found',
+    // Dashboard
+    'dash.title':          'Dashboard',
+    'dash.overview':       'Overview',
+    'dash.total':          'Total Audits',
+    'dash.avg':            'Avg Score',
+    'dash.pass':           'Pass Rate',
+    'dash.dist':           'Result Distribution',
+    'dash.best':           '🏆 Best Area',
+    'dash.worst':          '⚠️ Needs Improvement',
+    'dash.monthly':        'Monthly Trend',
+    'dash.plant_rank':     'Plant Ranking',
+    'dash.area_rank':      'Area Ranking (Top 10)',
+    'dash.looker':         'Looker Studio Dashboard',
+    'dash.looker_desc':    'View interactive reports in Looker Studio',
+    'dash.looker_btn':     'Open Looker Studio',
+    // Users
+    'users.title':         'User Management',
+    'users.add_btn':       'Add New User',
+    'users.all_role':      '👥 All Roles',
+    'users.all_status':    '🔵 All Status',
+    // Status
+    'status.excellent':    'Excellent',
+    'status.good':         'Good',
+    'status.need_improve': 'Need Improvement',
+    'badge.excellent':     'Excellent',
+    'badge.good':          'Good',
+    'badge.need_improve':  'Need Improvement',
+    // Area types
+    'area.type.Warehouse':   'คลังสินค้า',
+    'area.type.Production':  'ไลน์ผลิต',
+    'area.type.Office':      'ออฟฟิศ',
+    'area.type.Maintenance': 'ช่าง/ยูทิลิตี้',
+    'area.type.Cafeteria':   'โรงอาหาร',
+    'area.type.Outdoor':     'รอบอาคาร',
+    // Login states
+    'login.btn.loading':   'กำลังเข้าสู่ระบบ...',
+    'login.btn.reset':     'เข้าสู่ระบบ',
+    'msg.verifying':       'กำลังตรวจสอบ...',
+    'msg.login_failed':    'เข้าสู่ระบบไม่สำเร็จ',
+    'msg.no_connection':   'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่',
+    'msg.welcome':         'ยินดีต้อนรับ',
+    // Loading messages
+    'msg.loading_home':       'กำลังโหลดข้อมูล...',
+    'msg.loading_plant':      'โหลดข้อมูล Plant...',
+    'msg.loading_area':       'โหลดพื้นที่ตรวจ...',
+    'msg.loading_checklist':  'โหลด Checklist...',
+    'msg.loading_history':    'โหลดประวัติการตรวจ...',
+    'msg.loading_dashboard':  'โหลด Dashboard...',
+    'msg.loading_users':      'โหลดรายชื่อผู้ใช้...',
+    'msg.loading_saving':     'บันทึกข้อมูล...',
+    'msg.loading_step1':      'กำลังสร้างรายการตรวจ... (1/3)',
+    'msg.loading_step3':      'กำลังคำนวณคะแนน... (3/3)',
+    // Error messages
+    'msg.load_failed':        'ไม่สามารถโหลดข้อมูลได้',
+    'msg.load_error':         'โหลดข้อมูลไม่สำเร็จ',
+    'msg.checklist_failed':   'โหลด Checklist ไม่สำเร็จ',
+    'msg.dash_failed':        'โหลด Dashboard ไม่สำเร็จ',
+    'msg.history_failed':     'โหลดไม่สำเร็จ',
+    'msg.users_failed':       'โหลดไม่สำเร็จ',
+    'msg.header_failed':      'สร้าง Header ไม่สำเร็จ',
+    'msg.finalize_failed':    'Finalize ไม่สำเร็จ',
+    'msg.save_failed':        'บันทึกไม่สำเร็จ',
+    'msg.error_prefix':       'เกิดข้อผิดพลาด: ',
+    // Audit submit
+    'msg.no_criteria':        'ไม่มีรายการ Checklist กรุณาติดต่อผู้ดูแลระบบ เพื่อเพิ่มข้อมูลใน Criteria_Master',
+    'msg.uploading':          'กำลัง Upload รูปภาพ...',
+    'msg.saving_chunk':       'กำลังบันทึกข้อมูล...',
+    'msg.detail_failed':      'บันทึก Details ล้มเหลว chunk ',
+    // Audit UI
+    'audit.no_criteria_btn':  'ไม่มีรายการ Checklist',
+    'audit.answered_prefix':  'ตอบแล้ว',
+    'audit.answered_suffix':  'ข้อ',
+    'audit.submit_btn':       '✅ Submit ผลการตรวจ',
+    'audit.unanswered_prefix':'ยังไม่ได้ให้คะแนน',
+    'audit.unanswered_help':  'ยังมีข้อที่ยังไม่ได้ตรวจ แตะรหัสข้อเพื่อข้ามไปทันที',
+    'audit.complete_hint':    'ตรวจครบแล้ว พร้อม Submit',
+    // User modal
+    'modal.edit_user':        'แก้ไขผู้ใช้งาน',
+    'modal.add_user':         'เพิ่มผู้ใช้งานใหม่',
+    'msg.save_success_edit':  'แก้ไขสำเร็จ ✅',
+    'msg.save_success_add':   'เพิ่มผู้ใช้สำเร็จ ✅',
+    'msg.saving_btn':         'กำลังบันทึก...',
+    // Validation
+    'val.name':               'กรุณากรอกชื่อ',
+    'val.email':              'กรุณากรอก Email',
+    'val.role':               'กรุณาเลือก Role',
+    'val.password':           'กรุณากรอกรหัสผ่าน',
+    // User list
+    'msg.admin_only':         'เฉพาะ Admin เท่านั้น',
+    'msg.your_role':          'Role ของคุณ: ',
+    'msg.go_home':            'กลับหน้าหลัก',
+    'msg.no_users':           'ไม่พบผู้ใช้งาน',
+    'msg.no_history':         'ไม่พบประวัติการตรวจ',
+    'msg.no_data':            'ยังไม่มีข้อมูล',
+    // Form labels (users modal)
+    'form.full_name':         'ชื่อ-นามสกุล',
+    'form.password_label':    'รหัสผ่าน',
+    'form.dept':              'แผนก',
+    'form.emp_id':            'รหัสพนักงาน',
+    'form.role_label':        'บทบาท (Role)',
+    'form.status':            'สถานะ',
+    'form.select_role':       '-- เลือก Role --',
+    'form.pass_hint':         'ปล่อยว่างถ้าไม่ต้องการเปลี่ยน',
+    'form.cancel':            'ยกเลิก',
+    'form.save':              'บันทึก',
+    // Summary criteria
+    'summary.ex_desc':        'ทำตามข้อกำหนดครบถ้วน',
+    'summary.good_desc':      'ทำได้ดีแต่ยังมีที่ปรับปรุง',
+    'summary.imp_desc':       'ต้องปรับปรุงอย่างเร่งด่วน',
+    'summary.processing':     'ประมวลผล...',
+    // Months
+    'month.1':'มกราคม','month.2':'กุมภาพันธ์','month.3':'มีนาคม',
+    'month.4':'เมษายน','month.5':'พฤษภาคม','month.6':'มิถุนายน',
+    'month.7':'กรกฎาคม','month.8':'สิงหาคม','month.9':'กันยายน',
+    'month.10':'ตุลาคม','month.11':'พฤศจิกายน','month.12':'ธันวาคม',
+    // Users stats
+    'users.stat_all':         'ทั้งหมด',
+    'audit.progress_label':   'ตอบแล้ว',
+    // New keys
+    'img.alt_photo':          'รูปประกอบ',
+    'area.default_title':     'เลือกพื้นที่',
+    'form.name_ph':           'คุณสมชาย ใจดี',
+    'btn.tooltip_logout':     'ออกจากระบบ',
+    'btn.tooltip_refresh':    'รีเฟรช',
+    'btn.tooltip_add_user':   'เพิ่มผู้ใช้',
+    'home.score_desc_html':   'คะแนนแต่ละข้อ: <strong>2</strong>=ผ่าน &nbsp; <strong>1</strong>=บางส่วน &nbsp; <strong>0</strong>=ไม่ผ่าน',
+    'role.admin_desc':        '👑 Admin — จัดการทุกอย่าง',
+    'role.manager_desc':      '🏢 Manager — ดู Dashboard + ประวัติ',
+    'role.area_mgr_desc':     '🗂️ Area Manager — จัดการพื้นที่ที่รับผิดชอบ',
+    'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส',
+    'role.viewer_desc':       '👁️ Viewer — ดูอย่างเดียว',
+    'audit.nav_answered':     'ตอบแล้ว',
+  },
+  en: {
+    // Common
+    'nav.home':        'Home',
+    'nav.audit':       'Audit',
+    'nav.history':     'History',
+    'nav.dashboard':   'Dashboard',
+    'nav.users':       'Users',
+    'btn.logout':      'Logout',
+    'btn.refresh':     'Refresh',
+    'loading':         'Loading...',
+    // Login
+    'login.app_sub':       'Factory 5S Audit System | Draft 2026',
+    'login.email_label':   'Email',
+    'login.pass_label':    'Password',
+    'login.pass_ph':       'Enter password',
+    'login.btn':           'Sign In',
+    'login.quick_title':   '🔧 Dev Mode — Quick Login',
+    // Home
+    'home.greeting':       'Hello 👋',
+    'home.total_audit':    'Total Audits',
+    'home.avg_score':      'Avg Score',
+    'home.pass_rate':      'Pass Rate',
+    'home.excellent':      'Excellent',
+    'home.next_schedule':  'Next Audit Schedule',
+    'home.round':          'Round',
+    'home.date':           'Date',
+    'home.start_btn':      'Start 5S Audit',
+    'home.quick_menu':     'Quick Menu',
+    'home.menu_history':   'History',
+    'home.menu_plant':     'Select Plant',
+    'home.score_title':    'Score Criteria',
+    'home.score_ex':       '90-100% — Excellent 🏆',
+    'home.score_good':     '75-89% — Good ✅',
+    'home.score_imp':      '0-74% — Need Improvement ⚠️',
+    'home.score_desc':     'Score per item:',
+    // Plant
+    'plant.page_title':    'Select Plant',
+    'plant.section':       'Select factory to audit',
+    'plant.desc':          'Supporting 3 Plants — 5S Standard Draft 2026',
+    'plant.steps_title':   'Audit Steps',
+    'plant.step1':         'Select Plant — factory to audit',
+    'plant.step2':         'Select Area to audit',
+    'plant.step3':         'Complete Checklist and score',
+    'plant.step4':         'Submit and view results',
+    // Area
+    'area.section':        'Select area to audit',
+    'area.desc':           'Checklist loads automatically by area type',
+    // Audit
+    'audit.progress':      'Progress',
+    'audit.score_0':       'None',
+    'audit.score_1':       'Partial',
+    'audit.score_2':       'Pass',
+    'audit.remark_ph':     'Remark (optional)',
+    'audit.photo_btn':     'Take photo',
+    'audit.confirm_back':  'Leave audit page?\nAll entered data will be lost.',
+    'audit.confirm_title': 'Confirm Submit?',
+    'audit.confirm_msg':   'Do you want to save this audit result?',
+    // Summary
+    'summary.title':       'Audit Result',
+    'summary.score_label': 'Score',
+    'summary.audit_id':    'Audit ID',
+    'summary.btn_other':   'Audit Another Area',
+    'summary.btn_history': 'View All History',
+    'summary.btn_dash':    'View Dashboard',
+    'summary.criteria':    'Score Criteria',
+    // History
+    'history.title':       'Audit History',
+    'history.all_plant':   '🏭 All Plants',
+    'history.all_month':   '📅 All Months',
+    'history.all_year':    '📆 All Years',
+    'history.empty':       'No audit history found',
+    // Dashboard
+    'dash.title':          'Dashboard',
+    'dash.overview':       'Overview',
+    'dash.total':          'Total Audits',
+    'dash.avg':            'Avg Score',
+    'dash.pass':           'Pass Rate',
+    'dash.dist':           'Result Distribution',
+    'dash.best':           '🏆 Best Area',
+    'dash.worst':          '⚠️ Needs Improvement',
+    'dash.monthly':        'Monthly Trend',
+    'dash.plant_rank':     'Plant Ranking',
+    'dash.area_rank':      'Area Ranking (Top 10)',
+    'dash.looker':         'Looker Studio Dashboard',
+    'dash.looker_desc':    'View interactive reports in Looker Studio',
+    'dash.looker_btn':     'Open Looker Studio',
+    // Users
+    'users.title':         'User Management',
+    'users.add_btn':       'Add New User',
+    'users.all_role':      '👥 All Roles',
+    'users.all_status':    '🔵 All Status',
+    // Status
+    'status.excellent':    'Excellent',
+    'status.good':         'Good',
+    'status.need_improve': 'Need Improvement',
+    'badge.excellent':     'Excellent',
+    'badge.good':          'Good',
+    'badge.need_improve':  'Need Improvement',
+    // Area types
+    'area.type.Warehouse':   'Warehouse',
+    'area.type.Production':  'Production Line',
+    'area.type.Office':      'Office',
+    'area.type.Maintenance': 'Maintenance',
+    'area.type.Cafeteria':   'Cafeteria',
+    'area.type.Outdoor':     'Outdoor',
+    // Login states
+    'login.btn.loading':   'Signing in...',
+    'login.btn.reset':     'Sign In',
+    'msg.verifying':       'Verifying...',
+    'msg.login_failed':    'Login failed',
+    'msg.no_connection':   'Cannot connect to server. Please try again.',
+    'msg.welcome':         'Welcome',
+    // Loading messages
+    'msg.loading_home':       'Loading...',
+    'msg.loading_plant':      'Loading plants...',
+    'msg.loading_area':       'Loading areas...',
+    'msg.loading_checklist':  'Loading checklist...',
+    'msg.loading_history':    'Loading audit history...',
+    'msg.loading_dashboard':  'Loading dashboard...',
+    'msg.loading_users':      'Loading users...',
+    'msg.loading_saving':     'Saving...',
+    'msg.loading_step1':      'Creating audit record... (1/3)',
+    'msg.loading_step3':      'Calculating score... (3/3)',
+    // Error messages
+    'msg.load_failed':        'Failed to load data',
+    'msg.load_error':         'Load failed',
+    'msg.checklist_failed':   'Failed to load checklist',
+    'msg.dash_failed':        'Failed to load dashboard',
+    'msg.history_failed':     'Load failed',
+    'msg.users_failed':       'Load failed',
+    'msg.header_failed':      'Failed to create audit header',
+    'msg.finalize_failed':    'Finalize failed',
+    'msg.save_failed':        'Save failed',
+    'msg.error_prefix':       'Error: ',
+    // Audit submit
+    'msg.no_criteria':        'No checklist items found. Please contact administrator.',
+    'msg.uploading':          'Uploading photos...',
+    'msg.saving_chunk':       'Saving data...',
+    'msg.detail_failed':      'Failed to save details chunk ',
+    // Audit UI
+    'audit.no_criteria_btn':  'No Checklist',
+    'audit.answered_prefix':  'Answered',
+    'audit.answered_suffix':  'items',
+    'audit.submit_btn':       '✅ Submit Audit',
+    'audit.unanswered_prefix':'Unanswered',
+    'audit.unanswered_help':  'Some items are still missing. Tap an item code to jump there.',
+    'audit.complete_hint':    'All items answered. Ready to submit.',
+    // User modal
+    'modal.edit_user':        'Edit User',
+    'modal.add_user':         'Add New User',
+    'msg.save_success_edit':  'Updated ✅',
+    'msg.save_success_add':   'User added ✅',
+    'msg.saving_btn':         'Saving...',
+    // Validation
+    'val.name':               'Please enter name',
+    'val.email':              'Please enter Email',
+    'val.role':               'Please select Role',
+    'val.password':           'Please enter password',
+    // User list
+    'msg.admin_only':         'Admin only',
+    'msg.your_role':          'Your role: ',
+    'msg.go_home':            'Back to Home',
+    'msg.no_users':           'No users found',
+    'msg.no_history':         'No audit history found',
+    'msg.no_data':            'No data yet',
+    // Form labels
+    'form.full_name':         'Full Name',
+    'form.password_label':    'Password',
+    'form.dept':              'Department',
+    'form.emp_id':            'Employee ID',
+    'form.role_label':        'Role',
+    'form.status':            'Status',
+    'form.select_role':       '-- Select Role --',
+    'form.pass_hint':         'Leave blank to keep current',
+    'form.cancel':            'Cancel',
+    'form.save':              'Save',
+    // Summary criteria
+    'summary.ex_desc':        'Full compliance with all requirements',
+    'summary.good_desc':      'Good but room for improvement',
+    'summary.imp_desc':       'Requires urgent improvement',
+    'summary.processing':     'Processing...',
+    // Months
+    'month.1':'January','month.2':'February','month.3':'March',
+    'month.4':'April','month.5':'May','month.6':'June',
+    'month.7':'July','month.8':'August','month.9':'September',
+    'month.10':'October','month.11':'November','month.12':'December',
+    // Users stats
+    'users.stat_all':         'All',
+    'audit.progress_label':   'Answered',
+    // New keys EN
+    'img.alt_photo':          'Photo',
+    'area.default_title':     'Select Area',
+    'form.name_ph':           'e.g. John Smith',
+    'btn.tooltip_logout':     'Logout',
+    'btn.tooltip_refresh':    'Refresh',
+    'btn.tooltip_add_user':   'Add User',
+    'home.score_desc_html':   'Score per item: <strong>2</strong>=Pass &nbsp; <strong>1</strong>=Partial &nbsp; <strong>0</strong>=None',
+    'role.admin_desc':        '👑 Admin — Full access',
+    'role.manager_desc':      '🏢 Manager — Dashboard + History',
+    'role.area_mgr_desc':     '🗂️ Area Manager — Manage assigned areas',
+    'role.auditor_desc':      '📋 Auditor — 5S Audit',
+    'role.viewer_desc':       '👁️ Viewer — Read only',
+    'audit.nav_answered':     'Answered',
+  }
+};
+
+// ============================================================
+// I18n — จัดการภาษา
+// ============================================================
+const I18n = {
+  /** คืนค่าภาษาปัจจุบัน */
+  getLang() {
+    return localStorage.getItem(CONFIG.LANG_KEY) || 'th';
+  },
+
+  /** บันทึกภาษาและ apply ทันที */
+  setLang(lang) {
+    localStorage.setItem(CONFIG.LANG_KEY, lang);
+    this.apply();
+  },
+
+  /** แปลง key → ข้อความ */
+  t(key) {
+    const lang = this.getLang();
+    return (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) ||
+           (TRANSLATIONS['th'][key]) || key;
+  },
+
+  /** Apply ทุก element ที่มี data-i18n */
+  apply() {
+    const lang = this.getLang();
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.dataset.i18n;
+      const val = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || key;
+      // ถ้ามี child icon ให้เก็บไว้ แทนแค่ text node สุดท้าย
+      const icon = el.querySelector('i.bi, i.ti');
+      if (icon) {
+        // หา text node ที่ไม่ใช่ icon แล้วแทน
+        el.childNodes.forEach(node => {
+          if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+            node.textContent = ' ' + val;
+          }
+        });
+      } else {
+        el.textContent = val;
+      }
+    });
+    // placeholder
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+      const key = el.dataset.i18nPh;
+      el.placeholder = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || key;
+    });
+    // title attribute (tooltip)
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const key = el.dataset.i18nTitle;
+      el.title = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || key;
+    });
+    // innerHTML (สำหรับข้อความที่มี HTML tags เช่น <strong>)
+    document.querySelectorAll('[data-i18n-html]').forEach(el => {
+      const key = el.dataset.i18nHtml;
+      const val = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || key;
+      el.innerHTML = val;
+    });
+    // lang pills — sync active state
+    document.querySelectorAll('.lang-pill').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.lang === lang);
+    });
+  }
 };
 
 // ============================================================
@@ -160,7 +831,8 @@ function getParam(name) {
 // ============================================================
 const UI = {
   /** แสดง Loading overlay */
-  showLoading(msg = 'กำลังโหลด...') {
+  showLoading(msg = null) {
+    msg = msg || I18n.t('loading');
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) {
       overlay.querySelector('.loading-msg').textContent = msg;
@@ -188,7 +860,13 @@ const UI = {
     const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.innerHTML = `<span>${icons[type] || ''}</span> ${msg}`;
+    // ใช้ textContent เพื่อป้องกัน XSS injection
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = icons[type] || '';
+    const msgSpan = document.createElement('span');
+    msgSpan.textContent = ' ' + msg;
+    toast.appendChild(iconSpan);
+    toast.appendChild(msgSpan);
     container.appendChild(toast);
 
     requestAnimationFrame(() => {
@@ -216,10 +894,14 @@ const UI = {
     return `<span class="badge badge-need-improve">Need Improvement ${percent}%</span>`;
   },
 
-  /** ฟอร์แมตวันที่เป็นภาษาไทย */
+  /** ฟอร์แมตวันที่ตามภาษาปัจจุบัน */
   formatDate(dateStr) {
     if (!dateStr) return '-';
     const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '-';
+    if (I18n.getLang() === 'en') {
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
     const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.',
                       'ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
     return `${d.getDate()} ${thMonths[d.getMonth()]} ${d.getFullYear() + 543}`;
@@ -233,12 +915,12 @@ const UI = {
     return 'need-improve';
   },
 
-  /** แสดงชื่อสถานะภาษาไทย */
+  /** แสดงชื่อสถานะตามภาษาปัจจุบัน */
   statusTH(percent) {
     percent = parseFloat(percent) || 0;
-    if (percent >= 90) return 'ดีเยี่ยม (Excellent)';
-    if (percent >= 75) return 'ผ่าน (Good)';
-    return 'ต้องปรับปรุง (Need Improvement)';
+    if (percent >= 90) return I18n.t('status.excellent');
+    if (percent >= 75) return I18n.t('status.good');
+    return I18n.t('status.need_improve');
   }
 };
 
@@ -260,14 +942,19 @@ async function initLogin() {
 
   if (!form) return;
 
+  // Helper: อัปเดต text ใน button โดยไม่ทำลาย icon
+  const setLoginBtnText = (btn, text, iconClass = 'bi-box-arrow-in-right') => {
+    btn.innerHTML = `<i class="bi ${iconClass}"></i> <span>${text}</span>`;
+  };
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     errorEl.textContent = '';
     submitBtn.disabled  = true;
-    submitBtn.textContent = 'กำลังเข้าสู่ระบบ...';
+    setLoginBtnText(submitBtn, I18n.t('login.btn.loading'), 'bi-hourglass-split');
 
     try {
-      UI.showLoading('กำลังตรวจสอบ...');
+      UI.showLoading(I18n.t('msg.verifying'));
       const res = await API.post('login', {
         email:    emailEl.value.trim(),
         password: passEl.value
@@ -276,18 +963,18 @@ async function initLogin() {
 
       if (res.success) {
         Session.save(res.token, res.user);
-        UI.toast(`ยินดีต้อนรับ ${res.user.name} 👋`, 'success');
+        UI.toast(`${I18n.t('msg.welcome')} ${res.user.name} 👋`, 'success');
         setTimeout(() => navigate('home.html'), 800);
       } else {
-        errorEl.textContent = res.error || 'เข้าสู่ระบบไม่สำเร็จ';
+        errorEl.textContent = res.error || I18n.t('msg.login_failed');
         submitBtn.disabled  = false;
-        submitBtn.textContent = 'เข้าสู่ระบบ';
+        setLoginBtnText(submitBtn, I18n.t('login.btn'));
       }
     } catch(err) {
       UI.hideLoading();
-      errorEl.textContent = 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่';
+      errorEl.textContent = I18n.t('msg.no_connection');
       submitBtn.disabled  = false;
-      submitBtn.textContent = 'เข้าสู่ระบบ';
+      setLoginBtnText(submitBtn, I18n.t('login.btn'));
     }
   });
 }
@@ -299,8 +986,16 @@ async function initHome() {
   if (!Session.requireLogin()) return;
   updateUserUI();
 
+  // แสดง/ซ่อน menu ตาม role
+  const auth = Session.load();
+  const isAdmin = auth && auth.role?.toLowerCase() === 'admin';
+  const menuSched = document.getElementById('menuSchedule');
+  const menuUsers = document.getElementById('menuUsers');
+  if (menuSched) menuSched.style.display = isAdmin ? 'block' : 'none';
+  if (menuUsers) menuUsers.style.display = isAdmin ? 'none' : 'block';
+
   try {
-    UI.showLoading();
+    UI.showLoading(I18n.t('msg.loading_home'));
     const [dashRes, schedRes] = await Promise.all([
       API.get('getDashboard', {}),
       API.get('getSchedule', {})
@@ -315,18 +1010,69 @@ async function initHome() {
       setEl('excellentCount', d.excellent || 0);
     }
 
-    // แสดง Next Schedule
+    // แสดง Assigned Tasks สำหรับ Auditor
     if (schedRes.success && schedRes.data.length) {
-      const upcoming = schedRes.data.find(s => s.Status === 'Pending');
-      if (upcoming) {
-        setEl('nextAuditDate', UI.formatDate(upcoming.Audit_Date));
-        setEl('nextAuditRound', upcoming.Audit_Round || '-');
+      const userId = auth ? auth.userId : null;
+      // กรอง schedules ที่ user นี้ถูก assign
+      const myTasks = schedRes.data.filter(s => {
+        if (!userId) return false;
+        const ids = String(s.Auditor_ID || '').split(',').map(x => x.trim());
+        return ids.includes(String(userId));
+      });
+
+      if (myTasks.length > 0) {
+        const section = document.getElementById('myTasksSection');
+        const list    = document.getElementById('myTasksList');
+        const nextCard = document.getElementById('nextScheduleCard');
+        if (section) section.style.display = 'block';
+        if (nextCard) nextCard.style.display = 'none';
+
+        if (list) {
+          list.innerHTML = myTasks.map(s => {
+            const dateStr = UI.formatDate(s.Audit_Date);
+            const isOverdue = s.Audit_Date && new Date(s.Audit_Date) < new Date();
+            const badgeClass = isOverdue ? 'danger' : 'warning';
+            const badgeText  = isOverdue ? '⚠️ เกินกำหนด' : '📅 รอตรวจ';
+            return `
+              <div class="card mb-2" style="padding:14px 16px;border-left:4px solid var(--${badgeClass})">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
+                  <div>
+                    <div style="font-weight:700;font-size:0.9rem">${escHtml(s.Area_Name || s.Area_ID || '-')}</div>
+                    <div style="font-size:0.75rem;color:var(--gray-600)">${escHtml(s.Plant_ID || '')} · ${escHtml(s.Audit_Round || '')}</div>
+                  </div>
+                  <span class="badge badge-${badgeClass}" style="font-size:0.65rem;padding:3px 8px;border-radius:20px;">${badgeText}</span>
+                </div>
+                <div style="font-size:0.78rem;color:var(--gray-600);margin-bottom:10px;">
+                  <i class="bi bi-calendar3"></i> ${dateStr}
+                </div>
+                <button class="btn btn-primary btn-block" style="height:40px;font-size:0.85rem;"
+                        onclick="startAssignedAudit('${escAttr(s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Schedule_ID || '')}')">
+                  <i class="bi bi-play-circle"></i> เริ่มตรวจ
+                </button>
+              </div>`;
+          }).join('');
+        }
+      } else {
+        // ไม่มี assigned task → แสดง next schedule ทั่วไป
+        const upcoming = schedRes.data.find(s => s.Status === 'Pending');
+        if (upcoming) {
+          setEl('nextAuditDate', UI.formatDate(upcoming.Audit_Date));
+          setEl('nextAuditRound', upcoming.Audit_Round || '-');
+        }
       }
     }
   } catch(err) {
     UI.hideLoading();
-    UI.toast('ไม่สามารถโหลดข้อมูลได้', 'error');
+    UI.toast(I18n.t('msg.load_failed'), 'error');
   }
+}
+
+// เริ่มตรวจจาก Assigned Task — ข้าม Plant/Area selection
+function startAssignedAudit(plantId, areaId, scheduleId) {
+  if (!plantId || !areaId) { navigate('plant.html'); return; }
+  AppState.selectedPlant = { Plant_ID: plantId, Plant_Name: plantId };
+  AppState.selectedArea  = { Area_ID: areaId,  Area_Name: areaId, scheduleId };
+  navigate('audit.html');
 }
 
 // ============================================================
@@ -336,7 +1082,12 @@ async function initPlant() {
   if (!Session.requireLogin()) return;
   updateUserUI();
 
-  UI.showLoading('โหลดข้อมูล Plant...');
+  // แสดงปุ่ม "มอบหมายงาน" เฉพาะ Admin
+  const auth = Session.load();
+  const btnSched = document.getElementById('btnSchedule');
+  if (btnSched && auth && auth.role?.toLowerCase() === 'admin') btnSched.style.display = 'block';
+
+  UI.showLoading(I18n.t('msg.loading_plant'));
   try {
     const res = await API.get('getPlants');
     UI.hideLoading();
@@ -351,21 +1102,28 @@ async function initPlant() {
     const colors = { SUP: '#1a73e8', POC: '#34a853', NIF: '#ea4335' };
 
     container.innerHTML = res.data.map(p => `
-      <div class="plant-card card-clickable" onclick="selectPlant('${p.Plant_ID}','${escHtml(p.Plant_Name)}')">
+      <div class="plant-card card-clickable"
+           data-plant-id="${escAttr(p.Plant_ID)}"
+           data-plant-name="${escAttr(p.Plant_Name)}"
+           onclick="selectPlantFromEl(this)">
         <div class="plant-icon" style="background:${colors[p.Plant_ID]}20;color:${colors[p.Plant_ID]}">
           ${icons[p.Plant_ID] || '🏭'}
         </div>
         <div>
           <div class="plant-name">${escHtml(p.Plant_Name)}</div>
-          <div class="plant-meta text-muted">Plant ID: ${p.Plant_ID}</div>
+          <div class="plant-meta text-muted">Plant ID: ${escHtml(p.Plant_ID)}</div>
         </div>
         <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     `).join('');
   } catch(err) {
     UI.hideLoading();
-    UI.toast('โหลดข้อมูลไม่สำเร็จ', 'error');
+    UI.toast(I18n.t('msg.load_error'), 'error');
   }
+}
+
+function selectPlantFromEl(el) {
+  selectPlant(el.dataset.plantId, el.dataset.plantName);
 }
 
 function selectPlant(plantId, plantName) {
@@ -386,9 +1144,10 @@ async function initArea() {
 
   AppState.currentPlant = { Plant_ID: plantId, Plant_Name: plantName };
 
-  setEl('currentPlantName', decodeURIComponent(plantName || plantId));
+  // getParam() ใช้ URLSearchParams.get() ซึ่ง decode แล้ว ไม่ต้อง decode ซ้ำ
+  setEl('currentPlantName', plantName || plantId);
 
-  UI.showLoading('โหลดพื้นที่ตรวจ...');
+  UI.showLoading(I18n.t('msg.loading_area'));
   try {
     const res = await API.get('getAreas', { plantId });
     UI.hideLoading();
@@ -398,6 +1157,15 @@ async function initArea() {
     AppState.areas = res.data;
     const container = document.getElementById('areaList');
     if (!container) return;
+
+    if (!res.data.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="bi bi-calendar-x"></i>
+          <p>ไม่พบพื้นที่ที่ได้รับมอบหมายในรอบนี้</p>
+        </div>`;
+      return;
+    }
 
     // Area type icons
     const areaIcons = {
@@ -409,13 +1177,14 @@ async function initArea() {
       Outdoor:     'bi-tree',
     };
 
+    // ใช้ I18n.t() เพื่อรองรับ 2 ภาษา
     const areaTypeTH = {
-      Warehouse:   'คลังสินค้า',
-      Production:  'ไลน์ผลิต',
-      Office:      'ออฟฟิศ',
-      Maintenance: 'ช่าง/ยูทิลิตี้',
-      Cafeteria:   'โรงอาหาร',
-      Outdoor:     'รอบอาคาร',
+      Warehouse:   I18n.t('area.type.Warehouse'),
+      Production:  I18n.t('area.type.Production'),
+      Office:      I18n.t('area.type.Office'),
+      Maintenance: I18n.t('area.type.Maintenance'),
+      Cafeteria:   I18n.t('area.type.Cafeteria'),
+      Outdoor:     I18n.t('area.type.Outdoor'),
     };
 
     // Group by type
@@ -434,13 +1203,17 @@ async function initArea() {
         <div class="area-list">
           ${areas.map(a => `
             <div class="area-card area-type-${escHtml(a.Area_Type)}"
-                 onclick="selectArea('${a.Area_ID}','${escHtml(a.Area_Name)}','${escHtml(a.Area_Type)}')">
+                 data-area-id="${escAttr(a.Area_ID)}"
+                 data-area-name="${escAttr(a.Area_Name)}"
+                 data-area-type="${escAttr(a.Area_Type)}"
+                 onclick="selectAreaFromEl(this)">
               <div class="area-icon">
                 <i class="bi ${areaIcons[a.Area_Type] || 'bi-grid'}"></i>
               </div>
               <div class="area-info">
                 <div class="area-name">${escHtml(a.Area_Name)}</div>
-                <span class="area-type-badge">${areaTypeTH[a.Area_Type] || a.Area_Type}</span>
+                <span class="area-type-badge">${escHtml(areaTypeTH[a.Area_Type] || a.Area_Type)}</span>
+                ${a.Audit_Round ? `<span class="area-type-badge" style="margin-left:6px;background:#fff8e1;color:#8a5b00">${escHtml(a.Audit_Round)} ${a.Audit_Date ? '• ' + escHtml(a.Audit_Date) : ''}</span>` : ''}
               </div>
               <i class="bi bi-chevron-right text-muted"></i>
             </div>
@@ -450,8 +1223,12 @@ async function initArea() {
     `).join('');
   } catch(err) {
     UI.hideLoading();
-    UI.toast('โหลดข้อมูลไม่สำเร็จ', 'error');
+    UI.toast(I18n.t('msg.load_error'), 'error');
   }
+}
+
+function selectAreaFromEl(el) {
+  selectArea(el.dataset.areaId, el.dataset.areaName, el.dataset.areaType);
 }
 
 function selectArea(areaId, areaName, areaType) {
@@ -480,13 +1257,14 @@ async function initAudit() {
   if (!plantId || !areaId) { navigate('plant.html'); return; }
 
   setEl('auditPlantName', getParam('plantName') || plantId);
-  setEl('auditAreaName', decodeURIComponent(areaName || areaId));
+  // getParam() decode แล้ว ไม่ต้อง decode ซ้ำ
+  setEl('auditAreaName', areaName || areaId);
 
   // ตั้ง audit date เป็นวันนี้
   const todayInput = document.getElementById('auditDate');
   if (todayInput) todayInput.value = new Date().toISOString().split('T')[0];
 
-  UI.showLoading('โหลด Checklist...');
+  UI.showLoading(I18n.t('msg.loading_checklist'));
   try {
     const res = await API.get('getCriteria', { areaType });
     UI.hideLoading();
@@ -504,7 +1282,7 @@ async function initAudit() {
     updateProgress();
   } catch(err) {
     UI.hideLoading();
-    UI.toast('โหลด Checklist ไม่สำเร็จ', 'error');
+    UI.toast(I18n.t('msg.checklist_failed'), 'error');
   }
 }
 
@@ -522,7 +1300,7 @@ function renderChecklist(grouped, totalItems, totalMaxScore) {
     <div class="category-section mb-2" id="cat-${escHtml(category).replace(/\s/g,'_')}">
       <div class="category-header" onclick="toggleCategory(this)">
         <span><i class="bi bi-clipboard-check me-2"></i>${escHtml(category)}</span>
-        <span class="category-count">${items.length} ข้อ</span>
+        <span class="category-count">${items.length} ${I18n.t('audit.answered_suffix')}</span>
       </div>
       <div class="category-body">
         ${items.map(c => renderCriteriaItem(c)).join('')}
@@ -547,26 +1325,26 @@ function renderCriteriaItem(c) {
         <button class="score-btn" data-score="0" data-id="${c.Criteria_ID}"
                 onclick="setScore('${c.Criteria_ID}', 0, this)">
           <span class="score-num">0</span>
-          <span class="score-label">ไม่ทำ</span>
+          <span class="score-label">${I18n.t('audit.score_0')}</span>
         </button>
         <button class="score-btn" data-score="1" data-id="${c.Criteria_ID}"
                 onclick="setScore('${c.Criteria_ID}', 1, this)">
           <span class="score-num">1</span>
-          <span class="score-label">บางส่วน</span>
+          <span class="score-label">${I18n.t('audit.score_1')}</span>
         </button>
         <button class="score-btn" data-score="2" data-id="${c.Criteria_ID}"
                 onclick="setScore('${c.Criteria_ID}', 2, this)">
           <span class="score-num">2</span>
-          <span class="score-label">ผ่าน</span>
+          <span class="score-label">${I18n.t('audit.score_2')}</span>
         </button>
       </div>
 
       <div class="criteria-extras">
-        <textarea class="remark-input" placeholder="หมายเหตุ (ไม่บังคับ)"
+        <textarea class="remark-input" placeholder="${I18n.t('audit.remark_ph')}"
                   oninput="setRemark('${c.Criteria_ID}', this.value)"
                   rows="2"></textarea>
         <button class="photo-btn" onclick="triggerPhoto('${c.Criteria_ID}')">
-          <i class="bi bi-camera"></i> ถ่ายรูปประกอบ
+          <i class="bi bi-camera"></i> ${I18n.t('audit.photo_btn')}
           <span id="photoCount-${c.Criteria_ID}" class="badge badge-primary" style="display:none">0</span>
         </button>
         <div id="photoPreview-${c.Criteria_ID}" class="photo-preview-grid"></div>
@@ -591,6 +1369,7 @@ function setScore(criteriaId, score, btn) {
     item.style.borderLeft = score === 0 ? '3px solid var(--danger)' :
                             score === 1 ? '3px solid var(--warning)' :
                             '3px solid var(--score-2)';
+    item.classList.remove('unanswered');
   }
 
   updateProgress();
@@ -610,6 +1389,7 @@ function updateProgress() {
   const total    = AppState.criteria.length;
   const answered = Object.values(AppState.auditAnswers).filter(a => a.score !== null).length;
   const pct      = total > 0 ? Math.round((answered / total) * 100) : 0;
+  const unanswered = getUnansweredCriteria();
 
   setEl('progressPct', pct + '%');
   setEl('answeredCount', answered);
@@ -617,23 +1397,91 @@ function updateProgress() {
   const fill = document.getElementById('progressFill');
   if (fill) fill.style.width = pct + '%';
 
+  renderRemainingPanel(unanswered);
+
   const submitBtn = document.getElementById('submitBtn');
   if (submitBtn) {
-    submitBtn.disabled = answered < total;
-    submitBtn.textContent = answered < total
-      ? `ตอบแล้ว ${answered}/${total} ข้อ`
-      : '✅ Submit ผลการตรวจ';
+    if (total === 0) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = I18n.t('audit.no_criteria_btn');
+    } else if (answered < total) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = `${I18n.t('audit.answered_prefix')} ${answered}/${total} ${I18n.t('audit.answered_suffix')}`;
+    } else {
+      submitBtn.disabled = false;
+      submitBtn.textContent = I18n.t('audit.submit_btn');
+    }
   }
+}
+
+function getUnansweredCriteria() {
+  return (AppState.criteria || []).filter(
+    c => AppState.auditAnswers[c.Criteria_ID]?.score === null
+  );
+}
+
+function renderRemainingPanel(unanswered = getUnansweredCriteria()) {
+  const panel = document.getElementById('auditRemainingPanel');
+  if (!panel) return;
+
+  if (!unanswered.length) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+
+  const visible = unanswered.slice(0, 24);
+  const more = unanswered.length - visible.length;
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="audit-remaining-title">
+      <i class="bi bi-exclamation-triangle"></i>
+      ${I18n.t('audit.unanswered_help')} (${unanswered.length})
+    </div>
+    <div class="audit-remaining-list">
+      ${visible.map(c => `
+        <button type="button" class="audit-remaining-chip" onclick="jumpToCriteria('${escAttr(c.Criteria_ID)}')">
+          ${escHtml(c.Criteria_ID)}
+        </button>
+      `).join('')}
+      ${more > 0 ? `<span class="audit-remaining-chip">+${more}</span>` : ''}
+    </div>
+  `;
+}
+
+function markUnansweredItems(unanswered = getUnansweredCriteria()) {
+  document.querySelectorAll('.criteria-item.unanswered').forEach(el => el.classList.remove('unanswered'));
+  unanswered.forEach(c => {
+    const item = document.getElementById('item-' + c.Criteria_ID);
+    if (item) item.classList.add('unanswered');
+  });
+}
+
+function jumpToCriteria(criteriaId) {
+  const item = document.getElementById('item-' + criteriaId);
+  if (!item) return;
+  const body = item.closest('.category-body');
+  if (body && body.style.display === 'none') body.style.display = 'block';
+  item.classList.add('unanswered', 'jump-focus');
+  item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => item.classList.remove('jump-focus'), 1300);
 }
 
 /**
  * ซ่อน/แสดง category
  */
 function toggleCategory(header) {
-  const body = header.nextElementSibling;
+  const body   = header.nextElementSibling;
   const isOpen = body.style.display !== 'none';
   body.style.display = isOpen ? 'none' : 'block';
-  header.querySelector('.bi')?.classList.toggle('bi-chevron-up', !isOpen);
+
+  // toggle icon ระหว่าง clipboard-check กับ chevron-up
+  const icon = header.querySelector('.bi');
+  if (icon) {
+    icon.className = isOpen
+      ? 'bi bi-chevron-down'
+      : 'bi bi-clipboard-check me-2';
+  }
 }
 
 // ============================================================
@@ -657,55 +1505,56 @@ function triggerPhoto(criteriaId) {
 }
 
 async function addPhoto(criteriaId, file) {
-  // ลดขนาดรูปก่อน upload
   const compressed = await compressImage(file, 1024, 0.8);
 
-  // แสดง Preview ทันที
-  const previewGrid = document.getElementById('photoPreview-' + criteriaId);
-  const countBadge  = document.getElementById('photoCount-' + criteriaId);
-
+  if (!AppState.auditAnswers[criteriaId]) {
+    AppState.auditAnswers[criteriaId] = { score: null, remark: '', photos: [] };
+  }
   if (!AppState.auditAnswers[criteriaId].photos) {
     AppState.auditAnswers[criteriaId].photos = [];
   }
 
-  const photoData = {
-    base64: compressed,
+  AppState.auditAnswers[criteriaId].photos.push({
     filename: `photo_${criteriaId}_${Date.now()}.jpg`,
     preview: compressed,
     uploaded: false,
     url: null,
-  };
+  });
 
-  AppState.auditAnswers[criteriaId].photos.push(photoData);
+  // Re-render ทั้งหมด เพื่อให้ index ถูกต้องเสมอ
+  renderPhotoPreviews(criteriaId);
+}
 
-  // แสดง preview
-  const div = document.createElement('div');
-  div.className = 'photo-thumb';
-  div.innerHTML = `
-    <img src="${compressed}" alt="photo">
-    <button class="remove-photo" onclick="removePhoto('${criteriaId}', ${AppState.auditAnswers[criteriaId].photos.length - 1}, this)">
-      <i class="bi bi-x"></i>
-    </button>
-  `;
-  previewGrid.appendChild(div);
+/**
+ * Re-render photo preview grid — ทำให้ index ของ removePhoto ถูกต้องเสมอ
+ * แก้ Bug: index stale หลัง splice
+ */
+function renderPhotoPreviews(criteriaId) {
+  const previewGrid = document.getElementById('photoPreview-' + criteriaId);
+  const countBadge  = document.getElementById('photoCount-' + criteriaId);
+  if (!previewGrid) return;
 
-  // อัปเดต badge count
-  const count = AppState.auditAnswers[criteriaId].photos.length;
+  const photos = AppState.auditAnswers[criteriaId]?.photos || [];
+
+  previewGrid.innerHTML = photos.map((photo, i) => `
+    <div class="photo-thumb">
+      <img src="${photo.preview}" alt="${I18n.t('img.alt_photo')}">
+      <button class="remove-photo" onclick="removePhoto('${criteriaId}', ${i})">
+        <i class="bi bi-x"></i>
+      </button>
+    </div>
+  `).join('');
+
   if (countBadge) {
-    countBadge.style.display = 'inline';
-    countBadge.textContent   = count;
+    countBadge.textContent   = photos.length;
+    countBadge.style.display = photos.length > 0 ? 'inline' : 'none';
   }
 }
 
-function removePhoto(criteriaId, idx, btn) {
-  AppState.auditAnswers[criteriaId].photos.splice(idx, 1);
-  btn.closest('.photo-thumb').remove();
-  const countBadge = document.getElementById('photoCount-' + criteriaId);
-  const count = AppState.auditAnswers[criteriaId].photos.length;
-  if (countBadge) {
-    countBadge.textContent   = count;
-    countBadge.style.display = count > 0 ? 'inline' : 'none';
-  }
+function removePhoto(criteriaId, idx) {
+  AppState.auditAnswers[criteriaId]?.photos?.splice(idx, 1);
+  // Re-render เพื่อ update index ใหม่ทั้งหมด
+  renderPhotoPreviews(criteriaId);
 }
 
 /**
@@ -780,18 +1629,23 @@ function compressImage(file, maxSize = 1024, quality = 0.8) {
 // SUBMIT AUDIT
 // ============================================================
 async function submitAudit() {
-  const unanswered = AppState.criteria.filter(
-    c => AppState.auditAnswers[c.Criteria_ID]?.score === null
-  );
-
-  if (unanswered.length > 0) {
-    UI.toast(`ยังไม่ได้ให้คะแนน ${unanswered.length} ข้อ`, 'warning');
-    const firstUnanswered = document.getElementById('item-' + unanswered[0].Criteria_ID);
-    if (firstUnanswered) firstUnanswered.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Guard: ป้องกัน submit เมื่อไม่มี criteria
+  if (!AppState.criteria || AppState.criteria.length === 0) {
+    UI.toast(I18n.t('msg.no_criteria'), 'error', 5000);
     return;
   }
 
-  const ok = await showConfirm('ยืนยันการ Submit?', 'คุณต้องการบันทึกผลการตรวจนี้หรือไม่?');
+  const unanswered = getUnansweredCriteria();
+
+  if (unanswered.length > 0) {
+    markUnansweredItems(unanswered);
+    renderRemainingPanel(unanswered);
+    UI.toast(`${I18n.t('audit.unanswered_prefix')} ${unanswered.length} ${I18n.t('audit.answered_suffix')}`, 'warning', 4500);
+    jumpToCriteria(unanswered[0].Criteria_ID);
+    return;
+  }
+
+  const ok = await showConfirm(I18n.t('audit.confirm_title'), I18n.t('audit.confirm_msg'));
   if (!ok) return;
 
   try {
@@ -803,7 +1657,7 @@ async function submitAudit() {
     console.log('[Submit] 📸 จำนวนรูปทั้งหมด:', totalPhotos);
 
     if (totalPhotos > 0) {
-      UI.showLoading(`กำลัง Upload รูปภาพ... (0/${totalPhotos})`);
+      UI.showLoading(`${I18n.t('msg.uploading')} (0/${totalPhotos})`);
       let uploaded = 0;
 
       for (const [criteriaId, answer] of Object.entries(AppState.auditAnswers)) {
@@ -819,7 +1673,7 @@ async function submitAudit() {
               console.warn(`[Submit] ⚠️ Upload รูป ${criteriaId} ล้มเหลว`);
             }
             uploaded++;
-            UI.showLoading(`กำลัง Upload รูปภาพ... (${uploaded}/${totalPhotos})`);
+            UI.showLoading(`${I18n.t('msg.uploading')} (${uploaded}/${totalPhotos})`);
           }
         }
       }
@@ -829,7 +1683,7 @@ async function submitAudit() {
 
     // STEP 1: สร้าง Audit Header → รับ auditId กลับมา
     // ============================================================
-    UI.showLoading('กำลังสร้างรายการตรวจ... (1/3)');
+    UI.showLoading(I18n.t('msg.loading_step1'));
 
     const headerRes = await API.get('submitAuditHeader', {
       plantId:    getParam('plantId'),
@@ -841,7 +1695,7 @@ async function submitAudit() {
 
     if (!headerRes.success) {
       UI.hideLoading();
-      UI.toast(headerRes.error || 'สร้าง Header ไม่สำเร็จ', 'error');
+      UI.toast(headerRes.error || I18n.t('msg.header_failed'), 'error');
       return;
     }
 
@@ -866,7 +1720,7 @@ async function submitAudit() {
       const chunk     = details.slice(i, i + CHUNK_SIZE);
       const chunkNum  = Math.floor(i / CHUNK_SIZE) + 1;
 
-      UI.showLoading(`กำลังบันทึกข้อมูล... (${chunkNum}/${totalChunks})`);
+      UI.showLoading(`${I18n.t('msg.saving_chunk')} (${chunkNum}/${totalChunks})`);
 
       const detailRes = await API.get('submitAuditDetails', {
         auditId: auditId,
@@ -875,7 +1729,7 @@ async function submitAudit() {
 
       if (!detailRes.success) {
         UI.hideLoading();
-        UI.toast('บันทึก Details ล้มเหลว chunk ' + chunkNum, 'error');
+        UI.toast(I18n.t('msg.detail_failed') + chunkNum, 'error');
         return;
       }
     }
@@ -883,7 +1737,7 @@ async function submitAudit() {
     // ============================================================
     // STEP 3: Finalize — คำนวณคะแนนรวมและ Update Header
     // ============================================================
-    UI.showLoading('กำลังคำนวณคะแนน... (3/3)');
+    UI.showLoading(I18n.t('msg.loading_step3'));
 
     const finalRes = await API.get('finalizeAudit', { auditId });
 
@@ -893,13 +1747,13 @@ async function submitAudit() {
       sessionStorage.setItem('lastAuditResult', JSON.stringify(finalRes));
       navigate('summary.html', { auditId: finalRes.auditId });
     } else {
-      UI.toast(finalRes.error || 'Finalize ไม่สำเร็จ', 'error');
+      UI.toast(finalRes.error || I18n.t('msg.finalize_failed'), 'error');
     }
 
   } catch(err) {
     UI.hideLoading();
     console.error('submitAudit error:', err);
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
 }
 
@@ -943,9 +1797,10 @@ async function initSummary() {
   setEl('resultStatus',  UI.statusTH(pct));
   setEl('resultAuditId', result.auditId || '-');
 
-  // Circle color
+  // Circle color — ล้าง class เดิมก่อน แล้วค่อย add ใหม่
   const circle = document.getElementById('scoreCircle');
   if (circle) {
+    circle.classList.remove('excellent', 'good', 'need-improve');
     circle.classList.add(status);
   }
 
@@ -963,9 +1818,9 @@ async function initHistory() {
   if (!Session.requireLogin()) return;
   updateUserUI();
 
-  const [plantsRes, areasRes] = await Promise.all([
-    API.get('getPlants'),
-    API.get('getAreas', {})
+  // areasRes ถูกลบออก — ไม่ได้ใช้ใน history filter (ประหยัด 1 API call)
+  const [plantsRes] = await Promise.all([
+    API.get('getPlants')
   ]);
 
   // ใส่ options ใน filter dropdowns
@@ -986,7 +1841,7 @@ async function initHistory() {
 }
 
 async function loadHistory(filters = {}) {
-  UI.showLoading('โหลดประวัติการตรวจ...');
+  UI.showLoading(I18n.t('msg.loading_history'));
   try {
     const res = await API.get('getHistory', filters);
     UI.hideLoading();
@@ -998,7 +1853,7 @@ async function loadHistory(filters = {}) {
       container.innerHTML = `
         <div class="empty-state">
           <i class="bi bi-clipboard-x"></i>
-          <p>ไม่พบประวัติการตรวจ</p>
+          <p>${I18n.t('msg.no_history')}</p>
         </div>`;
       return;
     }
@@ -1021,7 +1876,7 @@ async function loadHistory(filters = {}) {
     `).join('');
   } catch(err) {
     UI.hideLoading();
-    UI.toast('โหลดไม่สำเร็จ', 'error');
+    UI.toast(I18n.t('msg.history_failed'), 'error');
   }
 }
 
@@ -1043,7 +1898,7 @@ async function initDashboard() {
   if (!Session.requireLogin()) return;
   updateUserUI();
 
-  UI.showLoading('โหลด Dashboard...');
+  UI.showLoading(I18n.t('msg.loading_dashboard'));
   try {
     const res = await API.get('getDashboard', {});
     UI.hideLoading();
@@ -1056,6 +1911,7 @@ async function initDashboard() {
     setEl('dashAvgScore',   (d.avgScore  || 0) + '%');
     setEl('dashPassRate',   (d.passRate  || 0) + '%');
     setEl('dashExcellent',  d.excellent  || 0);
+    setEl('dashExcellent2', d.excellent  || 0);  // sync โดยตรง ไม่ต้องใช้ MutationObserver
     setEl('dashGood',       d.good       || 0);
     setEl('dashNeedImp',    d.needImprovement || 0);
 
@@ -1080,7 +1936,7 @@ async function initDashboard() {
 
   } catch(err) {
     UI.hideLoading();
-    UI.toast('โหลด Dashboard ไม่สำเร็จ', 'error');
+    UI.toast(I18n.t('msg.dash_failed'), 'error');
   }
 }
 
@@ -1089,7 +1945,7 @@ function renderRanking(containerId, items, nameField) {
   if (!container) return;
 
   if (!items.length) {
-    container.innerHTML = '<p class="text-muted text-center">ยังไม่มีข้อมูล</p>';
+    container.innerHTML = `<p class="text-muted text-center">${I18n.t('msg.no_data')}</p>`;
     return;
   }
 
@@ -1099,7 +1955,7 @@ function renderRanking(containerId, items, nameField) {
       <div class="rank-bar-wrap">
         <div class="rank-name">${escHtml(item[nameField] || '-')}</div>
         <div class="rank-bar">
-          <div class="rank-bar-fill" style="width:${item.avgScore}%;
+          <div class="rank-bar-fill" style="width:${Math.min(item.avgScore, 100)}%;
                background:${item.avgScore>=90?'var(--excellent)':item.avgScore>=75?'var(--warning)':'var(--danger)'}">
           </div>
         </div>
@@ -1142,7 +1998,7 @@ function setEl(id, value) {
   if (el) el.textContent = value;
 }
 
-/** Escape HTML */
+/** Escape HTML สำหรับ text content */
 function escHtml(str) {
   if (!str) return '';
   return String(str)
@@ -1152,6 +2008,17 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+/** Escape สำหรับ HTML attribute (รวม single quote) */
+function escAttr(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** อัปเดต UI ส่วน user */
 function updateUserUI() {
   const user = AppState.user;
@@ -1159,12 +2026,6 @@ function updateUserUI() {
   setEl('userName', user.name || user.email);
   setEl('userRole', user.role || '');
   setEl('userInitial', (user.name || 'U')[0].toUpperCase());
-
-  // แสดง admin link เฉพาะ admin users
-  const adminNav = document.getElementById('adminNav');
-  if (adminNav) {
-    adminNav.style.display = user.role === 'Admin' ? 'flex' : 'none';
-  }
 }
 
 /** Logout */
@@ -1218,9 +2079,725 @@ function installPWA() {
 }
 
 // ============================================================
+// USER MANAGEMENT — ทั้งหมดอยู่ใน app.js ป้องกัน conflict
+// ============================================================
+
+var _allUsers = []; // ใช้ var + prefix _ ป้องกัน conflict
+var _allAreasForAssign = [];
+var _selectedAssignedAreas = new Set();
+
+async function initUsers() {
+  if (!Session.requireLogin()) return;
+  updateUserUI();
+
+  const role = (AppState.user?.role || '').trim().toLowerCase();
+  console.log('[Users] role:', role);
+
+  if (role !== 'admin') {
+    document.getElementById('userList').innerHTML = `
+      <div class="empty-state" style="padding:40px 20px;text-align:center">
+        <i class="bi bi-lock" style="font-size:3rem;color:var(--gray-300)"></i>
+        <p style="margin-top:12px;font-weight:600">${I18n.t('msg.admin_only')}</p>
+        <p style="font-size:0.8rem;color:var(--gray-600)">${I18n.t('msg.your_role')}${AppState.user?.role || '-'}</p>
+        <button class="btn btn-outline mt-3" onclick="navigate('home.html')">${I18n.t('msg.go_home')}</button>
+      </div>`;
+    return;
+  }
+  await _loadUsers();
+}
+
+async function _loadUsers() {
+  UI.showLoading(I18n.t('msg.loading_users'));
+  try {
+    const [res, areaRes] = await Promise.all([
+      API.get('getUsers'),
+      API.get('getAreas')
+    ]);
+    UI.hideLoading();
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.users_failed'), 'error'); return; }
+    if (areaRes.success) _allAreasForAssign = areaRes.data || [];
+    _allUsers = res.data || [];
+    _updateUserStats();
+    _renderUsers(_allUsers);
+    renderAssignedAreaOptions();
+  } catch(e) {
+    UI.hideLoading();
+    UI.toast(I18n.t('msg.users_failed') + ': ' + e.message, 'error');
+  }
+}
+
+function _updateUserStats() {
+  setEl('countAll',     _allUsers.length);
+  setEl('countAdmin',   _allUsers.filter(u => u.Role === 'Admin').length);
+  setEl('countAuditor', _allUsers.filter(u => u.Role === 'Auditor').length);
+  setEl('countActive',  _allUsers.filter(u => u.Status === 'Active').length);
+}
+
+function _renderUsers(users) {
+  const el = document.getElementById('userList');
+  if (!el) return;
+  if (!users.length) {
+    el.innerHTML = `<div class="empty-state"><i class="bi bi-people"></i><p>${I18n.t('msg.no_users')}</p></div>`;
+    return;
+  }
+  const roleColor = { Admin:'#1a73e8', Manager:'#9c27b0', 'Area Manager':'#ff6f00', Auditor:'#34a853', Viewer:'#607d8b' };
+  const roleIcon  = { Admin:'👑', Manager:'🏢', 'Area Manager':'🗂️', Auditor:'📋', Viewer:'👁️' };
+  el.innerHTML = users.map(u => `
+    <div class="user-card" onclick="openUserModal('${u.User_ID}')">
+      <div class="user-avatar" style="background:${roleColor[u.Role]||'#607d8b'}">
+        ${(u.Name||'U')[0].toUpperCase()}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:0.9rem">${escHtml(u.Name||'-')}</div>
+        <div style="font-size:0.75rem;color:var(--gray-600)">${escHtml(u.Email||'-')}</div>
+        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
+          <span class="badge badge-primary">${roleIcon[u.Role]||''} ${u.Role||'-'}</span>
+          <span class="badge ${u.Status==='Active'?'badge-excellent':'badge-need-improve'}">
+            ${u.Status==='Active'?'✅':'❌'} ${u.Status||'-'}
+          </span>
+          ${u.Department?`<span class="badge badge-secondary">${escHtml(u.Department)}</span>`:''}
+          ${u.Assigned_Areas?`<span class="badge badge-secondary"><i class="bi bi-geo-alt"></i> ${escHtml(u.Assigned_Areas)}</span>`:''}
+        </div>
+      </div>
+      <i class="bi bi-chevron-right text-muted"></i>
+    </div>
+  `).join('');
+}
+
+function filterUsers() {
+  const role   = document.getElementById('filterRole')?.value   || '';
+  const status = document.getElementById('filterStatus')?.value || '';
+  let list = [..._allUsers];
+  if (role)   list = list.filter(u => u.Role   === role);
+  if (status) list = list.filter(u => u.Status === status);
+  _renderUsers(list);
+}
+
+function openUserModal(userId) {
+  const modal   = document.getElementById('userModal');
+  const title   = document.getElementById('modalTitle');
+  const errorEl = document.getElementById('formError');
+  if (!modal) return;
+
+  document.getElementById('userForm').reset();
+  if (errorEl) errorEl.textContent = '';
+  document.getElementById('editUserId').value = '';
+  document.getElementById('assignedAreasPicker')?.classList.remove('open');
+  setAssignedAreasSelection('');
+  const searchEl = document.getElementById('assignedAreasSearch');
+  if (searchEl) searchEl.value = '';
+
+  if (userId) {
+    const u = _allUsers.find(x => x.User_ID === userId);
+    if (!u) return;
+    title.textContent = I18n.t('modal.edit_user');
+    document.getElementById('editUserId').value = u.User_ID;
+    document.getElementById('fName').value      = u.Name       || '';
+    document.getElementById('fEmail').value     = u.Email      || '';
+    document.getElementById('fDept').value      = u.Department || '';
+    document.getElementById('fEmpId').value     = u.Employee_ID|| '';
+    setAssignedAreasSelection(u.Assigned_Areas || '');
+    document.getElementById('fRole').value      = u.Role       || '';
+    document.getElementById('fPassword').value  = '';
+    const sr = document.querySelector(`input[name="fStatus"][value="${u.Status}"]`);
+    if (sr) sr.checked = true;
+  } else {
+    title.textContent = I18n.t('modal.add_user');
+    const sr = document.querySelector('input[name="fStatus"][value="Active"]');
+    if (sr) sr.checked = true;
+  }
+  modal.classList.add('show');
+}
+
+function toggleAssignedAreasDropdown() {
+  const picker = document.getElementById('assignedAreasPicker');
+  if (!picker) return;
+  picker.classList.toggle('open');
+  if (picker.classList.contains('open')) renderAssignedAreaOptions(document.getElementById('assignedAreasSearch')?.value || '');
+}
+
+function renderAssignedAreaOptions(searchText = '') {
+  const list = document.getElementById('assignedAreasList');
+  if (!list) return;
+
+  const q = String(searchText || '').toLowerCase().trim();
+  const areas = (_allAreasForAssign || []).filter(a => {
+    const haystack = `${a.Plant_ID || ''} ${a.Area_ID || ''} ${a.Area_Name || ''} ${a.Area_Type || ''}`.toLowerCase();
+    return !q || haystack.includes(q);
+  });
+
+  if (!areas.length) {
+    list.innerHTML = `<div style="padding:12px;color:var(--gray-600);font-size:0.82rem">ไม่พบพื้นที่</div>`;
+    updateAssignedAreasSummary();
+    return;
+  }
+
+  list.innerHTML = areas.map(a => {
+    const id = String(a.Area_ID || '');
+    const checked = _selectedAssignedAreas.has(id) ? 'checked' : '';
+    return `
+      <label class="area-picker-option">
+        <input type="checkbox" value="${escAttr(id)}" ${checked} onchange="toggleAssignedArea('${escAttr(id)}', this.checked)">
+        <span>
+          <span class="area-picker-option-main">${escHtml(a.Plant_ID || '-')} / ${escHtml(a.Area_Name || id)}</span>
+          <span class="area-picker-option-sub">${escHtml(id)} • ${escHtml(a.Area_Type || '-')}</span>
+        </span>
+      </label>
+    `;
+  }).join('');
+  updateAssignedAreasSummary();
+}
+
+function toggleAssignedArea(areaId, checked) {
+  if (checked) _selectedAssignedAreas.add(areaId);
+  else _selectedAssignedAreas.delete(areaId);
+  syncAssignedAreasField();
+}
+
+function setAssignedAreasSelection(value) {
+  _selectedAssignedAreas = new Set(
+    String(value || '')
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean)
+  );
+  syncAssignedAreasField();
+  renderAssignedAreaOptions(document.getElementById('assignedAreasSearch')?.value || '');
+}
+
+function clearAssignedAreas() {
+  _selectedAssignedAreas.clear();
+  syncAssignedAreasField();
+  renderAssignedAreaOptions(document.getElementById('assignedAreasSearch')?.value || '');
+}
+
+function selectAllAssignedAreas() {
+  _allAreasForAssign.forEach(a => {
+    if (a.Area_ID) _selectedAssignedAreas.add(String(a.Area_ID));
+  });
+  syncAssignedAreasField();
+  renderAssignedAreaOptions(document.getElementById('assignedAreasSearch')?.value || '');
+}
+
+function syncAssignedAreasField() {
+  const value = Array.from(_selectedAssignedAreas).join(',');
+  const input = document.getElementById('fAssignedAreas');
+  if (input) input.value = value;
+  updateAssignedAreasSummary();
+}
+
+function updateAssignedAreasSummary() {
+  const summary = document.getElementById('assignedAreasSummary');
+  if (!summary) return;
+
+  const count = _selectedAssignedAreas.size;
+  if (count === 0) {
+    summary.textContent = 'ทุกพื้นที่';
+    return;
+  }
+
+  const selected = Array.from(_selectedAssignedAreas);
+  const firstNames = selected.slice(0, 2).map(id => {
+    const area = _allAreasForAssign.find(a => String(a.Area_ID) === id);
+    return area ? `${area.Plant_ID}/${area.Area_Name}` : id;
+  });
+  summary.textContent = count <= 2 ? firstNames.join(', ') : `${firstNames.join(', ')} +${count - 2}`;
+}
+
+function closeUserModal() {
+  const modal = document.getElementById('userModal');
+  if (modal) modal.classList.remove('show');
+}
+
+async function saveUserForm(e) {
+  e.preventDefault();
+  const errorEl = document.getElementById('formError');
+  const saveBtn = document.getElementById('saveUserBtn');
+  if (errorEl) errorEl.textContent = '';
+
+  const userId   = document.getElementById('editUserId').value.trim();
+  const name     = document.getElementById('fName').value.trim();
+  const email    = document.getElementById('fEmail').value.trim();
+  const password = document.getElementById('fPassword').value.trim();
+  const dept     = document.getElementById('fDept').value.trim();
+  const empId    = document.getElementById('fEmpId').value.trim();
+  const assignedAreas = Array.from(_selectedAssignedAreas).join(',');
+  const role     = document.getElementById('fRole').value;
+  const statusEl = document.querySelector('input[name="fStatus"]:checked');
+  const status   = statusEl ? statusEl.value : 'Active';
+
+  if (!name)  { if (errorEl) errorEl.textContent = I18n.t('val.name');     return; }
+  if (!email) { if (errorEl) errorEl.textContent = I18n.t('val.email');    return; }
+  if (!role)  { if (errorEl) errorEl.textContent = I18n.t('val.role');     return; }
+  if (!userId && !password) { if (errorEl) errorEl.textContent = I18n.t('val.password'); return; }
+
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = I18n.t('msg.saving_btn'); }
+
+  try {
+    UI.showLoading(I18n.t('msg.loading_saving'));
+    // ใช้ API.post เพื่อไม่ให้ password ปรากฏใน URL / browser history
+    const res = await API.post('saveUser', {
+      userId, employeeId: empId, name, email,
+      password, department: dept, role, status, assignedAreas
+    });
+    UI.hideLoading();
+
+    if (res.success) {
+      UI.toast(userId ? I18n.t('msg.save_success_edit') : I18n.t('msg.save_success_add'), 'success');
+      closeUserModal();
+
+      // Optimistic update — แก้ local array ทันที ไม่ต้อง fetch ใหม่
+      if (userId) {
+        const idx = _allUsers.findIndex(u => u.User_ID === userId);
+        if (idx >= 0) {
+          _allUsers[idx].Name        = name;
+          _allUsers[idx].Email       = email;
+          _allUsers[idx].Department  = dept;
+          _allUsers[idx].Employee_ID = empId;
+          _allUsers[idx].Assigned_Areas = assignedAreas;
+          _allUsers[idx].Role        = role;
+          _allUsers[idx].Status      = status;
+        }
+      } else {
+        _allUsers.push({
+          User_ID:     res.userId || '',
+          Name:        name,
+          Email:       email,
+          Department:  dept,
+          Employee_ID: empId,
+          Assigned_Areas: assignedAreas,
+          Role:        role,
+          Status:      status,
+          Password:    '***'
+        });
+      }
+      _updateUserStats();
+      _renderUsers(_allUsers);
+    } else {
+      if (errorEl) errorEl.textContent = res.error || I18n.t('msg.save_failed');
+    }
+  } catch(err) {
+    UI.hideLoading();
+    if (errorEl) errorEl.textContent = I18n.t('msg.error_prefix') + err.message;
+  }
+
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = `<i class="bi bi-check-lg"></i> <span>${I18n.t('form.save')}</span>`; }
+}
+
+// ============================================================
+// SCHEDULE PAGE — Admin Assignment Board
+// ============================================================
+let _schedAllAreas = [];
+let _schedAuditors = [];
+let _schedCurrentArea = null;
+let _schedSelectedAuds = new Set();
+
+async function initSchedule() {
+  if (!Session.requireLogin()) return;
+  const auth = Session.load();
+  if (!auth || auth.role?.toLowerCase() !== 'admin') {
+    UI.toast('เฉพาะ Admin เท่านั้น', 'error');
+    navigate('home.html');
+    return;
+  }
+  updateUserUI();
+
+  UI.showLoading('โหลดข้อมูลการมอบหมาย...');
+  try {
+    const res = await API.get('getScheduleAdmin', {});
+    UI.hideLoading();
+    if (!res.success) { UI.toast(res.error || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+
+    _schedAllAreas  = res.areas   || [];
+    _schedAuditors  = res.auditors || [];
+
+    // สร้าง Plant tabs
+    const plants = res.plants || [];
+    const tabBar = document.getElementById('plantTabBar');
+    if (tabBar && plants.length) {
+      const extra = plants.map(p =>
+        `<button class="plant-tab-btn" onclick="schedFilterPlant('${escAttr(p.Plant_ID)}',this)">${escHtml(p.Plant_Name || p.Plant_ID)}</button>`
+      ).join('');
+      tabBar.insertAdjacentHTML('beforeend', extra);
+    }
+
+    schedRenderGrid('all');
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}
+
+function schedFilterPlant(plant, btn) {
+  document.querySelectorAll('.plant-tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  schedRenderGrid(plant);
+}
+
+function schedRenderGrid(plant) {
+  const filtered = plant === 'all'
+    ? _schedAllAreas
+    : _schedAllAreas.filter(a => a.Plant_ID === plant);
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const getStatus = a => {
+    if (!a.Auditor_IDs || !a.Audit_Date) return 'unassigned';
+    const d = new Date(a.Audit_Date); d.setHours(0,0,0,0);
+    if (a.Sched_Status === 'Completed') return 'completed';
+    if (d < today) return 'overdue';
+    return 'pending';
+  };
+
+  const statusCfg = {
+    pending:    { label:'รอตรวจ',    cls:'warning', icon:'bi-clock' },
+    completed:  { label:'ตรวจแล้ว', cls:'success',  icon:'bi-check-circle-fill' },
+    overdue:    { label:'เกินกำหนด',cls:'danger',   icon:'bi-exclamation-circle' },
+    unassigned: { label:'ยังไม่มี', cls:'secondary',icon:'bi-dash-circle' },
+  };
+  const typeInfo = {
+    Office:      { icon:'bi-briefcase',   bg:'rgba(26,115,232,0.1)',   color:'var(--primary)' },
+    Production:  { icon:'bi-building',    bg:'rgba(52,168,83,0.1)',    color:'var(--secondary)' },
+    Warehouse:   { icon:'bi-boxes',       bg:'rgba(249,171,0,0.1)',    color:'var(--warning)' },
+    Maintenance: { icon:'bi-tools',       bg:'rgba(234,67,53,0.1)',    color:'var(--danger)' },
+    Cafeteria:   { icon:'bi-cup-hot',     bg:'rgba(147,52,230,0.1)',   color:'#9334e6' },
+    Outdoor:     { icon:'bi-tree',        bg:'rgba(52,168,83,0.1)',    color:'var(--secondary)' },
+  };
+
+  // update stats
+  const assigned   = filtered.filter(a => a.Auditor_IDs).length;
+  const unassigned = filtered.filter(a => !a.Auditor_IDs).length;
+  const overdue    = filtered.filter(a => getStatus(a) === 'overdue').length;
+  setEl('statAssigned', assigned);
+  setEl('statPending',  unassigned);
+  setEl('statOverdue',  overdue);
+  setEl('statTotal',    filtered.length);
+
+  const grid = document.getElementById('areaGrid');
+  if (!grid) return;
+
+  if (!filtered.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--gray-500)">
+      <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px"></i>ไม่พบพื้นที่
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(area => {
+    const st  = getStatus(area);
+    const sc  = statusCfg[st] || statusCfg.unassigned;
+    const ti  = typeInfo[area.Area_Type] || typeInfo.Office;
+    const typeClass = (area.Area_Type || '').toLowerCase();
+
+    // auditor chips
+    const audIds  = area.Auditor_IDs ? area.Auditor_IDs.split(',').map(x => x.trim()).filter(Boolean) : [];
+    const chips   = audIds.length > 0
+      ? audIds.slice(0, 3).map(uid => {
+          const u = _schedAuditors.find(x => x.User_ID === uid);
+          if (!u) return '';
+          const initials = (u.Name || uid).substring(0, 2);
+          const hue = uid.charCodeAt(uid.length - 1) * 7 % 360;
+          return `<span class="auditor-mini-chip">
+            <span class="auditor-mini-avatar" style="background:hsl(${hue},55%,45%)">${escHtml(initials)}</span>
+            ${escHtml((u.Name || '').split(' ')[0] || uid)}
+          </span>`;
+        }).join('') + (audIds.length > 3 ? `<span style="font-size:0.66rem;color:var(--gray-600)">+${audIds.length-3}</span>` : '')
+      : `<span style="font-size:0.7rem;color:var(--gray-500);display:flex;align-items:center;gap:3px;">
+           <i class="bi bi-person-x"></i>ยังไม่มอบหมาย
+         </span>`;
+
+    const dateStr = area.Audit_Date
+      ? new Date(area.Audit_Date).toLocaleDateString('th-TH', {day:'numeric',month:'short'})
+      : '—';
+
+    return `
+      <div class="area-assign-card type-${typeClass}" onclick="openSchedModal('${escAttr(area.Area_ID)}')">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
+          <div class="area-type-icon" style="background:${ti.bg};color:${ti.color}">
+            <i class="bi ${ti.icon}"></i>
+          </div>
+          <span class="sched-status-badge ${st}">
+            <i class="bi ${sc.icon}"></i>${sc.label}
+          </span>
+        </div>
+        <div class="area-card-name">${escHtml(area.Area_Name || area.Area_ID)}</div>
+        <div class="area-card-meta">${escHtml(area.Plant_ID)}</div>
+        <div class="card-auditor-chips">${chips}</div>
+        <div class="card-date-row">
+          <i class="bi bi-calendar3"></i>${dateStr}${area.Audit_Round ? ' · ' + escHtml(area.Audit_Round) : ''}
+        </div>
+        <button class="btn-assign-dashed" onclick="event.stopPropagation();openSchedModal('${escAttr(area.Area_ID)}')">
+          <i class="bi bi-person-plus"></i> มอบหมาย / แก้ไข
+        </button>
+      </div>`;
+  }).join('');
+}
+
+function openSchedModal(areaId) {
+  _schedCurrentArea = _schedAllAreas.find(a => a.Area_ID === areaId);
+  if (!_schedCurrentArea) return;
+  const area = _schedCurrentArea;
+  _schedSelectedAuds = new Set(
+    (area.Auditor_IDs || '').split(',').map(x => x.trim()).filter(Boolean)
+  );
+
+  // Area info
+  const typeInfo = {
+    Office:      { icon:'bi-briefcase',  bg:'rgba(26,115,232,0.1)',  color:'var(--primary)' },
+    Production:  { icon:'bi-building',   bg:'rgba(52,168,83,0.1)',   color:'var(--secondary)' },
+    Warehouse:   { icon:'bi-boxes',      bg:'rgba(249,171,0,0.1)',   color:'var(--warning)' },
+    Maintenance: { icon:'bi-tools',      bg:'rgba(234,67,53,0.1)',   color:'var(--danger)' },
+    Cafeteria:   { icon:'bi-cup-hot',    bg:'rgba(147,52,230,0.1)', color:'#9334e6' },
+    Outdoor:     { icon:'bi-tree',       bg:'rgba(52,168,83,0.1)',   color:'var(--secondary)' },
+  };
+  const ti = typeInfo[area.Area_Type] || typeInfo.Office;
+  const infoEl = document.getElementById('modalAreaInfo');
+  if (infoEl) {
+    infoEl.innerHTML = `
+      <div class="modal-area-icon" style="background:${ti.bg};color:${ti.color}">
+        <i class="bi ${ti.icon}" style="font-size:1.3rem"></i>
+      </div>
+      <div>
+        <div style="font-size:1rem;font-weight:700">${escHtml(area.Area_Name || area.Area_ID)}</div>
+        <div style="font-size:0.75rem;color:var(--gray-600);margin-top:2px">${escHtml(area.Plant_ID)} · ${escHtml(area.Area_Type || '')}</div>
+      </div>`;
+  }
+
+  document.getElementById('modalTitle').textContent = area.Area_Name || area.Area_ID;
+
+  // Date & Round
+  const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+  const dateEl = document.getElementById('schedDate');
+  if (dateEl) dateEl.value = area.Audit_Date || tmr.toISOString().split('T')[0];
+  const roundEl = document.getElementById('schedRound');
+  if (roundEl) roundEl.value = area.Audit_Round || 'Round 2';
+
+  // Delete button visibility
+  const delRow = document.getElementById('deleteSchedRow');
+  if (delRow) delRow.style.display = area.Schedule_ID ? 'block' : 'none';
+
+  schedRenderAuditorGrid();
+  document.getElementById('assignModal').classList.add('show');
+}
+
+function schedRenderAuditorGrid() {
+  const grid = document.getElementById('auditorSelectGrid');
+  if (!grid) return;
+  grid.innerHTML = _schedAuditors.map(u => {
+    const sel = _schedSelectedAuds.has(u.User_ID);
+    const initials = (u.Name || u.User_ID).substring(0, 2);
+    const hue = u.User_ID.charCodeAt(u.User_ID.length - 1) * 7 % 360;
+    return `
+      <div class="auditor-select-card ${sel ? 'selected' : ''}" onclick="schedToggleAud('${escAttr(u.User_ID)}')">
+        <div class="aud-avatar" style="background:hsl(${hue},55%,45%)">${escHtml(initials)}</div>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:0.8rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${escHtml((u.Name || '').split(' ')[0] || u.User_ID)}
+          </div>
+          <div style="font-size:0.68rem;color:var(--gray-600)">${escHtml(u.Department || u.Role || '')}</div>
+        </div>
+        <i class="bi bi-check-circle-fill check-icon"></i>
+      </div>`;
+  }).join('');
+}
+
+function schedToggleAud(uid) {
+  if (_schedSelectedAuds.has(uid)) _schedSelectedAuds.delete(uid);
+  else _schedSelectedAuds.add(uid);
+  schedRenderAuditorGrid();
+}
+
+async function saveSchedule() {
+  const area = _schedCurrentArea;
+  if (!area) return;
+  const dateVal  = document.getElementById('schedDate')?.value || '';
+  const roundVal = document.getElementById('schedRound')?.value || 'Round 2';
+  const audIds   = Array.from(_schedSelectedAuds).join(',');
+
+  const btn = document.getElementById('saveSchedBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก...'; }
+
+  try {
+    const res = await API.post('saveSchedule', {
+      areaId:     area.Area_ID,
+      plantId:    area.Plant_ID,
+      auditDate:  dateVal,
+      auditRound: roundVal,
+      auditorIds: audIds,
+      scheduleId: area.Schedule_ID || '',
+    });
+    if (res.success) {
+      // อัปเดต local state
+      area.Auditor_IDs = audIds;
+      area.Audit_Date  = dateVal;
+      area.Audit_Round = roundVal;
+      area.Schedule_ID = res.scheduleId || area.Schedule_ID;
+      area.Sched_Status = 'Pending';
+      closeAssignModal();
+      schedRenderGrid(
+        document.querySelector('.plant-tab-btn.active')?.textContent === 'ทั้งหมด'
+          ? 'all'
+          : _schedCurrentArea.Plant_ID
+      );
+      UI.toast('บันทึกการมอบหมายเรียบร้อย ✅', 'success');
+    } else {
+      UI.toast(res.error || 'บันทึกไม่สำเร็จ', 'error');
+    }
+  } catch(err) {
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> บันทึกการมอบหมาย'; }
+}
+
+async function deleteSchedule() {
+  const area = _schedCurrentArea;
+  if (!area || !area.Schedule_ID) return;
+  if (!confirm('ยืนยันยกเลิกตารางตรวจนี้?')) return;
+
+  try {
+    const res = await API.get('deleteSchedule', { scheduleId: area.Schedule_ID });
+    if (res.success) {
+      area.Auditor_IDs = '';
+      area.Audit_Date  = null;
+      area.Audit_Round = null;
+      area.Schedule_ID = null;
+      area.Sched_Status = 'unassigned';
+      closeAssignModal();
+      schedRenderGrid('all');
+      UI.toast('ยกเลิกตารางเรียบร้อย', 'success');
+    } else {
+      UI.toast(res.error || 'ยกเลิกไม่สำเร็จ', 'error');
+    }
+  } catch(err) {
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}
+
+function closeAssignModal() {
+  const modal = document.getElementById('assignModal');
+  if (modal) modal.classList.remove('show');
+}
+
+// ============================================================
+// CRITERIA PAGE — มาตรฐาน 5ส อ่านอย่างเดียว
+// ============================================================
+let _criteriaAll = [];
+let _criteriaTypeFilter = 'All';
+
+async function initCriteria() {
+  if (!Session.requireLogin()) return;
+  updateUserUI();
+
+  UI.showLoading('โหลดมาตรฐาน 5ส...');
+  try {
+    const res = await API.get('getCriteria', { areaType: 'All' });
+    UI.hideLoading();
+    if (!res.success) { UI.toast('โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+
+    _criteriaAll = res.data || [];
+    criteriaRender();
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}
+
+function setTypeFilter(type, btn) {
+  _criteriaTypeFilter = type;
+  document.querySelectorAll('.type-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const searchEl = document.getElementById('criteriaSearch');
+  criteriaRender(searchEl ? searchEl.value : '');
+
+  const labelEl = document.getElementById('filterLabel');
+  if (labelEl) labelEl.textContent = type === 'All' ? 'ทุกประเภทพื้นที่' : 'ประเภท: ' + type;
+}
+
+function filterCriteria(q) {
+  criteriaRender(q);
+}
+
+function criteriaRender(searchQ = '') {
+  const q = searchQ.toLowerCase().trim();
+
+  // กรองตาม Area_Type
+  let items = _criteriaTypeFilter === 'All'
+    ? _criteriaAll
+    : _criteriaAll.filter(c => {
+        const types = String(c.Area_Type || 'All').split(',').map(t => t.trim());
+        return types.includes('All') || types.includes(_criteriaTypeFilter);
+      });
+
+  // กรองตาม search
+  if (q) {
+    items = items.filter(c =>
+      (c.Question    || '').toLowerCase().includes(q) ||
+      (c.Description || '').toLowerCase().includes(q) ||
+      (c.Category    || '').toLowerCase().includes(q) ||
+      (c.Criteria_ID || '').toLowerCase().includes(q)
+    );
+  }
+
+  // จัดกลุ่มตาม Category
+  const grouped = {};
+  items.forEach(c => {
+    const cat = c.Category || 'ทั่วไป';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(c);
+  });
+
+  setEl('statItems', items.length);
+  setEl('statCats',  Object.keys(grouped).length);
+
+  const container = document.getElementById('criteriaContent');
+  if (!container) return;
+
+  if (!items.length) {
+    container.innerHTML = `
+      <div class="empty-search">
+        <i class="bi bi-search"></i>
+        ไม่พบข้อมูลที่ค้นหา
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = Object.entries(grouped).map(([cat, list], idx) => {
+    const items = list.map(c => `
+      <div class="criteria-item-view">
+        <span class="criteria-num">${escHtml(c.Criteria_ID || '')}</span>
+        <div class="criteria-text">
+          <div class="criteria-question">${escHtml(c.Question || '')}</div>
+          ${c.Description ? `<div class="criteria-desc">${escHtml(c.Description)}</div>` : ''}
+          ${c.Area_Type && c.Area_Type !== 'All'
+            ? `<span class="criteria-type-badge"><i class="bi bi-tag"></i> ${escHtml(c.Area_Type)}</span>`
+            : ''}
+        </div>
+      </div>`).join('');
+
+    return `
+      <div class="category-block${idx === 0 ? ' open' : ''}" id="cat-${idx}">
+        <div class="category-header" onclick="toggleCategory('cat-${idx}')">
+          <div class="category-icon"><i class="bi bi-folder2"></i></div>
+          <div class="category-title">${escHtml(cat)}</div>
+          <span class="category-count">${list.length} ข้อ</span>
+          <i class="bi bi-chevron-down category-chevron"></i>
+        </div>
+        <div class="criteria-list">${items}</div>
+      </div>`;
+  }).join('');
+}
+
+function toggleCategory(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+// ============================================================
 // AUTO-INIT ตาม page ปัจจุบัน
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+  // Apply ภาษาที่เลือกไว้ทุกหน้า
+  I18n.apply();
+
   const page = window.location.pathname.split('/').pop().replace('.html','');
 
   switch(page) {
@@ -1232,334 +2809,8 @@ document.addEventListener('DOMContentLoaded', () => {
     case 'summary':            initSummary();   break;
     case 'history':            initHistory();   break;
     case 'dashboard':          initDashboard(); break;
-    case 'admin':              initAdmin();     break;
+    case 'users':              initUsers();     break;
+    case 'schedule':           initSchedule();  break;
+    case 'criteria':           initCriteria();  break;
   }
 });
-
-// ============================================================
-// ADMIN PAGE - จัดการผู้ใช้งาน
-// ============================================================
-let allUsers = [];
-let allPlants = [];
-let allAreas = [];
-
-async function initAdmin() {
-  if (!Session.requireLogin()) return;
-
-  // ตรวจสอบ Admin role
-  if (AppState.user?.role !== 'Admin') {
-    UI.toast('⛔ เข้าถึงได้เฉพาะ Admin เท่านั้น', 'error');
-    setTimeout(() => navigate('home.html'), 1500);
-    return;
-  }
-
-  updateUserUI();
-  UI.setActiveNav('admin');
-
-  // โหลดข้อมูล
-  try {
-    UI.showLoading('โหลดข้อมูล...');
-
-    const [usersRes, plantsRes, areasRes] = await Promise.all([
-      API.get('getUsers'),
-      API.get('getPlants'),
-      API.get('getAreas', {})
-    ]);
-
-    UI.hideLoading();
-
-    if (!usersRes.success) { UI.toast(usersRes.error, 'error'); return; }
-    if (!plantsRes.success) { UI.toast(plantsRes.error, 'error'); return; }
-    if (!areasRes.success) { UI.toast(areasRes.error, 'error'); return; }
-
-    allUsers = usersRes.data || [];
-    allPlants = plantsRes.data || [];
-    allAreas = areasRes.data || [];
-
-    // Render user list
-    renderUserList(allUsers);
-
-    // Populate modal checkboxes
-    populatePlantCheckboxes();
-    populateAreaCheckboxes();
-
-  } catch(err) {
-    UI.hideLoading();
-    UI.toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message, 'error');
-  }
-}
-
-function renderUserList(users) {
-  const container = document.getElementById('userList');
-  if (!container) return;
-
-  if (!users || users.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <i class="bi bi-people"></i>
-        <p>ยังไม่มีผู้ใช้งาน</p>
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = users.map(user => `
-    <div class="user-card">
-      <div class="user-avatar">${(user.name || user.email || 'U')[0].toUpperCase()}</div>
-      <div class="user-info">
-        <div class="user-name">${escHtml(user.name || '-')}</div>
-        <div class="user-meta">
-          <span class="badge-role ${user.role ? user.role.toLowerCase().replace(/ /g,'-') : ''}" style="${getRoleBadgeStyle(user.role)}">
-            ${escHtml(user.role || '-')}
-          </span>
-          ${user.email ? `<span style="font-size:0.75rem;color:var(--gray-600)">${escHtml(user.email)}</span>` : ''}
-        </div>
-      </div>
-      <div class="user-actions">
-        <button class="btn-icon" onclick="editUser('${user.userId}')" title="แก้ไข">
-          <i class="bi bi-pencil" style="color:var(--primary)"></i>
-        </button>
-        <button class="btn-icon" onclick="deleteUserConfirm('${user.userId}','${escHtml(user.name)}')" title="ลบ">
-          <i class="bi bi-trash" style="color:var(--danger)"></i>
-        </button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function getRoleBadgeStyle(role) {
-  if (!role) return '';
-  const lowerRole = role.toLowerCase();
-  if (lowerRole.includes('auditor')) {
-    return 'background:#e3f2fd;color:#1565c0';
-  } else if (lowerRole.includes('manager') || lowerRole.includes('supervisor')) {
-    return 'background:#f3e5f5;color:#7b1fa2';
-  } else if (lowerRole.includes('admin')) {
-    return 'background:#ffebee;color:#c62828';
-  }
-  return '';
-}
-
-function populatePlantCheckboxes() {
-  const container = document.getElementById('plantsCheckbox');
-  if (!container) return;
-
-  if (!allPlants || allPlants.length === 0) {
-    container.innerHTML = '<p style="color:var(--gray-600);font-size:0.85rem">ไม่พบ Plant</p>';
-    return;
-  }
-
-  container.innerHTML = allPlants.map(plant => `
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
-      <input type="checkbox" value="${plant.Plant_ID}" class="plantCheckbox"
-             style="width:18px;height:18px;cursor:pointer">
-      <span style="flex:1">${escHtml(plant.Plant_Name)} (${plant.Plant_ID})</span>
-    </label>
-  `).join('');
-}
-
-function populateAreaCheckboxes() {
-  const container = document.getElementById('areasCheckbox');
-  if (!container) return;
-
-  if (!allAreas || allAreas.length === 0) {
-    container.innerHTML = '<p style="color:var(--gray-600);font-size:0.85rem">ไม่พบ Area</p>';
-    return;
-  }
-
-  container.innerHTML = allAreas.map(area => `
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
-      <input type="checkbox" value="${area.Area_ID}" class="areaCheckbox"
-             style="width:18px;height:18px;cursor:pointer">
-      <span style="flex:1">${escHtml(area.Area_Name)} (${area.Area_ID})</span>
-    </label>
-  `).join('');
-}
-
-function filterUsers() {
-  const searchText = (document.getElementById('searchInput')?.value || '').toLowerCase();
-  const roleFilter = document.getElementById('filterRole')?.value || '';
-  const statusFilter = document.getElementById('filterStatus')?.value || '';
-
-  const filtered = allUsers.filter(user => {
-    const matchSearch = !searchText ||
-      (user.name && user.name.toLowerCase().includes(searchText)) ||
-      (user.email && user.email.toLowerCase().includes(searchText));
-
-    const matchRole = !roleFilter || user.role === roleFilter;
-    const matchStatus = !statusFilter || (user.status || 'active') === statusFilter;
-
-    return matchSearch && matchRole && matchStatus;
-  });
-
-  renderUserList(filtered);
-}
-
-function openUserModal(userId) {
-  const modal = document.getElementById('userModal');
-  if (!modal) return;
-
-  const form = document.getElementById('userForm');
-  const title = document.getElementById('modalTitle');
-  const idInput = document.getElementById('editUserId');
-
-  if (userId) {
-    // Edit mode
-    const user = allUsers.find(u => u.userId === userId);
-    if (!user) {
-      UI.toast('ไม่พบผู้ใช้งาน', 'error');
-      return;
-    }
-
-    title.textContent = 'แก้ไขผู้ใช้งาน';
-    idInput.value = userId;
-    document.getElementById('userName').value = user.name || '';
-    document.getElementById('userEmail').value = user.email || '';
-    document.getElementById('userPassword').value = '';
-    document.getElementById('userPassword').required = false;
-    document.getElementById('userPassword').placeholder = 'ไม่กรอก = ไม่เปลี่ยนรหัสผ่าน';
-    document.getElementById('userRole').value = user.role || '';
-    document.getElementById('userStatus').value = user.status || 'active';
-
-    // Check assigned plants
-    const assignedPlants = user.assignedPlants ? user.assignedPlants.split(',') : [];
-    document.querySelectorAll('.plantCheckbox').forEach(cb => {
-      cb.checked = assignedPlants.includes(cb.value);
-    });
-
-    // Check assigned areas
-    const assignedAreas = user.assignedAreas ? user.assignedAreas.split(',') : [];
-    document.querySelectorAll('.areaCheckbox').forEach(cb => {
-      cb.checked = assignedAreas.includes(cb.value);
-    });
-  } else {
-    // Create mode
-    title.textContent = 'เพิ่มผู้ใช้งานใหม่';
-    idInput.value = '';
-    form.reset();
-    document.getElementById('userPassword').required = true;
-    document.getElementById('userPassword').placeholder = 'ตั้งรหัสผ่าน';
-    document.querySelectorAll('.plantCheckbox, .areaCheckbox').forEach(cb => cb.checked = false);
-  }
-
-  modal.style.display = 'flex';
-}
-
-function closeUserModal() {
-  const modal = document.getElementById('userModal');
-  if (modal) modal.style.display = 'none';
-}
-
-async function saveUser(e) {
-  e.preventDefault();
-
-  const userId = document.getElementById('editUserId').value;
-  const name = document.getElementById('userName').value.trim();
-  const email = document.getElementById('userEmail').value.trim();
-  const password = document.getElementById('userPassword').value;
-  const role = document.getElementById('userRole').value;
-  const status = document.getElementById('userStatus').value;
-
-  if (!name) { UI.toast('กรุณากรอกชื่อ', 'warning'); return; }
-  if (!email) { UI.toast('กรุณากรอก email', 'warning'); return; }
-  if (!role) { UI.toast('กรุณาเลือก role', 'warning'); return; }
-
-  // เก็บ plants/areas
-  const assignedPlants = Array.from(document.querySelectorAll('.plantCheckbox:checked'))
-    .map(cb => cb.value).join(',');
-  const assignedAreas = Array.from(document.querySelectorAll('.areaCheckbox:checked'))
-    .map(cb => cb.value).join(',');
-
-  try {
-    UI.showLoading(`${userId ? 'กำลังอัปเดต...' : 'กำลังสร้าง...'}`);
-
-    let res;
-    if (userId) {
-      // Update
-      res = await API.post('updateUser', {
-        userId,
-        name,
-        email,
-        password: password || undefined,
-        role,
-        status,
-        assignedPlants,
-        assignedAreas
-      });
-    } else {
-      // Create
-      if (!password) { UI.toast('กรุณาตั้งรหัสผ่าน', 'warning'); return; }
-      res = await API.post('createUser', {
-        name,
-        email,
-        password,
-        role,
-        status,
-        assignedPlants,
-        assignedAreas
-      });
-    }
-
-    UI.hideLoading();
-
-    if (res.success) {
-      UI.toast(`${userId ? 'อัปเดต' : 'สร้าง'}สำเร็จ ✅`, 'success');
-      closeUserModal();
-      // Reload user list
-      setTimeout(() => {
-        const usersRes = API.get('getUsers');
-        usersRes.then(r => {
-          if (r.success) {
-            allUsers = r.data || [];
-            renderUserList(allUsers);
-            filterUsers();
-          }
-        });
-      }, 500);
-    } else {
-      UI.toast(res.error || 'บันทึกไม่สำเร็จ', 'error');
-    }
-  } catch(err) {
-    UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
-  }
-}
-
-function editUser(userId) {
-  openUserModal(userId);
-}
-
-function deleteUserConfirm(userId, userName) {
-  const ok = confirm(`ยืนยันการลบ "${userName}" หรือไม่?\n\nผู้ใช้นี้จะเปลี่ยนเป็น Inactive`);
-  if (!ok) return;
-  deleteUser(userId);
-}
-
-async function deleteUser(userId) {
-  try {
-    UI.showLoading('กำลังลบ...');
-
-    const res = await API.post('deleteUser', { userId });
-
-    UI.hideLoading();
-
-    if (res.success) {
-      UI.toast('ลบสำเร็จ ✅', 'success');
-      // Reload user list
-      setTimeout(() => {
-        const usersRes = API.get('getUsers');
-        usersRes.then(r => {
-          if (r.success) {
-            allUsers = r.data || [];
-            renderUserList(allUsers);
-            filterUsers();
-          }
-        });
-      }, 500);
-    } else {
-      UI.toast(res.error || 'ลบไม่สำเร็จ', 'error');
-    }
-  } catch(err) {
-    UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
-  }
-}

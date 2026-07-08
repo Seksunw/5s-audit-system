@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v1.4'; // เพิ่ม version เมื่อแก้ไขโค้ด เพื่อ invalidate cache เก่า
+const CACHE_NAME = '5s-audit-v1.6'; // v1.6: schedule + criteria pages, assigned tasks, Admin board
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
@@ -13,6 +13,9 @@ const STATIC_ASSETS = [
   'summary.html',
   'history.html',
   'dashboard.html',
+  'users.html',
+  'schedule.html',    // ← Admin assignment board
+  'criteria.html',    // ← 5ส standards viewer
   'css/style.css',
   'js/app.js',
   'manifest.json'
