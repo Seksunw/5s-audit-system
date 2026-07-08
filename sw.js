@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v2.0'; // v2.0: JS always fresh from network
+const CACHE_NAME = '5s-audit-v2.1'; // v2.1: JS always fresh from network
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

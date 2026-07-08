@@ -1007,8 +1007,9 @@ async function initHome() {
   const isAdmin = String(user.role || '').toLowerCase() === 'admin';
   const menuSched = document.getElementById('menuSchedule');
   const menuUsers = document.getElementById('menuUsers');
+  // ทั้ง "มอบหมาย" และ "ผู้ใช้" เป็น admin-only แสดงพร้อมกัน; auditor ไม่เห็นทั้งคู่
   if (menuSched) menuSched.style.display = isAdmin ? 'block' : 'none';
-  if (menuUsers) menuUsers.style.display = isAdmin ? 'none' : 'block';
+  if (menuUsers) menuUsers.style.display = isAdmin ? 'block' : 'none';
 
   try {
     UI.showLoading(I18n.t('msg.loading_home'));
