@@ -6,16 +6,312 @@
  */
 
 // ============================================================
-// CONFIG - แก้ API_URL ให้ตรงกับ Google Apps Script URL
+// CONFIG - Supabase project URL + publishable key
 // ============================================================
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycby2pJ2pv7OTnn2wKtWUJU3uC0rNRDQBc2prMQR0d3PtaoolwsDZEHVLYdtl9YSIu20Y/exec',
-  IMGBB_API_KEY: '8449d25d43f8b34c3b7b046ec9a5451f',
+  SUPABASE_URL: 'https://oibjnkngraulcccdqevm.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_ORPB_uS9OzqOGtyA1BvZgg_9WAt9--v',
+  STORAGE_BUCKET: 'audit-photos',
   APP_NAME: 'ระบบตรวจ 5ส',
-  VERSION: '1.0.0',
+  VERSION: '2.0.0',
   SESSION_KEY: '5s_session',
   LANG_KEY:    '5s_lang',
   CACHE_TTL: 5 * 60 * 1000,
+};
+
+// ============================================================
+// SUPABASE BACKEND ADAPTER
+// แทน Google Apps Script — supabase-js query + แปลง response
+// ให้เป็นรูปแบบ key เดิม (PascalCase) ที่หน้าเว็บใช้อยู่
+// ต้องโหลด <script src="...supabase-js@2"></script> ก่อน app.js
+// ============================================================
+const _sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+
+// map enum (DB) → label เดิม (frontend)
+const MAP = {
+  areaType:    { office:'Office', production:'Production', warehouse:'Warehouse', cafeteria:'Cafeteria', outdoor:'Outdoor', maintenance:'Maintenance' },
+  role:        { admin:'Admin', manager:'Manager', auditor:'Auditor', area_manager:'Area Manager' },
+  status:      { active:'Active', inactive:'Inactive' },
+  auditStatus: { excellent:'Excellent', good:'Good', need_improvement:'Need Improvement', pending:'Pending', failed:'Failed' },
+};
+// reverse: label เดิม → enum (DB)
+const REV = {
+  role:   { 'Admin':'admin', 'Manager':'manager', 'Auditor':'auditor', 'Area Manager':'area_manager' },
+  status: { 'Active':'active', 'Inactive':'inactive' },
+};
+
+// mappers: row (snake_case) → object (PascalCase เดิม)
+const mapPlant = p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name, Status:MAP.status[p.status]||p.status });
+const mapArea  = a => ({ Area_ID:a.area_id, Plant_ID:a.plant_id, Area_Name:a.area_name, Area_Type:MAP.areaType[a.area_type]||a.area_type, Status:MAP.status[a.status]||a.status });
+const _critType = arr => (!arr || !arr.length) ? 'All' : arr.map(t => MAP.areaType[t]||t).join(',');
+const mapCriteria = c => ({ Criteria_ID:c.criteria_id, Category:c.category, Sub_Category:c.sub_category, Question:c.question, Description:c.description, Area_Type:_critType(c.area_types), Max_Score:c.max_score, Active:c.active });
+const mapProfile = u => ({ User_ID:u.id, Employee_ID:u.employee_id, Name:u.name, Department:u.department, Email:u.email, Role:MAP.role[u.role]||u.role, Status:MAP.status[u.status]||u.status, Assigned_Areas:(u.assigned_areas||[]).join(','), Assigned_Plants:(u.assigned_plants||[]).join(','), Password:'***' });
+const mapHeader = h => ({ Audit_ID:h.audit_id, Plant_ID:h.plant_id, Area_ID:h.area_id, Auditor_ID:h.auditor_id, Audit_Date:h.audit_date, Total_Score:h.total_score, Max_Score:h.max_score, Percent:Number(h.percent), Status:MAP.auditStatus[h.status]||h.status });
+
+let _profileCache = null;
+async function _currentProfile() {
+  if (_profileCache) return _profileCache;
+  const { data:{ user } } = await _sb.auth.getUser();
+  if (!user) return null;
+  const { data } = await _sb.from('profiles').select('*').eq('id', user.id).single();
+  _profileCache = data || null;
+  return _profileCache;
+}
+
+function _monthRange(month, year) {
+  if (!year) return null;
+  const m = month ? String(month).padStart(2,'0') : null;
+  if (m) { const start=`${year}-${m}-01`; const nm = m==='12'?`${+year+1}-01-01`:`${year}-${String(+m+1).padStart(2,'0')}-01`; return [start, nm]; }
+  return [`${year}-01-01`, `${+year+1}-01-01`];
+}
+
+// ============================================================
+// SUPABASE HANDLERS — 1 ตัวต่อ 1 action (คืน shape เดิม)
+// ============================================================
+const SBH = {
+  // ---- Auth ----
+  async login({ email, password }) {
+    const { data, error } = await _sb.auth.signInWithPassword({ email:(email||'').trim(), password });
+    if (error) return { success:false, error:'อีเมลหรือรหัสผ่านไม่ถูกต้อง' };
+    _profileCache = null;
+    const { data:prof } = await _sb.from('profiles').select('*').eq('id', data.user.id).single();
+    if (!prof || prof.status !== 'active') { await _sb.auth.signOut(); return { success:false, error:'บัญชีถูกระงับหรือไม่พบโปรไฟล์' }; }
+    _profileCache = prof;
+    return { success:true, token:data.session.access_token, user:{ userId:prof.id, name:prof.name, email:prof.email, role:MAP.role[prof.role]||prof.role, department:prof.department } };
+  },
+  async logout() { _profileCache = null; await _sb.auth.signOut(); return { success:true }; },
+
+  // ---- Master data ----
+  async getPlants() {
+    const { data, error } = await _sb.from('plants').select('*').eq('status','active').order('plant_id');
+    if (error) throw error;
+    return { success:true, data:data.map(mapPlant) };
+  },
+
+  async getAreas({ plantId } = {}) {
+    let q = _sb.from('areas').select('*').eq('status','active');
+    if (plantId) q = q.eq('plant_id', plantId);
+    const { data, error } = await q.order('area_id');
+    if (error) throw error;
+    let areas = data.map(mapArea);
+
+    // annotate pending schedule + scope สำหรับ auditor
+    const { data:scheds } = await _sb.from('schedules').select('*').eq('status','pending');
+    const byArea = {}; (scheds||[]).forEach(s => { byArea[s.area_id] = s; });
+    areas.forEach(a => { const s = byArea[a.Area_ID]; if (s) { a.Schedule_ID=s.schedule_id; a.Audit_Round=s.audit_round; a.Audit_Date=s.audit_date; } });
+
+    const prof = await _currentProfile();
+    const isStaff = prof && ['admin','manager'].includes(prof.role);
+    if (prof && !isStaff) {
+      const assigned = new Set(prof.assigned_areas || []);
+      areas = areas.filter(a => {
+        if (assigned.size && assigned.has(a.Area_ID)) return true;
+        const s = byArea[a.Area_ID];
+        if (s && (s.auditor_ids||[]).includes(prof.id)) return true;
+        return assigned.size === 0;   // ถ้าไม่มีการกำหนดพื้นที่ → เห็นทั้งหมด
+      });
+    }
+    return { success:true, data:areas };
+  },
+
+  async getCriteria({ areaType } = {}) {
+    const { data, error } = await _sb.from('criteria').select('*').eq('active', true).order('criteria_id');
+    if (error) throw error;
+    let items = data;
+    const at = areaType || 'All';
+    if (at && at !== 'All') {
+      const low = String(at).toLowerCase();
+      items = items.filter(c => !c.area_types || c.area_types.length === 0 || c.area_types.includes(low));
+    }
+    const mapped = items.map(mapCriteria);
+    const grouped = {};
+    mapped.forEach(c => { (grouped[c.Category] = grouped[c.Category] || []).push(c); });
+    const totalMaxScore = mapped.reduce((s,c) => s + (c.Max_Score||0), 0);
+    return { success:true, data:mapped, grouped, totalMaxScore };
+  },
+
+  async getSchedule() {
+    const { data, error } = await _sb.from('schedules').select('*, areas(area_name)').eq('status','pending');
+    if (error) throw error;
+    return { success:true, data:(data||[]).map(s => ({
+      Schedule_ID:s.schedule_id, Plant_ID:s.plant_id, Area_ID:s.area_id,
+      Area_Name:(s.areas && s.areas.area_name) || s.area_id,
+      Auditor_ID:(s.auditor_ids||[]).join(','),
+      Audit_Date:s.audit_date, Audit_Round:s.audit_round, Status:'Pending'
+    })) };
+  },
+
+  // ---- History / detail ----
+  async getHistory({ plantId, month, year } = {}) {
+    let q = _sb.from('audit_headers').select('*, profiles(name)');
+    if (plantId) q = q.eq('plant_id', plantId);
+    const range = _monthRange(month, year);
+    if (range) q = q.gte('audit_date', range[0]).lt('audit_date', range[1]);
+    const { data, error } = await q.order('audit_date', { ascending:false });
+    if (error) throw error;
+    const mapped = (data||[]).map(h => { const m = mapHeader(h); m.Auditor_ID = (h.profiles && h.profiles.name) || h.auditor_id; return m; });
+    return { success:true, data:mapped, total:mapped.length };
+  },
+
+  async getAuditDetail({ auditId }) {
+    const { data:h, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
+    if (error) return { success:false, error:'ไม่พบข้อมูล Audit' };
+    const { data:d } = await _sb.from('audit_details').select('*, criteria(question,category,sub_category)').eq('audit_id', auditId);
+    const details = (d||[]).map(x => ({
+      Detail_ID:x.detail_id, Criteria_ID:x.criteria_id, Score:x.score, Remark:x.remark,
+      Photo_URL:(x.photo_urls||[]).join(','),
+      Question:x.criteria && x.criteria.question, Category:x.criteria && x.criteria.category
+    }));
+    return { success:true, header:mapHeader(h), details };
+  },
+
+  async getDashboard() {
+    const [{ data:headers }, { data:areas }, { data:plants }] = await Promise.all([
+      _sb.from('audit_headers').select('*').neq('status','pending'),
+      _sb.from('areas').select('area_id,area_name,plant_id'),
+      _sb.from('plants').select('plant_id,plant_name'),
+    ]);
+    const H = headers || [];
+    const pct = h => Number(h.percent) || 0;
+    const totalAudit = H.length;
+    const avgScore = totalAudit ? Math.round(H.reduce((s,h)=>s+pct(h),0)/totalAudit) : 0;
+    const passRate = totalAudit ? Math.round(H.filter(h=>pct(h)>=75).length*100/totalAudit) : 0;
+    const excellent = H.filter(h=>pct(h)>=90).length;
+    const good = H.filter(h=>pct(h)>=75 && pct(h)<90).length;
+    const needImprovement = H.filter(h=>pct(h)<75).length;
+
+    const areaName = {}; (areas||[]).forEach(a=>areaName[a.area_id]=a.area_name);
+    const plantName = {}; (plants||[]).forEach(p=>plantName[p.plant_id]=p.plant_name);
+    const avgBy = (keyFn, nameMap, label) => {
+      const g = {}; H.forEach(h=>{ const k=keyFn(h); (g[k]=g[k]||[]).push(pct(h)); });
+      return Object.entries(g).map(([k,arr])=>({ [label]:(nameMap[k]||k), avgScore:Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) }))
+                   .sort((a,b)=>b.avgScore-a.avgScore);
+    };
+    const plantComparison = avgBy(h=>h.plant_id, plantName, 'plantName');
+    const areaRanking = avgBy(h=>h.area_id, areaName, 'areaName');
+
+    const mg = {}; H.forEach(h=>{ const mth=String(h.audit_date||'').slice(0,7); if(mth){(mg[mth]=mg[mth]||[]).push(pct(h));} });
+    const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month,arr])=>({ month, avgScore:Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) }));
+
+    return { success:true, data:{
+      totalAudit, avgScore, passRate, excellent, good, needImprovement,
+      plantComparison, areaRanking, monthlyTrend,
+      highestArea: areaRanking[0] || null,
+      lowestArea:  areaRanking.length ? areaRanking[areaRanking.length-1] : null,
+    }};
+  },
+
+  // ---- Users ----
+  async getUsers() {
+    const { data, error } = await _sb.from('profiles').select('*').order('name');
+    if (error) throw error;
+    return { success:true, data:data.map(mapProfile) };
+  },
+
+  async saveUser(p) {
+    if (!p.userId) {
+      return { success:false, error:'การสร้างผู้ใช้ใหม่ต้องผ่าน Supabase (Auth) — ยังไม่รองรับจากหน้านี้ ดู TODO' };
+    }
+    const patch = {
+      name:p.name, email:p.email, department:p.department, employee_id:p.employeeId,
+      role:REV.role[p.role]||'auditor', status:REV.status[p.status]||'active',
+      assigned_areas: p.assignedAreas ? p.assignedAreas.split(',').map(s=>s.trim()).filter(Boolean) : [],
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await _sb.from('profiles').update(patch).eq('id', p.userId);
+    if (error) return { success:false, error:error.message };
+    return { success:true, message:'อัปเดตผู้ใช้เรียบร้อย' };
+  },
+
+  async deleteUser({ userId }) {
+    if (userId === (AppState.user && AppState.user.userId)) return { success:false, error:'ลบบัญชีตัวเองไม่ได้' };
+    const { data:target } = await _sb.from('profiles').select('role,status').eq('id', userId).single();
+    if (target && target.role === 'admin' && target.status === 'active') {
+      const { data:admins } = await _sb.from('profiles').select('id').eq('role','admin').eq('status','active');
+      if ((admins||[]).length <= 1) return { success:false, error:'ลบ Admin คนสุดท้ายไม่ได้' };
+    }
+    const { error } = await _sb.from('profiles').delete().eq('id', userId);
+    if (error) return { success:false, error:error.message };
+    return { success:true };
+  },
+
+  // ---- Schedule (admin) ----
+  async getScheduleAdmin() {
+    const [{ data:areas }, { data:scheds }, { data:auditors }, { data:plants }] = await Promise.all([
+      _sb.from('areas').select('*').eq('status','active').order('area_id'),
+      _sb.from('schedules').select('*'),
+      _sb.from('profiles').select('*').eq('status','active').order('name'),
+      _sb.from('plants').select('*').eq('status','active'),
+    ]);
+    const byArea = {}; (scheds||[]).forEach(s => { byArea[s.area_id] = s; });
+    const areaRows = (areas||[]).map(a => {
+      const s = byArea[a.area_id];
+      return {
+        Area_ID:a.area_id, Plant_ID:a.plant_id, Area_Name:a.area_name, Area_Type:MAP.areaType[a.area_type]||a.area_type,
+        Auditor_IDs: s ? (s.auditor_ids||[]).join(',') : '',
+        Audit_Date: s ? s.audit_date : null, Audit_Round: s ? s.audit_round : null,
+        Schedule_ID: s ? s.schedule_id : null,
+        Sched_Status: s ? (s.status === 'completed' ? 'Completed' : 'Pending') : null,
+      };
+    });
+    return { success:true,
+      areas: areaRows,
+      auditors: (auditors||[]).map(u => ({ User_ID:u.id, Name:u.name, Department:u.department, Role:MAP.role[u.role]||u.role })),
+      plants: (plants||[]).map(p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name })),
+    };
+  },
+
+  async saveSchedule(p) {
+    const ids = p.auditorIds ? p.auditorIds.split(',').map(s=>s.trim()).filter(Boolean) : [];
+    const payload = { plant_id:p.plantId, area_id:p.areaId, auditor_ids:ids, audit_date:p.auditDate||null, audit_round:p.auditRound, status:'pending' };
+    if (p.scheduleId) {
+      const { error } = await _sb.from('schedules').update(payload).eq('schedule_id', p.scheduleId);
+      if (error) return { success:false, error:error.message };
+      return { success:true, scheduleId:p.scheduleId };
+    }
+    const { data, error } = await _sb.from('schedules').insert(payload).select('schedule_id').single();
+    if (error) return { success:false, error:error.message };
+    return { success:true, scheduleId:data.schedule_id };
+  },
+
+  async deleteSchedule({ scheduleId }) {
+    const { error } = await _sb.from('schedules').delete().eq('schedule_id', scheduleId);
+    if (error) return { success:false, error:error.message };
+    return { success:true };
+  },
+
+  // ---- Audit submit ----
+  async submitAuditHeader(p) {
+    const { data, error } = await _sb.from('audit_headers')
+      .insert({ plant_id:p.plantId, area_id:p.areaId, auditor_id:p.auditorId, audit_date:p.auditDate })
+      .select('audit_id').single();
+    if (error) return { success:false, error:error.message };
+    return { success:true, auditId:data.audit_id };
+  },
+
+  async submitAuditDetails(p) {
+    let arr; try { arr = JSON.parse(p.details); } catch(e) { return { success:false, error:'details JSON ไม่ถูกต้อง' }; }
+    const rows = arr.map(d => ({
+      audit_id:p.auditId, criteria_id:d.criteriaId, score:Number(d.score)||0,
+      remark:(d.remark||'').slice(0,200),
+      photo_urls: d.photoUrl ? String(d.photoUrl).split(',').filter(Boolean) : [],
+    }));
+    const { error } = await _sb.from('audit_details').upsert(rows, { onConflict:'audit_id,criteria_id' });
+    if (error) return { success:false, error:error.message };
+    return { success:true, saved:rows.length };   // trigger คำนวณคะแนน header ให้เอง
+  },
+
+  async finalizeAudit({ auditId }) {
+    const { data, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
+    if (error) return { success:false, error:error.message };
+    return { success:true, auditId, totalScore:data.total_score, maxScore:data.max_score, percent:Number(data.percent), status:MAP.auditStatus[data.status]||data.status };
+  },
+
+  async deleteAudit({ auditId }) {
+    const { error } = await _sb.from('audit_headers').delete().eq('audit_id', auditId);
+    if (error) return { success:false, error:error.message };
+    return { success:true };
+  },
 };
 
 // ============================================================
@@ -710,76 +1006,30 @@ const AppState = {
 // ============================================================
 const API = {
   /**
-   * Core fetch + parse + central auth handling.
-   * GAS ส่งทุก response เป็น HTTP 200 — สถานะจริงอยู่ใน body (success/code)
-   * ดังนั้นต้องเช็ค data.code === 401/403 เองที่นี่
+   * Dispatch ไป SUPABASE handler (SBH) — คืน shape เดิมที่หน้าเว็บใช้
+   * จัดการ auth error กลาง: ถ้า token/JWT หมดอายุ → เคลียร์ session + เด้ง login
    */
-  async _request(url) {
-    const res  = await fetch(url.toString(), { redirect: 'follow' });
-    const text = await res.text();
-    let data;
+  async _run(action, params) {
+    const handler = SBH[action];
+    if (!handler) { console.warn('unknown action:', action); return { success:false, error:'ไม่รู้จัก action: ' + action }; }
     try {
-      data = JSON.parse(text);
-    } catch(e) {
-      console.error('GAS response (not JSON):', text.slice(0, 300));
-      throw new Error('Server returned invalid response. ตรวจสอบว่า Deploy GAS ถูกต้องแล้ว');
-    }
-
-    // Central 401/403 handling — session หมดอายุ / ไม่มีสิทธิ์
-    if (data && data.success === false && (data.code === 401 || data.code === 403)) {
-      // 401 = session ตาย → logout + เด้งกลับ login; 403 = login อยู่แต่ไม่มีสิทธิ์
-      if (data.code === 401) {
+      return await handler(params || {});
+    } catch(err) {
+      const msg = (err && err.message) ? err.message : String(err);
+      if (/JWT|not authenticated|invalid.*token|expired|refresh/i.test(msg)) {
         Session.clear();
-        const onLogin = /(?:^|\/)index\.html$/.test(location.pathname) ||
-                        location.pathname.endsWith('/');
+        const onLogin = /(?:^|\/)index\.html$/.test(location.pathname) || location.pathname.endsWith('/');
         if (!onLogin) {
           try { UI.toast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'warning', 3000); } catch(_){}
           setTimeout(() => navigate('index.html'), 800);
         }
       }
-      const err = new Error(data.error || (data.code === 401 ? 'Unauthorized' : 'Forbidden'));
-      err.code = data.code;
-      throw err;
+      console.error('[API] ' + action + ' error:', msg);
+      return { success:false, error:msg };
     }
-
-    return data;
   },
-
-  /**
-   * เรียก API แบบ GET
-   */
-  async get(action, params = {}) {
-    // cacheKey ผูกกับ token ด้วย — กัน stale cache ข้ามผู้ใช้
-    const cacheKey = action + JSON.stringify(params) + '|' + (AppState.token || '');
-    const cached   = AppState.cache[cacheKey];
-    if (cached && (Date.now() - cached.time < CONFIG.CACHE_TTL)) {
-      return cached.data;
-    }
-
-    const url = new URL(CONFIG.API_URL);
-    url.searchParams.set('action', action);
-    url.searchParams.set('token', AppState.token || '');
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-
-    const data = await this._request(url);
-    if (data.success) {
-      AppState.cache[cacheKey] = { data, time: Date.now() };
-    }
-    return data;
-  },
-
-  /**
-   * เรียก API แบบ POST
-   * ส่ง JSON ผ่าน query param (payload) เพื่อหลีกเลี่ยง CORS preflight ของ GAS
-   */
-  async post(action, body = {}) {
-    const payload = JSON.stringify({ action, token: AppState.token, ...body });
-    const url = new URL(CONFIG.API_URL);
-    url.searchParams.set('action', action);
-    url.searchParams.set('token', AppState.token || '');
-    url.searchParams.set('payload', payload);
-    return this._request(url);
-  },
+  get(action, params = {})  { return this._run(action, params); },
+  post(action, body = {})   { return this._run(action, body); },
 };
 
 // ============================================================
@@ -806,11 +1056,13 @@ const Session = {
     return false;
   },
 
-  /** ล้าง session */
+  /** ล้าง session (localStorage + Supabase auth) */
   clear() {
     AppState.token = null;
     AppState.user  = null;
+    _profileCache  = null;
     localStorage.removeItem(CONFIG.SESSION_KEY);
+    try { _sb.auth.signOut(); } catch(_) {}
   },
 
   /** ตรวจสอบว่า login อยู่หรือไม่ */
@@ -1583,42 +1835,19 @@ function removePhoto(criteriaId, idx) {
  * รับ base64 string → คืน URL ของรูปบน imgBB
  */
 async function uploadToImgBB(base64) {
-  console.log('[imgBB] 🟡 เริ่ม Upload รูป...');
-  console.log('[imgBB] API Key:', CONFIG.IMGBB_API_KEY ? CONFIG.IMGBB_API_KEY.slice(0,6) + '...' : 'ไม่มี');
-
-  if (!CONFIG.IMGBB_API_KEY || CONFIG.IMGBB_API_KEY === 'YOUR_IMGBB_API_KEY_HERE') {
-    console.warn('[imgBB] ❌ API Key ยังไม่ได้ตั้งค่า — ข้ามการ Upload รูป');
-    return null;
-  }
-
+  // ชื่อเดิมเพื่อไม่ต้องแก้ submitAudit() — จริง ๆ อัปโหลดขึ้น Supabase Storage
   try {
-    // ตัด prefix "data:image/jpeg;base64," ออก
-    const base64Data = base64.replace(/^data:[^;]+;base64,/, '');
-    console.log('[imgBB] Base64 length:', base64Data.length, 'chars');
-
-    const formData = new FormData();
-    formData.append('image', base64Data);
-    formData.append('key', CONFIG.IMGBB_API_KEY);
-
-    console.log('[imgBB] 🟡 กำลังส่งไปยัง imgBB API...');
-    const res  = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      body: formData
-    });
-
-    console.log('[imgBB] HTTP Status:', res.status);
-    const data = await res.json();
-    console.log('[imgBB] Response:', JSON.stringify(data).slice(0, 200));
-
-    if (data.success) {
-      console.log('[imgBB] ✅ Upload สำเร็จ! URL:', data.data.url);
-      return data.data.url;
-    } else {
-      console.error('[imgBB] ❌ Upload ล้มเหลว:', data);
-      return null;
-    }
+    const b64   = base64.replace(/^data:[^;]+;base64,/, '');
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const path  = `audit/${Date.now()}_${Math.random().toString(36).slice(2,8)}.jpg`;
+    const { error } = await _sb.storage.from(CONFIG.STORAGE_BUCKET)
+      .upload(path, bytes, { contentType:'image/jpeg', upsert:false });
+    if (error) { console.error('[storage] upload failed:', error.message); return null; }
+    const { data } = _sb.storage.from(CONFIG.STORAGE_BUCKET).getPublicUrl(path);
+    console.log('[storage] ✅ uploaded:', data.publicUrl);
+    return data.publicUrl;
   } catch(err) {
-    console.error('[imgBB] ❌ Error:', err.message);
+    console.error('[storage] error:', err.message);
     return null;
   }
 }
