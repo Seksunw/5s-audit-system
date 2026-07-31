@@ -183,12 +183,12 @@ begin
      set total_score = v_total,
          max_score   = v_max,
          percent     = v_pct,
-         status = case
+         status = (case
                     when v_max = 0        then 'pending'
                     when v_pct >= 90      then 'excellent'
                     when v_pct >= 75      then 'good'
                     else 'need_improvement'
-                  end
+                  end)::audit_status
    where audit_id = v_audit;
 
   return null;

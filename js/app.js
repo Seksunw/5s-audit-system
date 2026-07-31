@@ -1984,7 +1984,8 @@ async function submitAudit() {
       if (!detailRes.success) {
         await rollbackAudit('detail chunk ' + chunkNum + ' failed');
         UI.hideLoading();
-        UI.toast(I18n.t('msg.detail_failed') + chunkNum, 'error');
+        console.error('[Submit] chunk', chunkNum, 'error:', detailRes.error, 'payload:', chunk);
+        UI.toast(I18n.t('msg.detail_failed') + chunkNum + (detailRes.error ? ' — ' + detailRes.error : ''), 'error', 8000);
         return;
       }
     }

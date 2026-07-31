@@ -5,24 +5,29 @@
 
 ---
 
+> ⚠️ **สถาปัตยกรรมเปลี่ยนแล้ว (2026-07-30):** ระบบย้ายจาก **Google Apps Script + Google Sheets + imgBB** → **Supabase (PostgreSQL + Auth + Storage)** และย้าย repo ไป `Seksunw/5s-audit-system` (GitHub Pages: https://seksunw.github.io/5s-audit-system/)
+>
+> เนื้อหาส่วนที่กล่าวถึง Google Apps Script / Google Sheets / imgBB ด้านล่างเป็น **ประวัติก่อนการย้าย** — สถาปัตยกรรมปัจจุบันดูที่ **`WORK_LOG_2026-07-30.md`** และ **`SUPABASE_MIGRATION_PLAN.md`** ส่วน backend/schema จริงอยู่ในโฟลเดอร์ `supabase/`
+
+---
+
 ## 1. Project Overview
 
 ### วัตถุประสงค์
 ระบบตรวจสอบมาตรฐาน 5ส (สะสาง สะดวก สะอาด สุขลักษณะ สร้างนิสัย) สำหรับโรงงานอุตสาหกรรม รองรับการตรวจสอบแบบ Mobile-First PWA ทำงานได้ Offline และบันทึกผลลง Google Sheets โดยอัตโนมัติ
 
 ### Technologies
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Vanilla JS (ES6+), HTML5, CSS3, Bootstrap Icons |
-| PWA | Service Worker, Web App Manifest |
-| Backend | Google Apps Script (GAS) Web App |
-| Database | Google Sheets |
-| Hosting | GitHub Pages |
-| Photo Storage (Primary) | imgBB API (ฟรี, ไม่มี CORS) |
-| Photo Storage (Fallback) | Google Drive + `lh3.googleusercontent.com` |
-| Auth | SHA-256 hashed password + Session token (UUID) |
-| Font | Google Fonts — Sarabun (Thai/English) |
-| i18n | Built-in TH/EN translation system |
+| Layer | Technology (ปัจจุบัน 2026-07-30) | เดิม (ก่อนย้าย) |
+|-------|-----------|-----------|
+| Frontend | Vanilla JS (ES6+), HTML5, CSS3, Bootstrap Icons | (เหมือนเดิม) |
+| PWA | Service Worker, Web App Manifest | (เหมือนเดิม) |
+| Backend | **Supabase** — PostgREST auto API + `supabase-js` adapter ใน `app.js` | Google Apps Script Web App |
+| Database | **Supabase PostgreSQL** (8 ตาราง + RLS + trigger) | Google Sheets (9 sheets) |
+| Hosting | GitHub Pages (`Seksunw/5s-audit-system`) | GitHub Pages (`seksunw58-ai/...`) |
+| Photo Storage | **Supabase Storage** (bucket `audit-photos`) | imgBB API / Google Drive |
+| Auth | **Supabase Auth** (bcrypt + JWT + auto refresh) | SHA-256 + Session token (UUID) |
+| Font | Google Fonts — Sarabun (Thai/English) | (เหมือนเดิม) |
+| i18n | Built-in TH/EN translation system | (เหมือนเดิม) |
 
 ### Architecture
 ```
@@ -170,8 +175,8 @@ CONFIG.SESSION_DURATION_HOURS = 8
 
 **Key Config:**
 ```javascript
-CONFIG.API_URL      = 'https://script.google.com/macros/s/AKfycby2.../exec'
-CONFIG.IMGBB_API_KEY = '8449d25d43f8b34c3b7b046ec9a5451f'
+CONFIG.API_URL      = 'https://script.google.com/macros/s/***REDACTED-OLD-GAS***/exec'
+CONFIG.IMGBB_API_KEY = '***REDACTED-OLD-IMGBB-KEY***'
 CONFIG.SESSION_KEY  = '5s_session'
 CONFIG.LANG_KEY     = '5s_lang'
 CONFIG.CACHE_TTL    = 5 * 60 * 1000   // 5 นาที
@@ -303,7 +308,7 @@ index.html (Login)
 
 ## 6. API Documentation
 
-GAS Web App URL (base): `https://script.google.com/macros/s/AKfycby2pJ2pv7OTnn2wKtWUJU3uC0rNRDQBc2prMQR0d3PtaoolwsDZEHVLYdtl9YSIu20Y/exec`
+GAS Web App URL (base): `https://script.google.com/macros/s/***REDACTED-OLD-GAS***/exec`
 
 ทุก request ส่งผ่าน HTTPS GET พร้อม query parameters เพื่อหลีกเลี่ยง CORS preflight
 
@@ -591,8 +596,8 @@ photo.uploaded = true
 ### Frontend (`js/app.js`)
 | Key | Value | หมายเหตุ |
 |-----|-------|---------|
-| `CONFIG.API_URL` | `https://script.google.com/macros/s/AKfycby2.../exec` | ต้องอัปเดตเมื่อ re-deploy GAS |
-| `CONFIG.IMGBB_API_KEY` | `8449d25d43f8b34c3b7b046ec9a5451f` | imgBB free API key |
+| `CONFIG.API_URL` | `https://script.google.com/macros/s/***REDACTED-OLD-GAS***/exec` | ต้องอัปเดตเมื่อ re-deploy GAS |
+| `CONFIG.IMGBB_API_KEY` | `***REDACTED-OLD-IMGBB-KEY***` | imgBB free API key |
 | `CONFIG.SESSION_KEY` | `5s_session` | localStorage key |
 | `CONFIG.LANG_KEY` | `5s_lang` | localStorage key สำหรับภาษา |
 | `CONFIG.CACHE_TTL` | `300000` (5 min) | TTL สำหรับ in-memory API cache |
