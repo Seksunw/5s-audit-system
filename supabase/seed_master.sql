@@ -7,7 +7,9 @@
 insert into public.plants (plant_id, plant_name, status) values
   ('SUP','Supplement Plant','active'),
   ('POC','Personal and Oral Care Plant','active'),
-  ('NIF','Nutrina Interfoods Plant','active')
+  ('NIF','Nutrina Interfoods Plant','active'),
+  ('CAF','Cafeteria','active'),
+  ('MTN','Maintenance & Utility','active')
 on conflict (plant_id) do nothing;
 
 insert into public.areas (area_id, plant_id, area_name, area_type, status) values
@@ -20,8 +22,8 @@ insert into public.areas (area_id, plant_id, area_name, area_type, status) value
   ('SUP-OF-F1','SUP','Office F1','office','active'),
   ('SUP-OF-F2','SUP','Office F2','office','active'),
   ('SUP-OF-F3','SUP','Office F3','office','active'),
-  ('SUP-MU','SUP','Maintenance & Utility','maintenance','active'),
-  ('SUP-CF','SUP','Cafeteria','cafeteria','active'),
+  ('SUP-MU','SUP','Maintenance & Utility','maintenance','inactive'),
+  ('SUP-CF','SUP','Cafeteria','cafeteria','inactive'),
   ('SUP-OD','SUP','รอบอาคาร','outdoor','active'),
   ('POC-WH-F1','POC','Warehouse F1','warehouse','active'),
   ('POC-WH-F2','POC','Warehouse F2','warehouse','active'),
@@ -32,8 +34,8 @@ insert into public.areas (area_id, plant_id, area_name, area_type, status) value
   ('POC-OF-F1','POC','Office F1','office','active'),
   ('POC-OF-F2','POC','Office F2','office','active'),
   ('POC-OF-F3','POC','Office F3','office','active'),
-  ('POC-MU','POC','Maintenance & Utility','maintenance','active'),
-  ('POC-CF','POC','Cafeteria','cafeteria','active'),
+  ('POC-MU','POC','Maintenance & Utility','maintenance','inactive'),
+  ('POC-CF','POC','Cafeteria','cafeteria','inactive'),
   ('POC-OD','POC','รอบอาคาร','outdoor','active'),
   ('NIF-WH-F1','NIF','Warehouse F1','warehouse','active'),
   ('NIF-WH-F2','NIF','Warehouse F2','warehouse','active'),
@@ -44,9 +46,11 @@ insert into public.areas (area_id, plant_id, area_name, area_type, status) value
   ('NIF-OF-F1','NIF','Office F1','office','active'),
   ('NIF-OF-F2','NIF','Office F2','office','active'),
   ('NIF-OF-F3','NIF','Office F3','office','active'),
-  ('NIF-MU','NIF','Maintenance & Utility','maintenance','active'),
-  ('NIF-CF','NIF','Cafeteria','cafeteria','active'),
-  ('NIF-OD','NIF','รอบอาคาร','outdoor','active')
+  ('NIF-MU','NIF','Maintenance & Utility','maintenance','inactive'),
+  ('NIF-CF','NIF','Cafeteria','cafeteria','inactive'),
+  ('NIF-OD','NIF','รอบอาคาร','outdoor','active'),
+  ('CAF-CF','CAF','โรงอาหาร','cafeteria','active'),
+  ('MTN-MU','MTN','ช่าง/ยูทิลิตี้','maintenance','active')
 on conflict (area_id) do nothing;
 
 insert into public.criteria (criteria_id, category, sub_category, question, description, area_types, max_score, active) values

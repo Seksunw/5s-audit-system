@@ -1385,7 +1385,9 @@ async function initPlant() {
     const icons = { SUP: '🏭', POC: '🧴', NIF: '🌿' };
     const colors = { SUP: '#1a73e8', POC: '#34a853', NIF: '#ea4335' };
 
-    const plantCards = res.data.map(p => `
+    const plantCards = res.data
+      .filter(p => !['CAF','MTN'].includes(p.Plant_ID))   // เข้าผ่านการ์ดโรงอาหาร/ช่างแทน
+      .map(p => `
       <div class="plant-card card-clickable"
            data-plant-id="${escAttr(p.Plant_ID)}"
            data-plant-name="${escAttr(p.Plant_Name)}"
@@ -1513,47 +1515,46 @@ async function initArea() {
       Outdoor:     I18n.t('area.type.Outdoor'),
     };
 
-    // โหมด plant → จัดกลุ่มตามชนิดพื้นที่ ; โหมดพื้นที่ส่วนกลาง → จัดกลุ่มตาม plant
-    const grouped = {};
-    res.data.forEach(a => {
-      const key = byType ? a.Plant_ID : a.Area_Type;
-      (grouped[key] = grouped[key] || []).push(a);
-    });
-
-    container.innerHTML = Object.entries(grouped).map(([key, areas]) => {
-      const headIcon  = byType ? 'bi-building' : (areaIcons[key] || 'bi-grid');
-      const headLabel = byType ? (plantNameMap[key] || key) : (areaTypeTH[key] || key);
-      return `
-      <div class="mb-3">
-        <div class="section-title">
-          <i class="bi ${headIcon}"></i>
-          ${escHtml(headLabel)}
+    // สร้างการ์ดพื้นที่ 1 ใบ (badgeText ว่าง = ไม่โชว์ badge)
+    const areaCard = (a, badgeText) => `
+      <div class="area-card area-type-${escHtml(a.Area_Type)}"
+           data-area-id="${escAttr(a.Area_ID)}"
+           data-area-name="${escAttr(a.Area_Name)}"
+           data-area-type="${escAttr(a.Area_Type)}"
+           data-plant-id="${escAttr(a.Plant_ID)}"
+           data-plant-name="${escAttr(plantNameMap[a.Plant_ID] || a.Plant_ID)}"
+           onclick="selectAreaFromEl(this)">
+        <div class="area-icon">
+          <i class="bi ${areaIcons[a.Area_Type] || 'bi-grid'}"></i>
         </div>
-        <div class="area-list">
-          ${areas.map(a => {
-            const badge = byType ? (plantNameMap[a.Plant_ID] || a.Plant_ID) : (areaTypeTH[a.Area_Type] || a.Area_Type);
-            return `
-            <div class="area-card area-type-${escHtml(a.Area_Type)}"
-                 data-area-id="${escAttr(a.Area_ID)}"
-                 data-area-name="${escAttr(a.Area_Name)}"
-                 data-area-type="${escAttr(a.Area_Type)}"
-                 data-plant-id="${escAttr(a.Plant_ID)}"
-                 data-plant-name="${escAttr(plantNameMap[a.Plant_ID] || a.Plant_ID)}"
-                 onclick="selectAreaFromEl(this)">
-              <div class="area-icon">
-                <i class="bi ${areaIcons[a.Area_Type] || 'bi-grid'}"></i>
-              </div>
-              <div class="area-info">
-                <div class="area-name">${escHtml(a.Area_Name)}</div>
-                <span class="area-type-badge">${escHtml(badge)}</span>
-                ${a.Audit_Round ? `<span class="area-type-badge" style="margin-left:6px;background:#fff8e1;color:#8a5b00">${escHtml(a.Audit_Round)} ${a.Audit_Date ? '• ' + escHtml(a.Audit_Date) : ''}</span>` : ''}
-              </div>
-              <i class="bi bi-chevron-right text-muted"></i>
-            </div>`;
-          }).join('')}
+        <div class="area-info">
+          <div class="area-name">${escHtml(a.Area_Name)}</div>
+          ${badgeText ? `<span class="area-type-badge">${escHtml(badgeText)}</span>` : ''}
+          ${a.Audit_Round ? `<span class="area-type-badge" style="margin-left:6px;background:#fff8e1;color:#8a5b00">${escHtml(a.Audit_Round)} ${a.Audit_Date ? '• ' + escHtml(a.Audit_Date) : ''}</span>` : ''}
         </div>
+        <i class="bi bi-chevron-right text-muted"></i>
       </div>`;
-    }).join('');
+
+    if (byType) {
+      // โหมดพื้นที่ส่วนกลาง: แสดงรายการเดียว ไม่แยกตามโรงงาน ไม่โชว์ชื่อโรงงาน
+      container.innerHTML = `<div class="area-list">${
+        res.data.map(a => areaCard(a, '')).join('')
+      }</div>`;
+    } else {
+      // โหมด plant: จัดกลุ่มตามชนิดพื้นที่
+      const grouped = {};
+      res.data.forEach(a => { (grouped[a.Area_Type] = grouped[a.Area_Type] || []).push(a); });
+      container.innerHTML = Object.entries(grouped).map(([type, areas]) => `
+        <div class="mb-3">
+          <div class="section-title">
+            <i class="bi ${areaIcons[type] || 'bi-grid'}"></i>
+            ${escHtml(areaTypeTH[type] || type)}
+          </div>
+          <div class="area-list">
+            ${areas.map(a => areaCard(a, areaTypeTH[a.Area_Type] || a.Area_Type)).join('')}
+          </div>
+        </div>`).join('');
+    }
   } catch(err) {
     UI.hideLoading();
     UI.toast(I18n.t('msg.load_error'), 'error');
