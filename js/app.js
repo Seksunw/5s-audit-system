@@ -88,9 +88,16 @@ const SBH = {
     return { success:true, data:data.map(mapPlant) };
   },
 
-  async getAreas({ plantId } = {}) {
+  async getAreas({ plantId, areaType } = {}) {
     let q = _sb.from('areas').select('*').eq('status','active');
-    if (plantId) q = q.eq('plant_id', plantId);
+    if (plantId)  q = q.eq('plant_id', plantId);
+    if (areaType) {
+      // โหมดพื้นที่ส่วนกลาง: ดึงตามชนิดพื้นที่ข้ามทุก plant (โรงอาหาร / ช่าง-ยูทิลิตี้)
+      q = q.eq('area_type', String(areaType).toLowerCase());
+    } else if (plantId) {
+      // โหมดเลือก plant: ตัด cafeteria + maintenance ออก (แยกไปเป็นการ์ดต่างหากที่หน้า plant)
+      q = q.not('area_type', 'in', '(cafeteria,maintenance)');
+    }
     const { data, error } = await q.order('area_id');
     if (error) throw error;
     let areas = data.map(mapArea);
@@ -1378,7 +1385,7 @@ async function initPlant() {
     const icons = { SUP: '🏭', POC: '🧴', NIF: '🌿' };
     const colors = { SUP: '#1a73e8', POC: '#34a853', NIF: '#ea4335' };
 
-    container.innerHTML = res.data.map(p => `
+    const plantCards = res.data.map(p => `
       <div class="plant-card card-clickable"
            data-plant-id="${escAttr(p.Plant_ID)}"
            data-plant-name="${escAttr(p.Plant_Name)}"
@@ -1393,6 +1400,29 @@ async function initPlant() {
         <i class="bi bi-chevron-right text-muted ms-auto"></i>
       </div>
     `).join('');
+
+    // การ์ดพื้นที่ส่วนกลาง (รวมทุก plant) — โรงอาหาร + ช่าง/ยูทิลิตี้
+    const allTxt = I18n.getLang() === 'en' ? 'All plants' : 'รวมทุกโรงงาน';
+    const facilityCards = `
+      <div class="plant-card card-clickable" onclick="openFacility('cafeteria')">
+        <div class="plant-icon" style="background:#f9971e20;color:#f9971e">🍽️</div>
+        <div>
+          <div class="plant-name">${escHtml(I18n.t('area.type.Cafeteria'))}</div>
+          <div class="plant-meta text-muted">${escHtml(allTxt)}</div>
+        </div>
+        <i class="bi bi-chevron-right text-muted ms-auto"></i>
+      </div>
+      <div class="plant-card card-clickable" onclick="openFacility('maintenance')">
+        <div class="plant-icon" style="background:#5f6c7b20;color:#5f6c7b">🔧</div>
+        <div>
+          <div class="plant-name">${escHtml(I18n.t('area.type.Maintenance'))}</div>
+          <div class="plant-meta text-muted">${escHtml(allTxt)}</div>
+        </div>
+        <i class="bi bi-chevron-right text-muted ms-auto"></i>
+      </div>
+    `;
+
+    container.innerHTML = plantCards + facilityCards;
   } catch(err) {
     UI.hideLoading();
     UI.toast(I18n.t('msg.load_error'), 'error');
@@ -1408,6 +1438,14 @@ function selectPlant(plantId, plantName) {
   navigate('area.html', { plantId, plantName });
 }
 
+/** เปิดพื้นที่ส่วนกลางตามชนิด (โรงอาหาร / ช่าง-ยูทิลิตี้) ข้ามทุก plant */
+function openFacility(type) {
+  const title = type === 'cafeteria'
+    ? I18n.t('area.type.Cafeteria')
+    : I18n.t('area.type.Maintenance');
+  navigate('area.html', { areaType: type, title });
+}
+
 // ============================================================
 // AREA PAGE
 // ============================================================
@@ -1417,19 +1455,30 @@ async function initArea() {
 
   const plantId   = getParam('plantId');
   const plantName = getParam('plantName');
-  if (!plantId) { navigate('plant.html'); return; }
+  const areaType  = getParam('areaType');     // โหมดพื้นที่ส่วนกลาง (cafeteria / maintenance)
+  const title     = getParam('title');
+  const byType    = !!areaType;               // true = จัดกลุ่มตาม plant
 
-  AppState.currentPlant = { Plant_ID: plantId, Plant_Name: plantName };
+  if (!plantId && !byType) { navigate('plant.html'); return; }
+
+  if (plantId) AppState.currentPlant = { Plant_ID: plantId, Plant_Name: plantName };
 
   // getParam() ใช้ URLSearchParams.get() ซึ่ง decode แล้ว ไม่ต้อง decode ซ้ำ
-  setEl('currentPlantName', plantName || plantId);
+  setEl('currentPlantName', byType ? (title || areaType) : (plantName || plantId));
 
   UI.showLoading(I18n.t('msg.loading_area'));
   try {
-    const res = await API.get('getAreas', { plantId });
-    UI.hideLoading();
+    const res = await API.get('getAreas', byType ? { areaType } : { plantId });
+    if (!res.success) { UI.hideLoading(); UI.toast(res.error, 'error'); return; }
 
-    if (!res.success) { UI.toast(res.error, 'error'); return; }
+    // โหมดพื้นที่ส่วนกลางต้องรู้ชื่อ plant → ดึงรายชื่อมา map
+    const plantNameMap = {};
+    if (plantId) plantNameMap[plantId] = plantName || plantId;
+    if (byType) {
+      const pr = await API.get('getPlants');
+      if (pr.success) pr.data.forEach(p => { plantNameMap[p.Plant_ID] = p.Plant_Name; });
+    }
+    UI.hideLoading();
 
     AppState.areas = res.data;
     const container = document.getElementById('areaList');
@@ -1464,40 +1513,47 @@ async function initArea() {
       Outdoor:     I18n.t('area.type.Outdoor'),
     };
 
-    // Group by type
+    // โหมด plant → จัดกลุ่มตามชนิดพื้นที่ ; โหมดพื้นที่ส่วนกลาง → จัดกลุ่มตาม plant
     const grouped = {};
     res.data.forEach(a => {
-      if (!grouped[a.Area_Type]) grouped[a.Area_Type] = [];
-      grouped[a.Area_Type].push(a);
+      const key = byType ? a.Plant_ID : a.Area_Type;
+      (grouped[key] = grouped[key] || []).push(a);
     });
 
-    container.innerHTML = Object.entries(grouped).map(([type, areas]) => `
+    container.innerHTML = Object.entries(grouped).map(([key, areas]) => {
+      const headIcon  = byType ? 'bi-building' : (areaIcons[key] || 'bi-grid');
+      const headLabel = byType ? (plantNameMap[key] || key) : (areaTypeTH[key] || key);
+      return `
       <div class="mb-3">
         <div class="section-title">
-          <i class="bi ${areaIcons[type] || 'bi-grid'}"></i>
-          ${areaTypeTH[type] || type}
+          <i class="bi ${headIcon}"></i>
+          ${escHtml(headLabel)}
         </div>
         <div class="area-list">
-          ${areas.map(a => `
+          ${areas.map(a => {
+            const badge = byType ? (plantNameMap[a.Plant_ID] || a.Plant_ID) : (areaTypeTH[a.Area_Type] || a.Area_Type);
+            return `
             <div class="area-card area-type-${escHtml(a.Area_Type)}"
                  data-area-id="${escAttr(a.Area_ID)}"
                  data-area-name="${escAttr(a.Area_Name)}"
                  data-area-type="${escAttr(a.Area_Type)}"
+                 data-plant-id="${escAttr(a.Plant_ID)}"
+                 data-plant-name="${escAttr(plantNameMap[a.Plant_ID] || a.Plant_ID)}"
                  onclick="selectAreaFromEl(this)">
               <div class="area-icon">
                 <i class="bi ${areaIcons[a.Area_Type] || 'bi-grid'}"></i>
               </div>
               <div class="area-info">
                 <div class="area-name">${escHtml(a.Area_Name)}</div>
-                <span class="area-type-badge">${escHtml(areaTypeTH[a.Area_Type] || a.Area_Type)}</span>
+                <span class="area-type-badge">${escHtml(badge)}</span>
                 ${a.Audit_Round ? `<span class="area-type-badge" style="margin-left:6px;background:#fff8e1;color:#8a5b00">${escHtml(a.Audit_Round)} ${a.Audit_Date ? '• ' + escHtml(a.Audit_Date) : ''}</span>` : ''}
               </div>
               <i class="bi bi-chevron-right text-muted"></i>
-            </div>
-          `).join('')}
+            </div>`;
+          }).join('')}
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   } catch(err) {
     UI.hideLoading();
     UI.toast(I18n.t('msg.load_error'), 'error');
@@ -1505,14 +1561,15 @@ async function initArea() {
 }
 
 function selectAreaFromEl(el) {
-  selectArea(el.dataset.areaId, el.dataset.areaName, el.dataset.areaType);
+  selectArea(el.dataset.areaId, el.dataset.areaName, el.dataset.areaType, el.dataset.plantId, el.dataset.plantName);
 }
 
-function selectArea(areaId, areaName, areaType) {
-  const plantId = getParam('plantId');
+function selectArea(areaId, areaName, areaType, plantId, plantName) {
+  plantId   = plantId   || getParam('plantId');
+  plantName = plantName || getParam('plantName') || '';
   navigate('audit.html', {
     plantId,
-    plantName: getParam('plantName'),
+    plantName,
     areaId,
     areaName,
     areaType
