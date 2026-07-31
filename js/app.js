@@ -158,7 +158,7 @@ const SBH = {
     if (error) return { success:false, error:'ไม่พบข้อมูล Audit' };
     const { data:d } = await _sb.from('audit_details').select('*, criteria(question,category,sub_category)').eq('audit_id', auditId);
     const details = (d||[]).map(x => ({
-      Detail_ID:x.detail_id, Criteria_ID:x.criteria_id, Score:x.score, Remark:x.remark,
+      Detail_ID:x.detail_id, Criteria_ID:x.criteria_id, Score:x.score, Na:x.na, Remark:x.remark,
       Photo_URL:(x.photo_urls||[]).join(','),
       Question:x.criteria && x.criteria.question, Category:x.criteria && x.criteria.category
     }));
@@ -293,6 +293,7 @@ const SBH = {
     let arr; try { arr = JSON.parse(p.details); } catch(e) { return { success:false, error:'details JSON ไม่ถูกต้อง' }; }
     const rows = arr.map(d => ({
       audit_id:p.auditId, criteria_id:d.criteriaId, score:Number(d.score)||0,
+      na: !!d.na,
       remark:(d.remark||'').slice(0,200),
       photo_urls: d.photoUrl ? String(d.photoUrl).split(',').filter(Boolean) : [],
     }));
@@ -457,6 +458,8 @@ const TRANSLATIONS = {
     'audit.answered_prefix':  'ตอบแล้ว',
     'audit.answered_suffix':  'ข้อ',
     'audit.submit_btn':       '✅ Submit ผลการตรวจ',
+    'audit.na_btn':           'ไม่มีในพื้นที่',
+    'audit.na_on':            '✓ ตัดออกแล้ว',
     'audit.unanswered_prefix':'ยังไม่ได้ให้คะแนน',
     'audit.unanswered_help':  'ยังมีข้อที่ยังไม่ได้ตรวจ แตะรหัสข้อเพื่อข้ามไปทันที',
     'audit.complete_hint':    'ตรวจครบแล้ว พร้อม Submit',
@@ -654,6 +657,8 @@ const TRANSLATIONS = {
     'audit.answered_prefix':  'ตอบแล้ว',
     'audit.answered_suffix':  'ข้อ',
     'audit.submit_btn':       '✅ Submit ผลการตรวจ',
+    'audit.na_btn':           'ไม่มีในพื้นที่',
+    'audit.na_on':            '✓ ตัดออกแล้ว',
     'audit.unanswered_prefix':'ยังไม่ได้ให้คะแนน',
     'audit.unanswered_help':  'ยังมีข้อที่ยังไม่ได้ตรวจ แตะรหัสข้อเพื่อข้ามไปทันที',
     'audit.complete_hint':    'ตรวจครบแล้ว พร้อม Submit',
@@ -858,6 +863,8 @@ const TRANSLATIONS = {
     'audit.answered_prefix':  'Answered',
     'audit.answered_suffix':  'items',
     'audit.submit_btn':       '✅ Submit Audit',
+    'audit.na_btn':           'Not in area',
+    'audit.na_on':            '✓ Excluded',
     'audit.unanswered_prefix':'Unanswered',
     'audit.unanswered_help':  'Some items are still missing. Tap an item code to jump there.',
     'audit.complete_hint':    'All items answered. Ready to submit.',
@@ -1545,7 +1552,7 @@ async function initAudit() {
 
     // เริ่มต้น answers ทุกข้อ
     res.data.forEach(c => {
-      AppState.auditAnswers[c.Criteria_ID] = { score: null, remark: '', photos: [] };
+      AppState.auditAnswers[c.Criteria_ID] = { score: null, na: false, remark: '', photos: [] };
     });
 
     renderChecklist(res.grouped, res.data.length, res.totalMaxScore);
@@ -1567,10 +1574,15 @@ function renderChecklist(grouped, totalItems, totalMaxScore) {
   setEl('totalMaxScore', totalMaxScore);
 
   container.innerHTML = Object.entries(grouped).map(([category, items]) => `
-    <div class="category-section mb-2" id="cat-${escHtml(category).replace(/\s/g,'_')}">
+    <div class="category-section mb-2" data-category="${escAttr(category)}" id="cat-${escHtml(category).replace(/\s/g,'_')}">
       <div class="category-header" onclick="toggleCategory(this)">
         <span><i class="bi bi-clipboard-check me-2"></i>${escHtml(category)}</span>
-        <span class="category-count">${items.length} ${I18n.t('audit.answered_suffix')}</span>
+        <span class="category-head-right">
+          <button type="button" class="cat-na-btn" onclick="event.stopPropagation(); toggleCategoryNA(this)">
+            <i class="bi bi-slash-circle"></i> <span class="cat-na-label">${I18n.t('audit.na_btn')}</span>
+          </button>
+          <span class="category-count">${items.length} ${I18n.t('audit.answered_suffix')}</span>
+        </span>
       </div>
       <div class="category-body">
         ${items.map(c => renderCriteriaItem(c)).join('')}
@@ -1627,6 +1639,7 @@ function renderCriteriaItem(c) {
  * บันทึกคะแนนแต่ละข้อ
  */
 function setScore(criteriaId, score, btn) {
+  if (AppState.auditAnswers[criteriaId]?.na) return;   // ข้อที่ตัด N/A ให้คะแนนไม่ได้
   AppState.auditAnswers[criteriaId].score = score;
 
   // อัปเดต UI ปุ่มคะแนน
@@ -1656,8 +1669,10 @@ function setRemark(criteriaId, value) {
  * อัปเดต Progress Bar
  */
 function updateProgress() {
-  const total    = AppState.criteria.length;
-  const answered = Object.values(AppState.auditAnswers).filter(a => a.score !== null).length;
+  // นับเฉพาะข้อที่ไม่ได้ตัด N/A (ข้อ N/A ไม่ต้องตอบ ไม่นับใน total)
+  const active   = (AppState.criteria || []).filter(c => !AppState.auditAnswers[c.Criteria_ID]?.na);
+  const total    = active.length;
+  const answered = active.filter(c => AppState.auditAnswers[c.Criteria_ID]?.score !== null).length;
   const pct      = total > 0 ? Math.round((answered / total) * 100) : 0;
   const unanswered = getUnansweredCriteria();
 
@@ -1685,9 +1700,10 @@ function updateProgress() {
 }
 
 function getUnansweredCriteria() {
-  return (AppState.criteria || []).filter(
-    c => AppState.auditAnswers[c.Criteria_ID]?.score === null
-  );
+  return (AppState.criteria || []).filter(c => {
+    const a = AppState.auditAnswers[c.Criteria_ID];
+    return a && !a.na && a.score === null;   // ข้อ N/A ไม่ถือว่า "ยังไม่ตอบ"
+  });
 }
 
 function renderRemainingPanel(unanswered = getUnansweredCriteria()) {
@@ -1752,6 +1768,44 @@ function toggleCategory(header) {
       ? 'bi bi-chevron-down'
       : 'bi bi-clipboard-check me-2';
   }
+}
+
+/**
+ * กด "ไม่มีในพื้นที่" ที่ระดับหมวด → ทุกข้อในหมวดถูกตัดออกจากการคำนวณคะแนน (na=true)
+ * กดซ้ำ = ยกเลิก (na=false, ต้องให้คะแนนใหม่)
+ */
+function toggleCategoryNA(btn) {
+  const section = btn.closest('.category-section');
+  if (!section) return;
+  const category = section.dataset.category;
+  const willNA   = !btn.classList.contains('active');
+
+  btn.classList.toggle('active', willNA);
+  section.classList.toggle('cat-na', willNA);
+
+  (AppState.criteria || [])
+    .filter(c => c.Category === category)
+    .forEach(c => {
+      const a = AppState.auditAnswers[c.Criteria_ID];
+      if (!a) return;
+      a.na = willNA;
+      if (willNA) a.score = null;   // เคลียร์คะแนนเดิมเมื่อกลายเป็น N/A
+
+      const el = document.getElementById('item-' + c.Criteria_ID);
+      if (el) {
+        el.classList.toggle('na-disabled', willNA);
+        if (willNA) {
+          el.querySelectorAll('.score-btn').forEach(b => b.classList.remove('selected'));
+          el.style.borderLeft = '';
+          el.classList.remove('unanswered');
+        }
+      }
+    });
+
+  const label = btn.querySelector('.cat-na-label');
+  if (label) label.textContent = I18n.t(willNA ? 'audit.na_on' : 'audit.na_btn');
+
+  updateProgress();
 }
 
 // ============================================================
@@ -1959,13 +2013,16 @@ async function submitAudit() {
     // STEP 2: ส่ง Details เป็น Chunk ทีละ 15 ข้อ
     // แก้ปัญหา URL ยาวเกิน (400 Bad Request)
     // ============================================================
-    const details = AppState.criteria.map(c => ({
-      criteriaId: c.Criteria_ID,
-      score:      AppState.auditAnswers[c.Criteria_ID]?.score ?? 0,
-      remark:     (AppState.auditAnswers[c.Criteria_ID]?.remark || '').slice(0, 200),
-      photoUrl:   (AppState.auditAnswers[c.Criteria_ID]?.photos || [])
-                    .map(p => p.url).filter(Boolean).join(',')
-    }));
+    const details = AppState.criteria.map(c => {
+      const a = AppState.auditAnswers[c.Criteria_ID] || {};
+      return {
+        criteriaId: c.Criteria_ID,
+        na:         !!a.na,
+        score:      a.na ? 0 : (a.score ?? 0),
+        remark:     (a.remark || '').slice(0, 200),
+        photoUrl:   (a.photos || []).map(p => p.url).filter(Boolean).join(',')
+      };
+    });
 
     const CHUNK_SIZE = 15;
     const totalChunks = Math.ceil(details.length / CHUNK_SIZE);

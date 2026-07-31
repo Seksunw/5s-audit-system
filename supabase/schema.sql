@@ -102,6 +102,7 @@ create table public.audit_details (
   audit_id    uuid not null references public.audit_headers(audit_id) on delete cascade,
   criteria_id text not null references public.criteria(criteria_id),
   score       int  not null check (score between 0 and 2),
+  na          boolean not null default false,      -- true = ไม่มีในพื้นที่ → ตัดออกจากการคำนวณคะแนน
   remark      text check (char_length(remark) <= 200),
   photo_urls  text[] default '{}',
   unique (audit_id, criteria_id)                   -- กันบันทึกซ้ำข้อเดิมใน audit เดียว
@@ -170,8 +171,8 @@ declare
   v_max   int;
   v_pct   numeric(5,2);
 begin
-  select coalesce(sum(d.score),0),
-         coalesce(sum(c.max_score),0)
+  select coalesce(sum(d.score)     filter (where not d.na), 0),
+         coalesce(sum(c.max_score) filter (where not d.na), 0)
     into v_total, v_max
   from public.audit_details d
   join public.criteria c on c.criteria_id = d.criteria_id

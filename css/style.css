@@ -1442,3 +1442,30 @@ body {
 
   .page-content { padding: 0; max-width: 100%; }
 }
+
+/* ===== ปุ่ม "ไม่มีในพื้นที่" ระดับหมวด (N/A) ===== */
+.category-head-right { display: flex; align-items: center; gap: 8px; }
+.cat-na-btn {
+  background: #fff;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 0.72rem;
+  color: var(--gray-600);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.cat-na-btn:hover { background: var(--gray-100); }
+.cat-na-btn.active {
+  background: var(--gray-800);
+  color: #fff;
+  border-color: var(--gray-800);
+}
+.category-section.cat-na .category-body { opacity: .55; }
+.criteria-item.na-disabled {
+  background: repeating-linear-gradient(45deg,#fafafa,#fafafa 8px,#f1f3f4 8px,#f1f3f4 16px);
+  border-left: 3px solid var(--gray-300) !important;
+}
+.criteria-item.na-disabled .score-buttons { pointer-events: none; opacity: .4; }
+.criteria-item.na-disabled .criteria-extras { opacity: .5; }
