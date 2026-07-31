@@ -1575,7 +1575,7 @@ function renderChecklist(grouped, totalItems, totalMaxScore) {
 
   container.innerHTML = Object.entries(grouped).map(([category, items]) => `
     <div class="category-section mb-2" data-category="${escAttr(category)}" id="cat-${escHtml(category).replace(/\s/g,'_')}">
-      <div class="category-header" onclick="toggleCategory(this)">
+      <div class="category-header" onclick="toggleAuditCategory(this)">
         <span><i class="bi bi-clipboard-check me-2"></i>${escHtml(category)}</span>
         <span class="category-head-right">
           <button type="button" class="cat-na-btn" onclick="event.stopPropagation(); toggleCategoryNA(this)">
@@ -1747,26 +1747,50 @@ function jumpToCriteria(criteriaId) {
   const item = document.getElementById('item-' + criteriaId);
   if (!item) return;
   const body = item.closest('.category-body');
-  if (body && body.style.display === 'none') body.style.display = 'block';
+  if (body && body.classList.contains('collapsed')) slideToggle(body, false);
   item.classList.add('unanswered', 'jump-focus');
   item.scrollIntoView({ behavior: 'smooth', block: 'center' });
   setTimeout(() => item.classList.remove('jump-focus'), 1300);
 }
 
 /**
- * ซ่อน/แสดง category
+ * หุบ/คลี่ body ด้วยอนิเมชั่น (max-height transition)
+ * @param {HTMLElement} body   element .category-body
+ * @param {boolean}     collapse  true=หุบ, false=คลี่
  */
-function toggleCategory(header) {
-  const body   = header.nextElementSibling;
-  const isOpen = body.style.display !== 'none';
-  body.style.display = isOpen ? 'none' : 'block';
+function slideToggle(body, collapse) {
+  if (!body) return;
+  if (collapse) {
+    body.style.maxHeight = body.scrollHeight + 'px';
+    void body.offsetHeight;                    // force reflow ให้ transition ทำงาน
+    body.classList.add('collapsed');
+    body.style.maxHeight = '0px';
+  } else {
+    body.classList.remove('collapsed');
+    body.style.maxHeight = body.scrollHeight + 'px';
+    const done = (e) => {
+      if (e.propertyName !== 'max-height') return;
+      body.style.maxHeight = '';               // ปล่อยให้สูงตามเนื้อหาจริงหลังคลี่เสร็จ
+      body.removeEventListener('transitionend', done);
+    };
+    body.addEventListener('transitionend', done);
+  }
+}
 
-  // toggle icon ระหว่าง clipboard-check กับ chevron-up
+/**
+ * ซ่อน/แสดง category (กดที่หัวหมวด) — หน้า audit
+ */
+function toggleAuditCategory(header) {
+  const body = header.nextElementSibling;
+  if (!body) return;
+  const collapsed = body.classList.contains('collapsed');
+  slideToggle(body, !collapsed);
+
   const icon = header.querySelector('.bi');
   if (icon) {
-    icon.className = isOpen
-      ? 'bi bi-chevron-down'
-      : 'bi bi-clipboard-check me-2';
+    icon.className = collapsed
+      ? 'bi bi-clipboard-check me-2'
+      : 'bi bi-chevron-down';
   }
 }
 
@@ -1804,6 +1828,12 @@ function toggleCategoryNA(btn) {
 
   const label = btn.querySelector('.cat-na-label');
   if (label) label.textContent = I18n.t(willNA ? 'audit.na_on' : 'audit.na_btn');
+
+  // หุบข้อย่อยด้วยอนิเมชั่นเมื่อตัด N/A / คลี่กลับเมื่อยกเลิก
+  const body = section.querySelector('.category-body');
+  slideToggle(body, willNA);
+  const icon = section.querySelector('.category-header .bi');
+  if (icon) icon.className = willNA ? 'bi bi-chevron-down' : 'bi bi-clipboard-check me-2';
 
   updateProgress();
 }

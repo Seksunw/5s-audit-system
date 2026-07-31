@@ -1469,3 +1469,12 @@ body {
 }
 .criteria-item.na-disabled .score-buttons { pointer-events: none; opacity: .4; }
 .criteria-item.na-disabled .criteria-extras { opacity: .5; }
+
+/* ===== อนิเมชั่นหุบ/คลี่ข้อย่อยในหมวด ===== */
+.category-body {
+  overflow: hidden;
+  transition: max-height .28s ease, opacity .22s ease;
+}
+.category-body.collapsed {
+  opacity: 0;
+}
