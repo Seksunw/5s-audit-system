@@ -180,8 +180,17 @@ const SBH = {
     ]);
     const H = headers || [];
     const pct = h => Number(h.percent) || 0;
+    const tot = h => Number(h.total_score) || 0;   // คะแนนจริง
+    const mx  = h => Number(h.max_score)   || 0;   // คะแนนเต็มจริง
     const totalAudit = H.length;
-    const avgScore = totalAudit ? Math.round(H.reduce((s,h)=>s+pct(h),0)/totalAudit) : 0;
+
+    // คะแนนรวม = pooled (รวมคะแนนจริง / รวมคะแนนเต็ม) — สะท้อนน้ำหนักงานจริง
+    const poolPct = (t, m) => m > 0 ? Math.round(t * 100 / m) : 0;
+    const sumT = H.reduce((s,h)=>s+tot(h),0);
+    const sumM = H.reduce((s,h)=>s+mx(h),0);
+    const avgScore = poolPct(sumT, sumM);
+
+    // passRate + การนับระดับ = ต่อ audit (แต่ละครั้งเท่ากัน) เพราะเป็นตัวชี้ "กี่ครั้งที่ผ่าน"
     const passRate = totalAudit ? Math.round(H.filter(h=>pct(h)>=75).length*100/totalAudit) : 0;
     const excellent = H.filter(h=>pct(h)>=90).length;
     const good = H.filter(h=>pct(h)>=75 && pct(h)<90).length;
@@ -189,16 +198,19 @@ const SBH = {
 
     const areaName = {}; (areas||[]).forEach(a=>areaName[a.area_id]=a.area_name);
     const plantName = {}; (plants||[]).forEach(p=>plantName[p.plant_id]=p.plant_name);
+
+    // คะแนนรายกลุ่ม = pooled ภายในกลุ่ม (รวมคะแนนจริงของกลุ่ม / เต็มจริง)
+    // → เห็นคะแนนแต่ละพื้นที่ได้แม้จำนวนเกณฑ์ต่างกัน สำหรับประเมินและหาจุดบกพร่อง
     const avgBy = (keyFn, nameMap, label) => {
-      const g = {}; H.forEach(h=>{ const k=keyFn(h); (g[k]=g[k]||[]).push(pct(h)); });
-      return Object.entries(g).map(([k,arr])=>({ [label]:(nameMap[k]||k), avgScore:Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) }))
+      const g = {}; H.forEach(h=>{ const k=keyFn(h); (g[k]=g[k]||{t:0,m:0}); g[k].t+=tot(h); g[k].m+=mx(h); });
+      return Object.entries(g).map(([k,v])=>({ [label]:(nameMap[k]||k), avgScore:poolPct(v.t, v.m) }))
                    .sort((a,b)=>b.avgScore-a.avgScore);
     };
     const plantComparison = avgBy(h=>h.plant_id, plantName, 'plantName');
     const areaRanking = avgBy(h=>h.area_id, areaName, 'areaName');
 
-    const mg = {}; H.forEach(h=>{ const mth=String(h.audit_date||'').slice(0,7); if(mth){(mg[mth]=mg[mth]||[]).push(pct(h));} });
-    const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month,arr])=>({ month, avgScore:Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) }));
+    const mg = {}; H.forEach(h=>{ const mth=String(h.audit_date||'').slice(0,7); if(mth){(mg[mth]=mg[mth]||{t:0,m:0}); mg[mth].t+=tot(h); mg[mth].m+=mx(h);} });
+    const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month,v])=>({ month, avgScore:poolPct(v.t, v.m) }));
 
     return { success:true, data:{
       totalAudit, avgScore, passRate, excellent, good, needImprovement,
@@ -2330,8 +2342,8 @@ async function initDashboard() {
     // Plant Comparison Ranking
     renderRanking('plantRanking', d.plantComparison || [], 'plantName');
 
-    // Area Ranking
-    renderRanking('areaRanking', d.areaRanking || [], 'areaName');
+    // Area Ranking — แสดงครบทุกพื้นที่ เพื่อประเมินและหาจุดบกพร่องรายพื้นที่
+    renderRanking('areaRanking', d.areaRanking || [], 'areaName', 100);
 
     // Monthly Trend (simple bar chart)
     renderMonthlyTrend('monthlyChart', d.monthlyTrend || []);
@@ -2342,7 +2354,7 @@ async function initDashboard() {
   }
 }
 
-function renderRanking(containerId, items, nameField) {
+function renderRanking(containerId, items, nameField, limit = 10) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -2351,7 +2363,7 @@ function renderRanking(containerId, items, nameField) {
     return;
   }
 
-  container.innerHTML = items.slice(0, 10).map((item, idx) => `
+  container.innerHTML = items.slice(0, limit).map((item, idx) => `
     <div class="ranking-item">
       <div class="rank-number rank-${idx+1}">${idx+1}</div>
       <div class="rank-bar-wrap">
