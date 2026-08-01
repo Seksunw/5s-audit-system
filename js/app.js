@@ -1348,6 +1348,86 @@ async function initLogin() {
 // ============================================================
 // HOME PAGE
 // ============================================================
+// สร้าง HTML การ์ดงานที่ได้รับมอบหมาย (ใช้ร่วมกันหน้า Home/งานที่ได้รับมอบหมาย)
+function renderAssignedTaskCards(tasks) {
+  return tasks.map(s => {
+    const dateStr = UI.formatDate(s.Audit_Date);
+    const isDone  = s.Status === 'Completed';
+    const isOverdue = !isDone && s.Audit_Date && new Date(s.Audit_Date) < new Date();
+    const badgeClass = isDone ? 'success' : (isOverdue ? 'danger' : 'warning');
+    const badgeText  = isDone ? '✓ เสร็จสิ้น' : (isOverdue ? '⚠️ เกินกำหนด' : '📅 รอตรวจ');
+    const cta = isDone
+      ? `<div class="btn btn-block" style="height:40px;font-size:0.85rem;background:var(--gray-100);color:var(--success);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;cursor:default;">
+           <i class="bi bi-check-circle-fill"></i> ดำเนินการตรวจเสร็จสิ้นแล้ว
+         </div>`
+      : `<button class="btn btn-primary btn-block" style="height:40px;font-size:0.85rem;"
+                onclick="startAssignedAudit('${escAttr(s.Plant_ID)}','${escAttr(s.Plant_Name || s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Area_Name || s.Area_ID)}','${escAttr(s.Area_Type || '')}','${escAttr(s.Schedule_ID || '')}')">
+           <i class="bi bi-play-circle"></i> เริ่มตรวจ
+         </button>`;
+    return `
+      <div class="card mb-2" style="padding:14px 16px;border-left:4px solid var(--${badgeClass})${isDone ? ';opacity:.85' : ''}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
+          <div>
+            <div style="font-weight:700;font-size:0.9rem">${escHtml(s.Area_Name || s.Area_ID || '-')}</div>
+            <div style="font-size:0.75rem;color:var(--gray-600)">${escHtml(s.Plant_Name || s.Plant_ID || '')} · ${escHtml(s.Audit_Round || '')}</div>
+          </div>
+          <span class="badge badge-${badgeClass}" style="font-size:0.65rem;padding:3px 8px;border-radius:20px;">${badgeText}</span>
+        </div>
+        <div style="font-size:0.78rem;color:var(--gray-600);margin-bottom:10px;">
+          <i class="bi bi-calendar3"></i> ${dateStr}
+        </div>
+        ${cta}
+      </div>`;
+  }).join('');
+}
+
+// โหลด + กรอง schedules ที่ user นี้ถูกมอบหมาย
+function filterMyTasks(schedData, user) {
+  const userId = (user && user.userId) || null;
+  if (!userId || !Array.isArray(schedData)) return [];
+  return schedData.filter(s => {
+    const ids = String(s.Auditor_ID || '').split(',').map(x => x.trim());
+    return ids.includes(String(userId));
+  });
+}
+
+// หน้า "งานที่ได้รับมอบหมาย"
+async function initMyTasks() {
+  if (!Session.requireLogin()) return;
+  updateUserUI();
+  const user = AppState.user || {};
+  const list = document.getElementById('myTasksList');
+  try {
+    UI.showLoading(I18n.t('msg.loading_home'));
+    const schedRes = await API.get('getSchedule', {});
+    UI.hideLoading();
+    const myTasks = schedRes.success ? filterMyTasks(schedRes.data, user) : [];
+    if (!list) return;
+    if (myTasks.length > 0) {
+      // เรียงงานค้างก่อน แล้วตามด้วยที่เสร็จแล้ว
+      myTasks.sort((a, b) => {
+        const ad = a.Status === 'Completed', bd = b.Status === 'Completed';
+        if (ad !== bd) return ad ? 1 : -1;
+        return String(a.Audit_Date || '').localeCompare(String(b.Audit_Date || ''));
+      });
+      list.innerHTML = renderAssignedTaskCards(myTasks);
+    } else {
+      list.innerHTML = `
+        <div class="card text-center" style="padding:32px 20px">
+          <i class="bi bi-clipboard-check" style="font-size:2.4rem;color:var(--gray-400)"></i>
+          <div style="margin-top:10px;font-weight:700;color:var(--dark)">ยังไม่มีงานที่ได้รับมอบหมาย</div>
+          <div style="font-size:0.82rem;color:var(--gray-600);margin:6px 0 16px">คุณสามารถเลือกพื้นที่ตรวจเองได้</div>
+          <button class="btn btn-primary btn-block" onclick="navigate('plant.html')" style="height:46px">
+            <i class="bi bi-clipboard-check"></i> เลือกพื้นที่ตรวจเอง
+          </button>
+        </div>`;
+    }
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast(I18n.t('msg.load_failed'), 'error');
+  }
+}
+
 async function initHome() {
   if (!Session.requireLogin()) return;
   updateUserUI();
@@ -1380,64 +1460,8 @@ async function initHome() {
       setEl('excellentCount', d.excellent || 0);
     }
 
-    // แสดง Assigned Tasks สำหรับ Auditor
-    let myTasks = [];
-    if (schedRes.success && schedRes.data.length) {
-      const userId = user.userId || null;
-      // กรอง schedules ที่ user นี้ถูก assign
-      myTasks = schedRes.data.filter(s => {
-        if (!userId) return false;
-        const ids = String(s.Auditor_ID || '').split(',').map(x => x.trim());
-        return ids.includes(String(userId));
-      });
-
-      if (myTasks.length > 0) {
-        const section = document.getElementById('myTasksSection');
-        const list    = document.getElementById('myTasksList');
-        const nextCard = document.getElementById('nextScheduleCard');
-        if (section) section.style.display = 'block';
-        if (nextCard) nextCard.style.display = 'none';
-
-        if (list) {
-          list.innerHTML = myTasks.map(s => {
-            const dateStr = UI.formatDate(s.Audit_Date);
-            const isDone  = s.Status === 'Completed';
-            const isOverdue = !isDone && s.Audit_Date && new Date(s.Audit_Date) < new Date();
-            const badgeClass = isDone ? 'success' : (isOverdue ? 'danger' : 'warning');
-            const badgeText  = isDone ? '✓ เสร็จสิ้น' : (isOverdue ? '⚠️ เกินกำหนด' : '📅 รอตรวจ');
-            const cta = isDone
-              ? `<div class="btn btn-block" style="height:40px;font-size:0.85rem;background:var(--gray-100);color:var(--success);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;cursor:default;">
-                   <i class="bi bi-check-circle-fill"></i> ดำเนินการตรวจเสร็จสิ้นแล้ว
-                 </div>`
-              : `<button class="btn btn-primary btn-block" style="height:40px;font-size:0.85rem;"
-                        onclick="startAssignedAudit('${escAttr(s.Plant_ID)}','${escAttr(s.Plant_Name || s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Area_Name || s.Area_ID)}','${escAttr(s.Area_Type || '')}','${escAttr(s.Schedule_ID || '')}')">
-                   <i class="bi bi-play-circle"></i> เริ่มตรวจ
-                 </button>`;
-            return `
-              <div class="card mb-2" style="padding:14px 16px;border-left:4px solid var(--${badgeClass})${isDone ? ';opacity:.85' : ''}">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
-                  <div>
-                    <div style="font-weight:700;font-size:0.9rem">${escHtml(s.Area_Name || s.Area_ID || '-')}</div>
-                    <div style="font-size:0.75rem;color:var(--gray-600)">${escHtml(s.Plant_Name || s.Plant_ID || '')} · ${escHtml(s.Audit_Round || '')}</div>
-                  </div>
-                  <span class="badge badge-${badgeClass}" style="font-size:0.65rem;padding:3px 8px;border-radius:20px;">${badgeText}</span>
-                </div>
-                <div style="font-size:0.78rem;color:var(--gray-600);margin-bottom:10px;">
-                  <i class="bi bi-calendar3"></i> ${dateStr}
-                </div>
-                ${cta}
-              </div>`;
-          }).join('');
-        }
-      } else {
-        // ไม่มี assigned task → แสดง next schedule ทั่วไป
-        const upcoming = schedRes.data.find(s => s.Status === 'Pending');
-        if (upcoming) {
-          setEl('nextAuditDate', UI.formatDate(upcoming.Audit_Date));
-          setEl('nextAuditRound', upcoming.Audit_Round || '-');
-        }
-      }
-    }
+    // งานที่ได้รับมอบหมายของ user นี้ (ใช้สรุปใน Hero Card)
+    const myTasks = schedRes.success ? filterMyTasks(schedRes.data, user) : [];
 
     // Hero Card summary — รอบ/กำหนด + งานค้าง
     const pending = myTasks.filter(t => t.Status !== 'Completed');
@@ -1450,7 +1474,7 @@ async function initHome() {
       const up = (schedRes.success && schedRes.data.length)
         ? schedRes.data.find(s => s.Status === 'Pending') : null;
       setEl('heroMeta', up ? `รอบ ${up.Audit_Round || '-'} · ครบกำหนด ${UI.formatDate(up.Audit_Date)}` : '');
-      setEl('heroDesc', 'พร้อมเริ่มตรวจ 5ส แล้ว — แตะปุ่มด้านล่างเพื่อเลือกพื้นที่');
+      setEl('heroDesc', 'พร้อมเริ่มตรวจ 5ส แล้ว — แตะปุ่มด้านล่างเพื่อดูงานที่ได้รับมอบหมาย');
     }
   } catch(err) {
     UI.hideLoading();
@@ -3844,6 +3868,7 @@ document.addEventListener('DOMContentLoaded', () => {
   switch(page) {
     case 'index':    case '':  initLogin();     break;
     case 'home':               initHome();      break;
+    case 'mytasks':            initMyTasks();   break;
     case 'plant':              initPlant();     break;
     case 'area':               initArea();      break;
     case 'audit':              initAudit();     break;
