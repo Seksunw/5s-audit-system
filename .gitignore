@@ -1,3 +1,16 @@
+# build/design artifacts
 export/
 *.zip
+
+# OS
 .DS_Store
+
+# editor / notes
+.obsidian/
+
+# local tooling & source docs (ไม่ deploy)
+export_to_obsidian.py
+sync_commits.py
+*.docx
+Criteria_Master.csv
+URL*.txt
