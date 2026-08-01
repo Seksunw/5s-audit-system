@@ -179,10 +179,10 @@ body {
 .card {
   background: #fff;
   border-radius: var(--radius-md);
-  border: none;
+  border: 1px solid var(--gray-200);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 
 .card:hover { box-shadow: var(--shadow-md); }
@@ -195,8 +195,9 @@ body {
 }
 
 .card-clickable:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--gray-300);
 }
 
 .card-header {
@@ -231,6 +232,7 @@ body {
 .stat-card {
   background: #fff;
   border-radius: var(--radius-md);
+  border: 1px solid var(--gray-200);
   padding: 16px;
   box-shadow: var(--shadow-sm);
   text-align: center;
@@ -528,21 +530,21 @@ body {
 
 .score-btn[data-score="0"]:hover,
 .score-btn[data-score="0"].selected {
-  background: #fde8e8;
+  background: #fdeeec;
   border-color: var(--score-0);
   color: var(--score-0);
 }
 
 .score-btn[data-score="1"]:hover,
 .score-btn[data-score="1"].selected {
-  background: #fff8e1;
+  background: #fdf6e7;
   border-color: var(--score-1);
-  color: #c9a000;
+  color: #7d5705;
 }
 
 .score-btn[data-score="2"]:hover,
 .score-btn[data-score="2"].selected {
-  background: #e8f5e9;
+  background: #e9f4ed;
   border-color: var(--score-2);
   color: var(--score-2);
 }
@@ -703,12 +705,13 @@ body {
 .btn-primary {
   background: var(--primary);
   color: #fff;
+  box-shadow: 0 1px 2px rgba(27,78,168,0.24);
 }
 
 .btn-primary:hover {
   background: var(--primary-dark);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 2px 8px rgba(27,78,168,0.28);
 }
 
 .btn-success {
@@ -722,12 +725,12 @@ body {
 }
 
 .btn-outline {
-  background: transparent;
-  border: 2px solid var(--primary);
+  background: #fff;
+  border: 1.5px solid var(--gray-300);
   color: var(--primary);
 }
 
-.btn-outline:hover { background: var(--primary-light); }
+.btn-outline:hover { background: var(--gray-100); border-color: var(--primary); }
 
 .btn-lg {
   padding: 14px 24px;
@@ -1254,11 +1257,14 @@ body {
   font-weight: 600;
 }
 
-.badge-excellent   { background: #e8f5e9; color: var(--excellent); }
-.badge-good        { background: #fff8e1; color: #c9a000; }
-.badge-need-improve{ background: #fde8e8; color: var(--danger); }
+.badge-excellent   { background: #e9f4ed; color: var(--excellent); }
+.badge-good        { background: #fdf6e7; color: #7d5705; }
+.badge-need-improve{ background: #fdeeec; color: var(--danger); }
 .badge-primary     { background: var(--primary-light); color: var(--primary); }
 .badge-secondary   { background: var(--gray-200); color: var(--gray-800); }
+.badge-success     { background: #e9f4ed; color: var(--excellent); }
+.badge-warning     { background: #fdf6e7; color: #7d5705; }
+.badge-danger      { background: #fdeeec; color: var(--danger); }
 
 /* ============================================================
    SECTION TITLE
