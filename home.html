@@ -7,7 +7,7 @@
   <title>หน้าหลัก | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <link rel="stylesheet" href="css/style.css?v=28">
 </head>
 <body>
 
@@ -22,10 +22,8 @@
 
 <!-- Top Nav -->
 <nav class="top-nav">
-  <div class="brand">
-    <span style="background:#fff;color:var(--primary);border-radius:8px;padding:2px 8px;font-size:0.85rem;">5ส</span>
-    ระบบตรวจ 5ส
-  </div>
+  <div id="userInitial" style="width:34px;height:34px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">U</div>
+  <div class="brand">หน้าหลัก</div>
   <div class="nav-actions">
     <button class="btn-icon" onclick="navigate('dashboard.html')" title="Dashboard">
       <i class="bi bi-bar-chart"></i>
@@ -39,18 +37,16 @@
 <!-- Content -->
 <div class="page-content">
 
-  <!-- User Greeting -->
-  <div style="margin-bottom:20px">
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="width:44px;height:44px;border-radius:50%;background:var(--primary);
-                  color:#fff;display:flex;align-items:center;justify-content:center;
-                  font-size:1.1rem;font-weight:700;flex-shrink:0" id="userInitial">U</div>
-      <div>
-        <div style="font-size:0.8rem;color:var(--gray-600)" data-i18n="home.greeting">สวัสดี 👋</div>
-        <div style="font-weight:700;font-size:1rem" id="userName">-</div>
-        <div style="font-size:0.75rem;color:var(--gray-600)" id="userRole"></div>
-      </div>
+  <!-- Hero Card -->
+  <div class="card mb-3" style="padding:20px 18px">
+    <div id="heroMeta" style="font-size:0.72rem;color:var(--gray-600);font-weight:600;margin-bottom:8px"></div>
+    <div style="font-size:1.3rem;font-weight:800;color:var(--dark);line-height:1.3;margin-bottom:6px">
+      <span data-i18n="home.greeting_hi">สวัสดี</span> <span id="userName">-</span>
     </div>
+    <div id="heroDesc" style="font-size:0.85rem;color:var(--gray-700);line-height:1.55;margin-bottom:16px">กำลังโหลด...</div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="navigate('plant.html')" style="min-height:52px">
+      <i class="bi bi-clipboard-check"></i> <span data-i18n="home.start_btn">เริ่มตรวจ 5ส</span>
+    </button>
   </div>
 
   <!-- Quick Stats -->
@@ -81,31 +77,6 @@
     </div>
     <div id="myTasksList"></div>
   </div>
-
-  <!-- Next Audit Schedule (fallback สำหรับกรณีไม่มี assigned tasks) -->
-  <div class="card mb-3" id="nextScheduleCard">
-    <div class="card-header">
-      <i class="bi bi-calendar-check me-2"></i><span data-i18n="home.next_schedule">กำหนดการตรวจถัดไป</span>
-    </div>
-    <div class="card-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <div class="text-muted" style="font-size:0.75rem" data-i18n="home.round">รอบการตรวจ</div>
-          <div class="fw-bold" id="nextAuditRound">-</div>
-        </div>
-        <div>
-          <div class="text-muted" style="font-size:0.75rem" data-i18n="home.date">วันที่</div>
-          <div class="fw-bold" id="nextAuditDate">-</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Start Audit CTA -->
-  <button class="btn btn-primary btn-block btn-lg mb-3" onclick="navigate('plant.html')"
-          style="height:64px;font-size:1.1rem">
-    <i class="bi bi-clipboard-check"></i> <span data-i18n="home.start_btn">เริ่มตรวจ 5ส</span>
-  </button>
 
   <!-- Quick Actions -->
   <div class="section-title"><i class="bi bi-grid"></i> <span data-i18n="home.quick_menu">เมนูด่วน</span></div>
@@ -194,7 +165,7 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=27"></script>
+<script src="js/app.js?v=28"></script>
 <script>
 // Inline admin check — แสดง/ซ่อน menuSchedule ทันทีโดยไม่รอ app.js version
 (function(){

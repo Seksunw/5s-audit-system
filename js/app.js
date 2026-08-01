@@ -426,6 +426,7 @@ const TRANSLATIONS = {
     'login.quick_title':   '🔧 Dev Mode — เข้าสู่ระบบด่วน',
     // Home
     'home.greeting':       'สวัสดี 👋',
+    'home.greeting_hi':    'สวัสดี',
     'home.total_audit':    'การตรวจทั้งหมด',
     'home.avg_score':      'คะแนนเฉลี่ย',
     'home.pass_rate':      'อัตราผ่าน',
@@ -620,6 +621,7 @@ const TRANSLATIONS = {
     'login.quick_title':   '🔧 Dev Mode — Quick Login',
     // Home
     'home.greeting':       'Hello 👋',
+    'home.greeting_hi':    'Hello',
     'home.total_audit':    'Total Audits',
     'home.avg_score':      'Avg Score',
     'home.pass_rate':      'Pass Rate',
@@ -826,6 +828,7 @@ const TRANSLATIONS = {
     'login.quick_title':   '🔧 Dev Mode — Quick Login',
     // Home
     'home.greeting':       'Hello 👋',
+    'home.greeting_hi':    'Hello',
     'home.total_audit':    'Total Audits',
     'home.avg_score':      'Avg Score',
     'home.pass_rate':      'Pass Rate',
@@ -1378,10 +1381,11 @@ async function initHome() {
     }
 
     // แสดง Assigned Tasks สำหรับ Auditor
+    let myTasks = [];
     if (schedRes.success && schedRes.data.length) {
       const userId = user.userId || null;
       // กรอง schedules ที่ user นี้ถูก assign
-      const myTasks = schedRes.data.filter(s => {
+      myTasks = schedRes.data.filter(s => {
         if (!userId) return false;
         const ids = String(s.Auditor_ID || '').split(',').map(x => x.trim());
         return ids.includes(String(userId));
@@ -1433,6 +1437,20 @@ async function initHome() {
           setEl('nextAuditRound', upcoming.Audit_Round || '-');
         }
       }
+    }
+
+    // Hero Card summary — รอบ/กำหนด + งานค้าง
+    const pending = myTasks.filter(t => t.Status !== 'Completed');
+    pending.sort((a, b) => String(a.Audit_Date || '').localeCompare(String(b.Audit_Date || '')));
+    const near = pending[0];
+    if (near) {
+      setEl('heroMeta', `รอบ ${near.Audit_Round || '-'} · ครบกำหนด ${UI.formatDate(near.Audit_Date)}`);
+      setEl('heroDesc', `คุณมีงานตรวจค้างอยู่ ${pending.length} พื้นที่ · เริ่มที่ ${near.Area_Name || near.Area_ID}`);
+    } else {
+      const up = (schedRes.success && schedRes.data.length)
+        ? schedRes.data.find(s => s.Status === 'Pending') : null;
+      setEl('heroMeta', up ? `รอบ ${up.Audit_Round || '-'} · ครบกำหนด ${UI.formatDate(up.Audit_Date)}` : '');
+      setEl('heroDesc', 'พร้อมเริ่มตรวจ 5ส แล้ว — แตะปุ่มด้านล่างเพื่อเลือกพื้นที่');
     }
   } catch(err) {
     UI.hideLoading();
