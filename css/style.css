@@ -7,40 +7,42 @@
    CSS VARIABLES - ปรับสีได้ที่นี่
    ============================================================ */
 :root {
-  --primary:        #1a73e8;
-  --primary-dark:   #1557b0;
-  --primary-light:  #e8f0fe;
-  --secondary:      #34a853;
-  --warning:        #fbbc04;
-  --danger:         #ea4335;
-  --dark:           #202124;
-  --gray-100:       #f8f9fa;
-  --gray-200:       #e8eaed;
-  --gray-300:       #dadce0;
-  --gray-600:       #80868b;
-  --gray-800:       #3c4043;
+  /* ธีม Claude Design — เทาอมฟ้า + panel ขาว + น้ำเงิน accent */
+  --primary:        #1b4ea8;
+  --primary-dark:   #143c80;
+  --primary-light:  #d7e1f4;
+  --secondary:      #1a7f43;
+  --warning:        #b7791f;
+  --danger:         #b42318;
+  --dark:           #101828;
+  --app-bg:         #e9edf4;   /* พื้นหลังแอป (canvas เทาอมฟ้า) */
+  --gray-100:       #f2f5fa;
+  --gray-200:       #eef1f6;
+  --gray-300:       #cfd5de;
+  --gray-600:       #667085;
+  --gray-800:       #344054;
 
   /* Score Colors */
-  --score-0:        #ea4335;
-  --score-1:        #fbbc04;
-  --score-2:        #34a853;
+  --score-0:        #b42318;
+  --score-1:        #b7791f;
+  --score-2:        #1a7f43;
 
   /* Status Colors */
-  --excellent:      #34a853;
-  --good:           #fbbc04;
-  --need-improve:   #ea4335;
+  --excellent:      #1a7f43;
+  --good:           #b7791f;
+  --need-improve:   #b42318;
 
   /* Border Radius */
-  --radius-sm:      8px;
-  --radius-md:      12px;
+  --radius-sm:      9px;
+  --radius-md:      14px;
   --radius-lg:      16px;
-  --radius-xl:      24px;
+  --radius-xl:      22px;
 
-  /* Shadow */
-  --shadow-sm:      0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
-  --shadow-md:      0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
-  --shadow-lg:      0 10px 15px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05);
-  --shadow-xl:      0 20px 25px rgba(0,0,0,0.1), 0 10px 10px rgba(0,0,0,0.04);
+  /* Shadow (นุ่ม บาง แบบ Outlook) */
+  --shadow-sm:      0 1px 2px rgba(16,24,40,0.05);
+  --shadow-md:      0 1px 3px rgba(16,24,40,0.10);
+  --shadow-lg:      0 8px 24px rgba(16,24,40,0.10);
+  --shadow-xl:      0 26px 60px rgba(16,24,40,0.22);
 
   /* Nav */
   --nav-height:     60px;
@@ -61,7 +63,7 @@ html {
 body {
   font-family: 'Sarabun', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont,
                'Segoe UI', Roboto, sans-serif;
-  background: var(--gray-100);
+  background: var(--app-bg);
   color: var(--dark);
   margin: 0;
   padding: 0;
