@@ -132,11 +132,17 @@ create index idx_schedules_status on public.schedules(status);
 create table public.audit_logs (
   log_id     uuid primary key default gen_random_uuid(),
   user_id    uuid references public.profiles(id),
-  action     text not null,                        -- LOGIN / AUDIT / ...
+  action     text not null,                        -- LOGIN / LOGOUT / INSERT / UPDATE / DELETE / SUBMIT_AUDIT
   detail     text,
+  entity     text,                                 -- ชื่อตารางที่เปลี่ยน (สำหรับ trigger log)
+  entity_id  text,                                 -- PK ของแถวที่เปลี่ยน
+  old_data   jsonb,                                -- ค่าเดิม (UPDATE/DELETE)
+  new_data   jsonb,                                -- ค่าใหม่ (INSERT/UPDATE)
   created_at timestamptz not null default now()
 );
-create index idx_logs_user on public.audit_logs(user_id);
+create index idx_logs_user    on public.audit_logs(user_id);
+create index idx_logs_created on public.audit_logs(created_at desc);
+create index idx_logs_entity  on public.audit_logs(entity);
 
 -- =====================================================================
 -- 9) Helper: อ่าน role ของผู้ใช้ปัจจุบัน (ใช้ใน RLS)
@@ -282,6 +288,34 @@ $$;
 create trigger trg_new_user
 after insert on auth.users
 for each row execute function public.handle_new_user();
+
+-- =====================================================================
+-- 13) Audit Log อัตโนมัติ (ความปลอดภัยหลังบ้าน)
+-- =====================================================================
+create or replace function public.log_activity()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_old jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) else null end;
+  v_new jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) else null end;
+  v_pk  text  := tg_argv[0];
+  v_id  text  := coalesce(v_new ->> v_pk, v_old ->> v_pk);
+begin
+  insert into public.audit_logs(user_id, action, entity, entity_id, old_data, new_data, detail)
+  values (auth.uid(), tg_op, tg_table_name, v_id, v_old, v_new, tg_table_name || ' ' || tg_op);
+  return null;
+end;
+$$;
+
+create trigger trg_log_profiles  after insert or update or delete on public.profiles      for each row execute function public.log_activity('id');
+create trigger trg_log_schedules after insert or update or delete on public.schedules     for each row execute function public.log_activity('schedule_id');
+create trigger trg_log_areas     after insert or update or delete on public.areas         for each row execute function public.log_activity('area_id');
+create trigger trg_log_criteria  after insert or update or delete on public.criteria      for each row execute function public.log_activity('criteria_id');
+create trigger trg_log_headers   after insert or delete           on public.audit_headers for each row execute function public.log_activity('audit_id');
+
+-- append-only: ห้ามแก้/ลบ log
+revoke update, delete on public.audit_logs from anon, authenticated;
 
 -- =====================================================================
 -- เสร็จ. ขั้นต่อไป: import master data (plants/areas/criteria) แล้ว

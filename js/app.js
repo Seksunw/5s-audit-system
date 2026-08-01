@@ -194,6 +194,22 @@ const SBH = {
       plants:(plants||[]).map(p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name })) };
   },
 
+  /** ดึง audit log (admin เท่านั้น — RLS จำกัดให้) */
+  async getLogs({ entity, action, limit } = {}) {
+    let q = _sb.from('audit_logs').select('*, profiles(name)')
+      .order('created_at', { ascending:false }).limit(limit || 300);
+    if (entity) q = q.eq('entity', entity);
+    if (action) q = q.eq('action', action);
+    const { data, error } = await q;
+    if (error) return { success:false, error:error.message };
+    return { success:true, data:(data||[]).map(l => ({
+      Log_ID:l.log_id,
+      User:(l.profiles && l.profiles.name) || l.user_id || 'ระบบ',
+      Action:l.action, Entity:l.entity || '', Entity_ID:l.entity_id || '',
+      Detail:l.detail || '', Old:l.old_data, New:l.new_data, At:l.created_at
+    })) };
+  },
+
   // ---- History / detail ----
   async getHistory({ plantId, month, year } = {}) {
     let q = _sb.from('audit_headers').select('*, profiles(name)');
@@ -1302,6 +1318,7 @@ async function initLogin() {
 
       if (res.success) {
         Session.save(res.token, res.user);
+        logEvent('LOGIN', 'เข้าสู่ระบบ');
         UI.toast(`${I18n.t('msg.welcome')} ${res.user.name} 👋`, 'success');
         setTimeout(() => navigate('home.html'), 800);
       } else {
@@ -1334,6 +1351,8 @@ async function initHome() {
   // ทั้ง "มอบหมาย" และ "ผู้ใช้" เป็น admin-only แสดงพร้อมกัน; auditor ไม่เห็นทั้งคู่
   if (menuSched) menuSched.style.display = isAdmin ? 'block' : 'none';
   if (menuUsers) menuUsers.style.display = isAdmin ? 'block' : 'none';
+  const menuLogs = document.getElementById('menuLogs');
+  if (menuLogs) menuLogs.style.display = isAdmin ? 'block' : 'none';
 
   try {
     UI.showLoading(I18n.t('msg.loading_home'));
@@ -2220,6 +2239,7 @@ async function submitAudit() {
         try { await API.get('completeSchedule', { scheduleId }); }
         catch (e) { console.warn('[Submit] completeSchedule failed:', e.message); }
       }
+      logEvent('SUBMIT_AUDIT', `ส่งผลตรวจ ${getParam('areaName') || getParam('areaId') || ''} · ${finalRes.percent}%`, 'audit_headers', finalRes.auditId);
       sessionStorage.setItem('lastAuditResult', JSON.stringify(finalRes));
       navigate('summary.html', { auditId: finalRes.auditId });
     } else {
@@ -2506,7 +2526,20 @@ function updateUserUI() {
 }
 
 /** Logout */
+/** บันทึกเหตุการณ์ฝั่ง client ลง audit_logs (login/logout/submit ฯลฯ) — เงียบถ้าพลาด */
+async function logEvent(action, detail, entity, entityId) {
+  try {
+    const uid = AppState.user && AppState.user.userId;
+    if (!uid) return;
+    await _sb.from('audit_logs').insert({
+      user_id: uid, action,
+      detail: detail || null, entity: entity || null, entity_id: entityId || null
+    });
+  } catch(e) { console.warn('[log]', e.message); }
+}
+
 async function logout() {
+  await logEvent('LOGOUT', 'ออกจากระบบ');
   try {
     await API.post('logout');
   } catch(e) {}
@@ -3646,6 +3679,90 @@ function toggleAssign(idx) {
 }
 
 // ============================================================
+// AUDIT LOG PAGE (บันทึกกิจกรรม — admin)
+// ============================================================
+let _allLogs = [];
+let _logFilter = '';
+
+async function initLogs() {
+  if (!Session.requireLogin()) return;
+  const user = AppState.user || {};
+  if (String(user.role || '').toLowerCase() !== 'admin') {
+    UI.toast('เฉพาะ Admin เท่านั้น', 'error'); navigate('home.html'); return;
+  }
+  updateUserUI();
+  UI.showLoading('โหลดบันทึกกิจกรรม...');
+  try {
+    const res = await API.get('getLogs', {});
+    UI.hideLoading();
+    if (!res.success) { UI.toast(res.error || 'โหลดไม่สำเร็จ', 'error'); return; }
+    _allLogs = res.data;
+    renderLogs();
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}
+
+function logFilter(f, btn) {
+  _logFilter = f;
+  document.querySelectorAll('.lfchip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderLogs();
+}
+
+function renderLogs() {
+  const cont = document.getElementById('logList');
+  if (!cont) return;
+  const f = _logFilter;
+  const rows = _allLogs.filter(l => !f || l.Action === f || l.Entity === f);
+
+  if (!rows.length) {
+    cont.innerHTML = `<p class="text-muted text-center" style="padding:24px 0">ไม่มีบันทึกในเงื่อนไขนี้</p>`;
+    return;
+  }
+
+  const meta = {
+    LOGIN:        { icon:'bi-box-arrow-in-right', cls:'ok',   label:'เข้าระบบ' },
+    LOGOUT:       { icon:'bi-box-arrow-right',    cls:'muted',label:'ออกระบบ' },
+    SUBMIT_AUDIT: { icon:'bi-clipboard-check',    cls:'ok',   label:'ส่งผลตรวจ' },
+    INSERT:       { icon:'bi-plus-circle',        cls:'ok',   label:'เพิ่ม' },
+    UPDATE:       { icon:'bi-pencil',             cls:'warn', label:'แก้ไข' },
+    DELETE:       { icon:'bi-trash3',             cls:'danger',label:'ลบ' },
+  };
+  const entityTH = { profiles:'ผู้ใช้', schedules:'มอบหมาย', areas:'พื้นที่', criteria:'เกณฑ์', audit_headers:'การตรวจ' };
+
+  cont.innerHTML = rows.map((l, i) => {
+    const m = meta[l.Action] || { icon:'bi-dot', cls:'muted', label:l.Action };
+    const ent = entityTH[l.Entity] || l.Entity;
+    const when = new Date(l.At);
+    const timeStr = isNaN(when) ? l.At : when.toLocaleString('th-TH', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+    const hasData = l.Old || l.New;
+    const sub = [ent, l.Entity_ID].filter(Boolean).join(' · ');
+    return `
+      <div class="log-item">
+        <div class="log-row" ${hasData ? `onclick="toggleLog(${i})"` : ''}>
+          <div class="log-ic ${m.cls}"><i class="bi ${m.icon}"></i></div>
+          <div class="log-main">
+            <div class="log-t1">${escHtml(l.User)} <span class="log-act ${m.cls}">${escHtml(m.label)}</span></div>
+            <div class="log-t2">${escHtml(l.Detail || sub || '')}${sub && l.Detail ? ' · ' + escHtml(sub) : ''}</div>
+          </div>
+          <div class="log-time">${escHtml(timeStr)}${hasData ? ' <i class="bi bi-chevron-down" id="logchev-'+i+'"></i>' : ''}</div>
+        </div>
+        ${hasData ? `<pre class="log-data" id="logdata-${i}">${escHtml(JSON.stringify({ old:l.Old, new:l.New }, null, 2))}</pre>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function toggleLog(i) {
+  const d = document.getElementById('logdata-' + i);
+  const c = document.getElementById('logchev-' + i);
+  if (!d) return;
+  const open = d.classList.toggle('show');
+  if (c) c.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+// ============================================================
 // AUTO-INIT ตาม page ปัจจุบัน
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -3667,5 +3784,6 @@ document.addEventListener('DOMContentLoaded', () => {
     case 'schedule':           initSchedule();  break;
     case 'criteria':           initCriteria();  break;
     case 'assign':             initAssign();    break;
+    case 'logs':               initLogs();      break;
   }
 });
