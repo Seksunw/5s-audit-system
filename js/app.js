@@ -2910,7 +2910,7 @@ let _schedMode     = 'area';      // 'area' | 'aud'
 let _schedFilter   = 'all';       // 'all' | 'unassigned' | 'overdue'
 let _schedSearch   = '';
 let _schedSelected = new Set();   // Area_IDs ที่ติ๊กเลือก (bulk)
-let _schedAudPick  = null;        // ผู้ตรวจที่เลือกในโหมด "ตามคน"
+let _schedAudPickSet = new Set(); // ผู้ตรวจที่เลือกในโหมด "ตามคน" (หลายคนได้)
 let _bulkAuds      = new Set();   // ผู้ตรวจที่เลือกใน bulk modal (โหมดตามพื้นที่)
 
 async function initSchedule() {
@@ -2933,7 +2933,7 @@ async function initSchedule() {
     _schedAllAreas  = res.areas   || [];
     _schedAuditors  = res.auditors || [];
     _schedPlant = 'all'; _schedMode = 'area'; _schedFilter = 'all';
-    _schedSearch = ''; _schedSelected.clear(); _schedAudPick = null;
+    _schedSearch = ''; _schedSelected.clear(); _schedAudPickSet.clear();
 
     // สร้าง Plant tabs
     const plants = res.plants || [];
@@ -3032,7 +3032,7 @@ function schedRenderGrid() {
     // เนื้อการ์ดต่างกันตามโหมด
     let body;
     if (_schedMode === 'aud') {
-      const already = _schedAudPick && audIds.includes(_schedAudPick);
+      const already = _schedAudPickSet.size > 0 && [..._schedAudPickSet].every(id => audIds.includes(id));
       body = `
         <div class="card-auditor-chips">
           ${already
@@ -3061,9 +3061,9 @@ function schedRenderGrid() {
     return `
       <div class="area-assign-card type-${typeClass}${isSel ? ' sel' : ''}" onclick="schedToggleSelect('${escAttr(area.Area_ID)}')">
         <div class="sched-ck">${isSel ? '<i class="bi bi-check-lg"></i>' : ''}</div>
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:6px;">
           <div class="area-type-icon" style="background:${ti.bg};color:${ti.color}"><i class="bi ${ti.icon}"></i></div>
-          <span class="sched-status-badge ${st}"><i class="bi ${sc.icon}"></i>${sc.label}</span>
+          <span class="sched-status-badge ${st}" style="margin-right:26px"><i class="bi ${sc.icon}"></i>${sc.label}</span>
         </div>
         <div class="area-card-name">${escHtml(area.Area_Name || area.Area_ID)}</div>
         <div class="area-card-meta">${escHtml(area.Plant_ID)}</div>
@@ -3087,7 +3087,6 @@ function schedSetMode(m) {
   document.getElementById('smodeAud')?.classList.toggle('active', m === 'aud');
   const audPick = document.getElementById('schedAudPick');
   if (audPick) audPick.style.display = m === 'aud' ? 'flex' : 'none';
-  if (m === 'aud' && !_schedAudPick && _schedAuditors.length) _schedAudPick = _schedAuditors[0].User_ID;
   schedRenderAudPick();
   schedRenderGrid();
   schedUpdateBulk();
@@ -3110,13 +3109,13 @@ function schedRenderAudPick() {
   if (!row) return;
   row.innerHTML = _schedAuditors.map(u => {
     const first = (u.Name || '').split(' ')[0] || u.User_ID;
-    return `<button class="audpill ${_schedAudPick === u.User_ID ? 'active' : ''}" onclick="schedPickAuditor('${escAttr(u.User_ID)}')">${escHtml(first)}</button>`;
+    return `<button class="audpill ${_schedAudPickSet.has(u.User_ID) ? 'active' : ''}" onclick="schedPickAuditor('${escAttr(u.User_ID)}')">${escHtml(first)}</button>`;
   }).join('');
 }
 
 function schedPickAuditor(uid) {
-  _schedAudPick = uid;
-  _schedSelected.clear();
+  if (_schedAudPickSet.has(uid)) _schedAudPickSet.delete(uid);
+  else _schedAudPickSet.add(uid);           // เลือกได้หลายคน
   schedRenderAudPick();
   schedRenderGrid();
   schedUpdateBulk();
@@ -3136,9 +3135,8 @@ function schedUpdateBulk() {
   const go = document.getElementById('bulkGo');
   if (go) {
     if (_schedMode === 'aud') {
-      const u = _schedAuditors.find(x => x.User_ID === _schedAudPick);
-      const first = u ? ((u.Name || '').split(' ')[0] || u.User_ID) : 'ผู้ตรวจ';
-      go.innerHTML = `เพิ่ม ${escHtml(first)} →`;
+      const c = _schedAudPickSet.size;
+      go.innerHTML = c ? `เพิ่ม ${c} คน →` : 'เลือกผู้ตรวจก่อน';
     } else {
       go.innerHTML = 'มอบหมาย →';
     }
@@ -3231,10 +3229,8 @@ async function schedSaveBulk() {
 
 // ---- by-auditor (โหมดตามคน = ADD) ----
 async function schedSaveByAuditor() {
-  const uid = _schedAudPick;
-  if (!uid) { UI.toast('เลือกผู้ตรวจก่อน', 'warning'); return; }
-  const u = _schedAuditors.find(x => x.User_ID === uid);
-  const first = u ? ((u.Name || '').split(' ')[0] || uid) : 'ผู้ตรวจ';
+  const uids = [..._schedAudPickSet];
+  if (!uids.length) { UI.toast('เลือกผู้ตรวจอย่างน้อย 1 คน', 'warning'); return; }
   const planDate  = document.getElementById('planDate')?.value || '';
   const planRound = document.getElementById('planRound')?.value || 'Round 2';
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
@@ -3243,7 +3239,7 @@ async function schedSaveByAuditor() {
   try {
     const results = await Promise.all(areas.map(a => {
       const existing = a.Auditor_IDs ? a.Auditor_IDs.split(',').map(x => x.trim()).filter(Boolean) : [];
-      if (!existing.includes(uid)) existing.push(uid);   // ADD (union)
+      uids.forEach(uid => { if (!existing.includes(uid)) existing.push(uid); });  // ADD ทุกคนที่เลือก (union)
       const auds  = existing.join(',');
       const date  = a.Audit_Date  || planDate;           // คงค่าเดิมถ้ามี
       const round = a.Audit_Round || planRound;
@@ -3263,7 +3259,7 @@ async function schedSaveByAuditor() {
     schedRenderGrid();
     schedUpdateBulk();
     if (failed) UI.toast(`บันทึกได้ ${results.length-failed}/${results.length} · ล้มเหลว ${failed}`, 'warning');
-    else UI.toast(`เพิ่ม ${first} ให้ ${results.length} พื้นที่เรียบร้อย ✅`, 'success');
+    else UI.toast(`เพิ่มผู้ตรวจ ${uids.length} คน ให้ ${results.length} พื้นที่เรียบร้อย ✅`, 'success');
   } catch(err) {
     UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
   }
