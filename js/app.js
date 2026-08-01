@@ -143,14 +143,31 @@ const SBH = {
       .select('*, areas(area_name, area_type), plants(plant_name)')
       .in('status', ['pending','completed']);
     if (error) throw error;
-    return { success:true, data:(data||[]).map(s => ({
+    const rows = data || [];
+
+    // แนบ Audit_ID ให้งานที่ตรวจเสร็จแล้ว → ปุ่ม "ดูผล" ลิงก์ตรงหน้าผลการตรวจของหัวข้อนั้น
+    // (ไม่ใช่หน้าประวัติรวม) จับคู่จาก audit_headers ตาม plant+area เอา audit ล่าสุดของพื้นที่นั้น
+    const auditByKey = {};
+    if (rows.some(s => s.status === 'completed')) {
+      const { data:hdrs } = await _sb.from('audit_headers')
+        .select('audit_id, plant_id, area_id, audit_date')
+        .neq('status','pending')
+        .order('audit_date', { ascending:false });
+      (hdrs||[]).forEach(h => {
+        const k = h.plant_id + '|' + h.area_id;
+        if (!(k in auditByKey)) auditByKey[k] = h.audit_id;   // อันแรก = ใหม่สุด (sort desc แล้ว)
+      });
+    }
+
+    return { success:true, data:rows.map(s => ({
       Schedule_ID:s.schedule_id, Plant_ID:s.plant_id, Area_ID:s.area_id,
       Area_Name:(s.areas && s.areas.area_name) || s.area_id,
       Area_Type:(s.areas && MAP.areaType[s.areas.area_type]) || '',
       Plant_Name:(s.plants && s.plants.plant_name) || s.plant_id,
       Auditor_ID:(s.auditor_ids||[]).join(','),
       Audit_Date:s.audit_date, Audit_Round:s.audit_round,
-      Status: s.status === 'completed' ? 'Completed' : 'Pending'
+      Status: s.status === 'completed' ? 'Completed' : 'Pending',
+      Audit_ID: s.status === 'completed' ? (auditByKey[s.plant_id + '|' + s.area_id] || '') : ''
     })) };
   },
 
@@ -1391,7 +1408,11 @@ function renderAssignedTaskCards(tasks) {
     const startArgs = `'${escAttr(s.Plant_ID)}','${escAttr(s.Plant_Name || s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Area_Name || s.Area_ID)}','${escAttr(s.Area_Type || '')}','${escAttr(s.Schedule_ID || '')}'`;
     let action;
     if (st === 'done') {
-      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="navigate('history.html')">ดูผล</button>`;
+      // ไปหน้าผลการตรวจของหัวข้อนี้โดยตรง (summary) — ถ้าหา audit ไม่เจอค่อย fallback หน้าประวัติ
+      const doneAction = s.Audit_ID
+        ? `navigate('summary.html', { auditId: '${escAttr(s.Audit_ID)}' })`
+        : `navigate('history.html')`;
+      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="${doneAction}">ดูผล</button>`;
     } else if (st === 'today') {
       action = `<button class="btn btn-primary" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700" onclick="startAssignedAudit(${startArgs})">เริ่มตรวจ</button>`;
     } else {
@@ -2357,13 +2378,17 @@ async function initSummary() {
   if (!Session.requireLogin()) return;
   updateUserUI();
 
-  // โหลดจาก sessionStorage ก่อน
+  const auditId = getParam('auditId');
+
+  // โหลดจาก sessionStorage ก่อน (ผลที่เพิ่ง submit)
   const cached = sessionStorage.getItem('lastAuditResult');
   let result = cached ? JSON.parse(cached) : null;
 
+  // ถ้าเปิดด้วย auditId เจาะจง (เช่นกด"ดูผล") และไม่ตรงกับ cache → อย่าใช้ cache เก่า ให้ดึงของจริง
+  if (auditId && (!result || result.auditId !== auditId)) result = null;
+
   // ถ้าไม่มี ดึงจาก API
   if (!result) {
-    const auditId = getParam('auditId');
     if (auditId) {
       UI.showLoading();
       const res = await API.get('getAuditDetail', { auditId });
