@@ -750,47 +750,14 @@ a:hover{color:var(--primary-dark)}
 .pwa-banner .pwa-text{flex:1;font-size:.82rem}
 
 /* ============================================================
-   DESKTOP — sidebar + content แบบหลายคอลัมน์
+   MOBILE ONLY — ไม่มี desktop sidebar
+   จอกว้างขึ้นแค่จำกัดความกว้างคอนเทนต์ให้อ่านสบาย
+   bottom tab bar ยังอยู่ทุกขนาดจอ
    ============================================================ */
-@media (min-width:768px){
-  body{padding-bottom:0}
-  .bottom-nav{display:none}
-  .submit-bar{bottom:0;left:240px}
-
-  .page-content{
-    max-width:1000px;padding:20px 24px;
-    padding-top:calc(var(--nav-height) + 18px);
-  }
-
-  /* ปุ่มคะแนนบนจอกว้าง: เตี้ยลงได้ ไม่ต้องนิ้วหนา */
-  .score-btn{min-height:48px}
-
-  .criteria-item{padding:15px}
-
-  /* Sidebar */
-  .desktop-nav{
-    position:fixed;left:0;top:var(--nav-height);bottom:0;width:230px;
-    background:#e9edf4;border-right:1px solid var(--hairline);
-    padding:13px 9px;overflow-y:auto;display:block;
-  }
-  .desktop-nav .nav-item{
-    display:flex;align-items:center;gap:10px;width:100%;
-    padding:9px;border:none;background:none;border-radius:var(--radius-sm);
-    color:#5b6572;font-size:.79rem;font-weight:500;
-    cursor:pointer;transition:background .12s,color .12s;
-  }
-  .desktop-nav .nav-item:hover{background:rgba(255,255,255,.66);color:var(--dark)}
-  .desktop-nav .nav-item.active{
-    background:#fff;color:var(--primary);font-weight:600;box-shadow:var(--shadow-sm);
-  }
-  .desktop-nav .nav-item i{font-size:.95rem;width:17px;text-align:center}
-
-  .audit-layout{display:grid;grid-template-columns:1fr 288px;gap:16px;align-items:start}
-}
-
-@media (min-width:1180px){
-  /* Context panel ขวา (dashboard / มอบหมาย / log) */
-  .with-context{display:grid;grid-template-columns:1fr 288px;gap:16px;align-items:start}
+@media (min-width:600px){
+  .page-content{max-width:560px;padding-left:20px;padding-right:20px}
+  .submit-bar{padding-left:20px;padding-right:20px}
+  .submit-bar > *{max-width:560px;width:100%;margin:0 auto}
 }
 
 /* ============================================================
@@ -803,17 +770,7 @@ a:hover{color:var(--primary-dark)}
   .page-content{padding:0;max-width:100%}
 }
 
-/* ============================================================
-   COMPAT — คลาสที่ต้องคงไว้ + กันเมนูหายบนจอกว้าง
-   (จนกว่าจะเพิ่ม .desktop-nav ใน HTML ค่อยเปิดใช้ sidebar)
-   ============================================================ */
-.criteria-item.na-disabled{ opacity:.6; }
-.criteria-item.na-disabled .score-buttons{ pointer-events:none; opacity:.45; }
+/* ===== COMPAT: คลาสที่ app.js พึ่งพา (setScore → toggle na-disabled) ===== */
+.criteria-item.na-disabled{ opacity:.62; }
+.criteria-item.na-disabled .score-buttons{ pointer-events:none; opacity:.5; }
 .criteria-item.na-disabled .criteria-extras{ opacity:.5; }
-
-@media (min-width:768px){
-  /* ยังไม่มี sidebar ในหน้า → คง bottom-nav ไว้ให้ยังนำทางได้ */
-  .bottom-nav{ display:flex; }
-  body{ padding-bottom:var(--bottom-nav); }
-  .submit-bar{ left:0; }
-}
