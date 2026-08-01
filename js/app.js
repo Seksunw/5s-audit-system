@@ -210,6 +210,13 @@ const SBH = {
     })) };
   },
 
+  /** รีเซ็ตข้อมูล (admin) — เรียก RPC ที่เช็คสิทธิ์ + สำรอง + ลบ ฝั่ง DB */
+  async resetData() {
+    const { data, error } = await _sb.rpc('admin_reset_data');
+    if (error) return { success:false, error:error.message };
+    return { success:true, ...(data || {}) };
+  },
+
   // ---- History / detail ----
   async getHistory({ plantId, month, year } = {}) {
     let q = _sb.from('audit_headers').select('*, profiles(name)');
@@ -2613,6 +2620,8 @@ async function initUsers() {
       </div>`;
     return;
   }
+  const dz = document.getElementById('dangerZone');
+  if (dz) dz.style.display = 'block';   // admin เท่านั้นเห็น Danger Zone
   await _loadUsers();
 }
 
@@ -2853,6 +2862,49 @@ function updateAssignedAreasSummary() {
 function closeUserModal() {
   const modal = document.getElementById('userModal');
   if (modal) modal.classList.remove('show');
+}
+
+// ---- Danger Zone: รีเซ็ตข้อมูลระบบ (admin) ----
+function openResetModal() {
+  const err = document.getElementById('resetError'); if (err) err.textContent = '';
+  const p1 = document.getElementById('resetPhrase'); if (p1) p1.value = '';
+  const p2 = document.getElementById('resetPassword'); if (p2) p2.value = '';
+  document.getElementById('resetModal')?.classList.add('show');
+}
+function closeResetModal() {
+  document.getElementById('resetModal')?.classList.remove('show');
+}
+async function confirmReset() {
+  const err = document.getElementById('resetError');
+  const phrase = (document.getElementById('resetPhrase')?.value || '').trim();
+  const pw     = document.getElementById('resetPassword')?.value || '';
+  if (err) err.textContent = '';
+  if (phrase !== 'RESET') { if (err) err.textContent = 'พิมพ์ RESET (ตัวใหญ่) ให้ถูกต้อง'; return; }
+  if (!pw) { if (err) err.textContent = 'กรอกรหัสผ่านของคุณ'; return; }
+  const email = AppState.user && AppState.user.email;
+  if (!email) { if (err) err.textContent = 'ไม่พบอีเมลผู้ใช้ — เข้าสู่ระบบใหม่'; return; }
+
+  const btn = document.getElementById('resetConfirmBtn');
+  if (btn) { btn.disabled = true; }
+  try {
+    UI.showLoading('ตรวจสอบรหัสผ่าน...');
+    const { error: authErr } = await _sb.auth.signInWithPassword({ email, password: pw });
+    if (authErr) { UI.hideLoading(); if (err) err.textContent = 'รหัสผ่านไม่ถูกต้อง'; if (btn) btn.disabled = false; return; }
+
+    UI.showLoading('กำลังรีเซ็ตข้อมูล...');
+    const res = await API.get('resetData', {});
+    UI.hideLoading();
+    if (res.success) {
+      closeResetModal();
+      UI.toast(`รีเซ็ตแล้ว: ประวัติ ${res.headers||0} · มอบหมาย ${res.schedules||0} (สำรองไว้ที่ *_backup)`, 'success', 6000);
+    } else {
+      if (err) err.textContent = res.error || 'รีเซ็ตไม่สำเร็จ';
+    }
+  } catch(e) {
+    UI.hideLoading();
+    if (err) err.textContent = 'เกิดข้อผิดพลาด: ' + e.message;
+  }
+  if (btn) btn.disabled = false;
 }
 
 async function saveUserForm(e) {

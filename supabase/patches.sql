@@ -141,3 +141,52 @@ create trigger trg_log_headers   after insert or delete on public.audit_headers 
 
 -- C4) Hardening: append-only — ห้ามแก้/ลบ log (แม้แต่ admin) กันการลบร่องรอย
 revoke update, delete on public.audit_logs from anon, authenticated;
+
+
+-- =====================================================================
+-- ส่วน D: RPC รีเซ็ตข้อมูล (สำหรับปุ่มในแอป — admin เท่านั้น)
+-- =====================================================================
+-- ลบ: ประวัติการตรวจ+คะแนน (audit_headers/details) + การมอบหมาย (schedules) + รูปใน Storage
+-- เก็บ: profiles, audit_logs, plants/areas/criteria
+-- สำรองอัตโนมัติลงตาราง *_backup ก่อนลบ (กู้คืนได้)
+-- ตัวฟังก์ชันเช็คสิทธิ์ admin เอง จึงไม่ต้องเปิดสิทธิ์ลบให้ client
+create or replace function public.admin_reset_data()
+returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_h int; v_d int; v_s int;
+  v_uid uuid := auth.uid();
+begin
+  if coalesce(public.auth_role(), '') <> 'admin' then
+    raise exception 'permission denied: admin only';
+  end if;
+
+  select count(*) into v_h from public.audit_headers;
+  select count(*) into v_d from public.audit_details;
+  select count(*) into v_s from public.schedules;
+
+  -- สำรอง (เขียนทับ backup เดิม)
+  drop table if exists public.audit_headers_backup;
+  drop table if exists public.audit_details_backup;
+  drop table if exists public.schedules_backup;
+  create table public.audit_headers_backup as table public.audit_headers;
+  create table public.audit_details_backup as table public.audit_details;
+  create table public.schedules_backup     as table public.schedules;
+
+  -- ลบ (truncate ไม่ปลุก trigger log)
+  truncate table public.audit_details, public.audit_headers, public.schedules restart identity cascade;
+
+  -- ลบรูปใน Storage
+  delete from storage.objects where bucket_id = 'audit-photos';
+
+  -- บันทึกการรีเซ็ตลง audit_logs (เก็บ log ไว้)
+  insert into public.audit_logs(user_id, action, entity, detail)
+  values (v_uid, 'RESET', 'system',
+          format('รีเซ็ตข้อมูล: ประวัติ %s / รายละเอียด %s / มอบหมาย %s + รูปภาพ (สำรองที่ *_backup)', v_h, v_d, v_s));
+
+  return jsonb_build_object('success', true, 'headers', v_h, 'details', v_d, 'schedules', v_s);
+end;
+$$;
+
+grant execute on function public.admin_reset_data() to authenticated;

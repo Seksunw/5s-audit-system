@@ -318,6 +318,45 @@ create trigger trg_log_headers   after insert or delete           on public.audi
 revoke update, delete on public.audit_logs from anon, authenticated;
 
 -- =====================================================================
+-- 14) RPC รีเซ็ตข้อมูล (ปุ่มในแอป — admin เท่านั้น)
+--     ลบ audit history + schedules + รูป, สำรองที่ *_backup, เก็บ users/logs/master
+-- =====================================================================
+create or replace function public.admin_reset_data()
+returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_h int; v_d int; v_s int;
+  v_uid uuid := auth.uid();
+begin
+  if coalesce(public.auth_role(), '') <> 'admin' then
+    raise exception 'permission denied: admin only';
+  end if;
+
+  select count(*) into v_h from public.audit_headers;
+  select count(*) into v_d from public.audit_details;
+  select count(*) into v_s from public.schedules;
+
+  drop table if exists public.audit_headers_backup;
+  drop table if exists public.audit_details_backup;
+  drop table if exists public.schedules_backup;
+  create table public.audit_headers_backup as table public.audit_headers;
+  create table public.audit_details_backup as table public.audit_details;
+  create table public.schedules_backup     as table public.schedules;
+
+  truncate table public.audit_details, public.audit_headers, public.schedules restart identity cascade;
+  delete from storage.objects where bucket_id = 'audit-photos';
+
+  insert into public.audit_logs(user_id, action, entity, detail)
+  values (v_uid, 'RESET', 'system',
+          format('รีเซ็ตข้อมูล: ประวัติ %s / รายละเอียด %s / มอบหมาย %s + รูปภาพ (สำรองที่ *_backup)', v_h, v_d, v_s));
+
+  return jsonb_build_object('success', true, 'headers', v_h, 'details', v_d, 'schedules', v_s);
+end;
+$$;
+grant execute on function public.admin_reset_data() to authenticated;
+
+-- =====================================================================
 -- เสร็จ. ขั้นต่อไป: import master data (plants/areas/criteria) แล้ว
 -- migrate audit เก่าจาก Google Sheet (ดู SUPABASE_MIGRATION_PLAN.md)
 -- =====================================================================

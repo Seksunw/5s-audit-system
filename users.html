@@ -6,7 +6,7 @@
   <title>จัดการผู้ใช้งาน | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=23">
   <style>
     .user-card {
       background:#fff; border-radius:12px; padding:14px 16px;
@@ -96,6 +96,53 @@
     <i class="bi bi-person-plus"></i> <span data-i18n="users.add_btn">เพิ่มผู้ใช้งานใหม่</span>
   </button>
 
+  <!-- Danger Zone (admin เท่านั้น) -->
+  <div id="dangerZone" class="card" style="display:none;margin-top:28px;border:1.5px solid var(--danger)">
+    <div class="card-body">
+      <div style="font-weight:800;color:var(--danger);margin-bottom:6px">
+        <i class="bi bi-exclamation-octagon"></i> เขตอันตราย
+      </div>
+      <div style="font-size:0.82rem;color:var(--gray-600);margin-bottom:12px;line-height:1.6">
+        รีเซ็ตข้อมูลเพื่อเริ่มใช้งานจริง — ลบ <b>ประวัติการตรวจ + คะแนน</b>, <b>การมอบหมาย</b> และ <b>รูปภาพ</b> ทั้งหมด<br>
+        เก็บไว้: ผู้ใช้ · บันทึกกิจกรรม · ข้อมูลตั้งต้น &nbsp;·&nbsp; <span style="color:#137333">สำรองอัตโนมัติ กู้คืนได้</span>
+      </div>
+      <button class="btn btn-block" style="background:var(--danger);color:#fff" onclick="openResetModal()">
+        <i class="bi bi-trash3"></i> รีเซ็ตข้อมูลระบบ
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal: รีเซ็ตข้อมูล -->
+<div id="resetModal" class="modal-overlay">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div style="text-align:center;margin-bottom:14px">
+      <i class="bi bi-exclamation-octagon" style="font-size:2rem;color:var(--danger)"></i>
+      <div style="font-size:1.1rem;font-weight:800;margin-top:6px">รีเซ็ตข้อมูลระบบ</div>
+    </div>
+    <div style="background:#fde8e6;border-radius:10px;padding:12px 14px;font-size:0.82rem;color:#8a1c12;margin-bottom:16px;line-height:1.6">
+      <b>ลบถาวร:</b> ประวัติการตรวจ + คะแนน · การมอบหมาย · รูปภาพ<br>
+      <b>เก็บไว้:</b> ผู้ใช้ · บันทึกกิจกรรม · ข้อมูลตั้งต้น<br>
+      <span style="color:#137333">✓ สำรองอัตโนมัติที่ตาราง *_backup (กู้คืนได้)</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">พิมพ์ <b>RESET</b> เพื่อยืนยัน</label>
+      <input type="text" id="resetPhrase" class="form-control" placeholder="RESET" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="form-group">
+      <label class="form-label">รหัสผ่านของคุณ (admin)</label>
+      <input type="password" id="resetPassword" class="form-control" placeholder="รหัสผ่าน" autocomplete="current-password">
+    </div>
+    <div id="resetError" style="color:var(--danger);font-size:0.85rem;margin-bottom:12px;min-height:16px"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-outline btn-block" onclick="closeResetModal()">ยกเลิก</button>
+      <button class="btn btn-block" id="resetConfirmBtn" style="background:var(--danger);color:#fff" onclick="confirmReset()">
+        <i class="bi bi-trash3"></i> ลบถาวร
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- Bottom Nav -->
@@ -221,6 +268,6 @@
 
 <!-- โหลด app.js เพียงไฟล์เดียว — Logic อยู่ใน app.js ทั้งหมด -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=22"></script>
+<script src="js/app.js?v=23"></script>
 </body>
 </html>
