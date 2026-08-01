@@ -1478,3 +1478,33 @@ body {
 .category-body.collapsed {
   opacity: 0;
 }
+
+/* ===== ตารางตรวจ (Assignment Analytics) ===== */
+.asg-filters { display:flex; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.asg-filters label { font-size:0.72rem; color:var(--gray-600); font-weight:600; display:flex; flex-direction:column; gap:4px; flex:1; min-width:130px; }
+.asg-filters select { font-family:inherit; font-size:0.85rem; color:var(--gray-800); padding:8px 10px; border:1px solid var(--gray-300); border-radius:9px; background:#fff; }
+.asg-bar { height:9px; background:var(--gray-200); border-radius:20px; overflow:hidden; }
+.asg-bar-fill { height:100%; background:var(--primary); border-radius:20px; transition:width .3s; }
+.asg-aud { border:1px solid var(--gray-200); border-radius:10px; margin-bottom:8px; overflow:hidden; }
+.asg-aud-head { display:flex; align-items:center; gap:10px; padding:11px 12px; cursor:pointer; }
+.asg-aud-head:hover { background:var(--gray-100); }
+.asg-chev { color:var(--primary); font-size:0.7rem; transition:transform .15s; flex-shrink:0; }
+.asg-chev.open { transform:rotate(90deg); }
+.asg-aud-name { font-weight:700; font-size:0.9rem; flex:1; }
+.asg-aud-meta { font-size:0.72rem; color:var(--gray-600); }
+.asg-pill { padding:2px 9px; border-radius:20px; font-size:0.72rem; font-weight:700; white-space:nowrap; }
+.asg-pill.ok { background:#e6f4ea; color:var(--excellent); }
+.asg-pill.warn { background:#fef3e0; color:#b26a00; }
+.asg-pill.danger { background:#fde8e6; color:var(--danger); }
+.asg-mini { height:6px; background:var(--gray-200); border-radius:20px; overflow:hidden; width:70px; }
+.asg-mini div { height:100%; background:var(--primary); }
+.asg-detail { display:none; padding:4px 12px 12px; background:var(--gray-100); }
+.asg-detail.show { display:block; }
+.asg-drow { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 4px; border-bottom:1px dashed var(--gray-300); font-size:0.8rem; }
+.asg-drow:last-child { border-bottom:none; }
+.asg-da { font-weight:600; }
+.asg-badge { font-size:0.68rem; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+.asg-badge.ok { background:#e6f4ea; color:var(--excellent); }
+.asg-badge.warn { background:#fef3e0; color:#b26a00; }
+.asg-badge.danger { background:#fde8e6; color:var(--danger); }
+.asg-pill.muted { background:var(--gray-200); color:var(--gray-600); }

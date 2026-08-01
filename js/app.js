@@ -162,6 +162,38 @@ const SBH = {
     return { success:true };
   },
 
+  /** ข้อมูลสำหรับหน้า "ตารางตรวจ" — RLS จำกัดขอบเขตให้เอง (admin เห็นทุกคน / auditor เห็นของตัวเอง) */
+  async getAssignmentAnalytics() {
+    const [{ data:scheds }, { data:hdrs }, { data:profs }, { data:plants }] = await Promise.all([
+      _sb.from('schedules').select('*, areas(area_name, area_type), plants(plant_name)'),
+      _sb.from('audit_headers').select('auditor_id, plant_id, area_id, percent, audit_date').neq('status','pending'),
+      _sb.from('profiles').select('id, name'),
+      _sb.from('plants').select('plant_id, plant_name').eq('status','active').order('plant_id'),
+    ]);
+    const nameById = {}; (profs||[]).forEach(p => { nameById[p.id] = p.name; });
+    const today = new Date().toISOString().slice(0,10);
+    const schedules = (scheds||[]).map(s => ({
+      Schedule_ID: s.schedule_id,
+      Plant_ID:    s.plant_id,
+      Plant_Name:  (s.plants && s.plants.plant_name) || s.plant_id,
+      Area_ID:     s.area_id,
+      Area_Name:   (s.areas && s.areas.area_name) || s.area_id,
+      Area_Type:   (s.areas && MAP.areaType[s.areas.area_type]) || '',
+      Auditor_IDs:   s.auditor_ids || [],
+      Auditor_Names: (s.auditor_ids||[]).map(id => nameById[id] || '—'),
+      Audit_Round: s.audit_round || '',
+      Audit_Date:  s.audit_date,
+      Completed:   s.status === 'completed',
+      Overdue:     s.status !== 'completed' && s.audit_date && s.audit_date < today,
+    }));
+    const headers = (hdrs||[]).map(h => ({
+      Auditor_ID:h.auditor_id, Plant_ID:h.plant_id, Area_ID:h.area_id,
+      Percent:Number(h.percent)||0, Date:h.audit_date
+    }));
+    return { success:true, schedules, headers,
+      plants:(plants||[]).map(p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name })) };
+  },
+
   // ---- History / detail ----
   async getHistory({ plantId, month, year } = {}) {
     let q = _sb.from('audit_headers').select('*, profiles(name)');
@@ -3274,6 +3306,128 @@ function toggleCategory(id) {
 }
 
 // ============================================================
+// ASSIGNMENT ANALYTICS PAGE (ตารางตรวจ)
+// ============================================================
+async function initAssign() {
+  if (!Session.requireLogin()) return;
+  updateUserUI();
+  UI.showLoading('กำลังโหลด...');
+  try {
+    const res = await API.get('getAssignmentAnalytics', {});
+    UI.hideLoading();
+    if (!res.success) { UI.toast(res.error || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+    AppState.assignData = res;
+
+    // เติมตัวกรอง รอบ + โรงงาน (เฉพาะที่มีงานมอบหมาย)
+    const roundSel = document.getElementById('asgRound');
+    if (roundSel) {
+      const rounds = [...new Set(res.schedules.map(s => s.Audit_Round).filter(Boolean))].sort();
+      roundSel.innerHTML = '<option value="">ทุกรอบ</option>' +
+        rounds.map(r => `<option value="${escAttr(r)}">${escHtml(r)}</option>`).join('');
+    }
+    const plantSel = document.getElementById('asgPlant');
+    if (plantSel) {
+      const used = new Set(res.schedules.map(s => s.Plant_ID));
+      plantSel.innerHTML = '<option value="">ทุกโรงงาน</option>' +
+        res.plants.filter(p => used.has(p.Plant_ID))
+          .map(p => `<option value="${escAttr(p.Plant_ID)}">${escHtml(p.Plant_Name)}</option>`).join('');
+    }
+    renderAssign();
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}
+
+function renderAssign() {
+  const data = AppState.assignData;
+  if (!data) return;
+  const roundF = (document.getElementById('asgRound') || {}).value || '';
+  const plantF = (document.getElementById('asgPlant') || {}).value || '';
+
+  const rows = data.schedules.filter(s =>
+    (!roundF || s.Audit_Round === roundF) && (!plantF || s.Plant_ID === plantF));
+
+  // KPI
+  const total   = rows.length;
+  const done    = rows.filter(s => s.Completed).length;
+  const overdue = rows.filter(s => s.Overdue).length;
+  const prog    = total ? Math.round(done * 100 / total) : 0;
+  setEl('asgTotal', total); setEl('asgDone', done);
+  setEl('asgPending', total - done); setEl('asgOverdue', overdue);
+  setEl('asgProgPct', prog + '%');
+  const fill = document.getElementById('asgProgFill'); if (fill) fill.style.width = prog + '%';
+
+  // คะแนนที่ให้ ต่อ (ผู้ตรวจ+พื้นที่) เอาล่าสุด + คะแนนเฉลี่ยต่อผู้ตรวจ (ในขอบเขตโรงงาน)
+  const scoreLU = {}, scoresByAud = {};
+  data.headers.filter(h => !plantF || h.Plant_ID === plantF).forEach(h => {
+    const k = h.Auditor_ID + '|' + h.Area_ID;
+    if (!scoreLU[k] || (h.Date || '') > (scoreLU[k].date || '')) scoreLU[k] = { pct:h.Percent, date:h.Date };
+    (scoresByAud[h.Auditor_ID] = scoresByAud[h.Auditor_ID] || []).push(h.Percent);
+  });
+
+  // group schedules ตามผู้ตรวจ (schedule อาจมีหลายคน)
+  const byAud = {};
+  rows.forEach(s => (s.Auditor_IDs || []).forEach((aid, i) => {
+    if (!aid) return;
+    (byAud[aid] = byAud[aid] || { id:aid, name:s.Auditor_Names[i] || '—', scheds:[] }).scheds.push(s);
+  }));
+
+  const auditors = Object.values(byAud).map(a => {
+    const scores = scoresByAud[a.id] || [];
+    const avg = scores.length ? Math.round(scores.reduce((x,y)=>x+y,0)/scores.length) : null;
+    return { ...a, total:a.scheds.length, done:a.scheds.filter(s=>s.Completed).length,
+             prog:a.scheds.length ? Math.round(a.scheds.filter(s=>s.Completed).length*100/a.scheds.length) : 0, avg };
+  }).sort((x,y) => (y.avg ?? -1) - (x.avg ?? -1));
+
+  const cont = document.getElementById('asgAuditors');
+  const hint = document.getElementById('asgHint');
+  if (!cont) return;
+  if (!auditors.length) {
+    cont.innerHTML = `<p class="text-muted text-center" style="padding:16px 0">ยังไม่มีงานที่มอบหมายในเงื่อนไขนี้</p>`;
+    if (hint) hint.style.display = 'none';
+    return;
+  }
+  if (hint) hint.style.display = 'block';
+
+  const cls = p => p==null ? 'muted' : (p>=90 ? 'ok' : p>=75 ? 'warn' : 'danger');
+  cont.innerHTML = auditors.map((a, idx) => {
+    const detail = a.scheds.map(s => {
+      let badge;
+      if (s.Completed) {
+        const sc = scoreLU[a.id + '|' + s.Area_ID];
+        badge = `<span class="asg-badge ok">เสร็จ${sc ? ' · ' + sc.pct + '%' : ''}</span>`;
+      } else {
+        badge = `<span class="asg-badge ${s.Overdue ? 'danger' : 'warn'}">ค้าง${s.Overdue ? ' · เกินกำหนด' : ''}</span>`;
+      }
+      const loc = [s.Area_Name, s.Plant_Name, s.Audit_Round].filter(Boolean).join(' · ');
+      return `<div class="asg-drow"><span class="asg-da">${escHtml(loc)}</span>${badge}</div>`;
+    }).join('');
+    return `
+      <div class="asg-aud">
+        <div class="asg-aud-head" onclick="toggleAssign(${idx})">
+          <span class="asg-chev" id="asgchev-${idx}">▸</span>
+          <div style="flex:1;min-width:0">
+            <div class="asg-aud-name">${escHtml(a.name)}</div>
+            <div class="asg-aud-meta">${a.total} พื้นที่ · เสร็จ ${a.done}/${a.total}</div>
+          </div>
+          <span class="asg-pill ${cls(a.avg)}">${a.avg==null ? '—' : a.avg + '%'}</span>
+          <div class="asg-mini"><div style="width:${a.prog}%"></div></div>
+        </div>
+        <div class="asg-detail" id="asgdet-${idx}">${detail}</div>
+      </div>`;
+  }).join('');
+}
+
+function toggleAssign(idx) {
+  const d = document.getElementById('asgdet-' + idx);
+  const c = document.getElementById('asgchev-' + idx);
+  if (!d) return;
+  const open = d.classList.toggle('show');
+  if (c) c.classList.toggle('open', open);
+}
+
+// ============================================================
 // AUTO-INIT ตาม page ปัจจุบัน
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -3294,5 +3448,6 @@ document.addEventListener('DOMContentLoaded', () => {
     case 'users':              initUsers();     break;
     case 'schedule':           initSchedule();  break;
     case 'criteria':           initCriteria();  break;
+    case 'assign':             initAssign();    break;
   }
 });
