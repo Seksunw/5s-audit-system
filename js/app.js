@@ -1359,12 +1359,23 @@ function taskState(s) {
   return 'pending';
 }
 
+// ไอคอนสถานะแบบ inline SVG (fill: currentColor — สืบสีจาก div แม่) ไม่พึ่ง icon-font
+const TASK_SVG = {
+  pencil: '<path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12z"/><path d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z"/>',
+  clipboard: '<path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/>',
+  warn: '<path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>',
+  check: '<path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>'
+};
+function statusSvg(name) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 16 16" fill="currentColor" style="display:block">${TASK_SVG[name]}</svg>`;
+}
+
 // ค่าคอนฟิกการแสดงผลของแต่ละสถานะ
 const TASK_STATE_CFG = {
-  today:   { icon: 'bi-pencil-square',            label: 'ถึงกำหนดวันนี้', ico_bg: 'var(--primary-light)', ico_fg: 'var(--primary)', bd_bg: 'var(--primary-light)', bd_fg: 'var(--primary)' },
-  pending: { icon: 'bi-clipboard',                label: 'รอตรวจ',        ico_bg: 'var(--gray-100)',      ico_fg: 'var(--gray-500)', bd_bg: 'var(--gray-100)',      bd_fg: 'var(--gray-600)' },
-  overdue: { icon: 'bi-exclamation-triangle-fill', label: 'เกินกำหนด',    ico_bg: '#fdecec',              ico_fg: 'var(--danger)',   bd_bg: '#fdecec',              bd_fg: 'var(--danger)' },
-  done:    { icon: 'bi-check-circle-fill',        label: 'เสร็จสิ้น',      ico_bg: '#e9f7ee',              ico_fg: 'var(--success)',  bd_bg: '#e9f7ee',              bd_fg: 'var(--success)' }
+  today:   { svg: 'pencil',    label: 'ถึงกำหนดวันนี้', ico_bg: 'var(--primary-light)', ico_fg: 'var(--primary)', bd_bg: 'var(--primary-light)', bd_fg: 'var(--primary)' },
+  pending: { svg: 'clipboard', label: 'รอตรวจ',        ico_bg: 'var(--gray-100)',      ico_fg: 'var(--gray-500)', bd_bg: 'var(--gray-100)',      bd_fg: 'var(--gray-600)' },
+  overdue: { svg: 'warn',      label: 'เกินกำหนด',      ico_bg: '#fdecec',              ico_fg: 'var(--danger)',   bd_bg: '#fdecec',              bd_fg: 'var(--danger)' },
+  done:    { svg: 'check',     label: 'เสร็จสิ้น',       ico_bg: '#e9f7ee',              ico_fg: 'var(--success)',  bd_bg: '#e9f7ee',              bd_fg: 'var(--success)' }
 };
 
 // สร้าง HTML แถวงานที่ได้รับมอบหมาย (สไตล์รายการกะทัดรัด)
@@ -1386,8 +1397,8 @@ function renderAssignedTaskCards(tasks) {
     }
     return `
       <div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:12px 14px;margin-bottom:10px${st === 'done' ? ';opacity:.72' : ''}">
-        <div style="width:42px;height:42px;border-radius:11px;background:${cfg.ico_bg};color:${cfg.ico_fg};display:flex;align-items:center;justify-content:center;font-size:1.15rem;flex-shrink:0">
-          <i class="bi ${cfg.icon}"></i>
+        <div style="width:42px;height:42px;border-radius:11px;background:${cfg.ico_bg};color:${cfg.ico_fg};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          ${statusSvg(cfg.svg)}
         </div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">
