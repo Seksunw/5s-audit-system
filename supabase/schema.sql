@@ -255,6 +255,9 @@ create policy schedules_select on public.schedules
   for select using (auth.uid() = any(auditor_ids) or public.is_staff());
 create policy schedules_staff on public.schedules
   for all using (public.is_staff()) with check (public.is_staff());
+-- auditor ที่ถูกมอบหมายอัปเดตสถานะงานของตัวเองได้ (เช่น mark completed หลังตรวจเสร็จ)
+create policy schedules_auditor_update on public.schedules
+  for update using (auth.uid() = any(auditor_ids)) with check (auth.uid() = any(auditor_ids));
 
 -- audit_logs: เขียน log ของตัวเองได้; admin อ่านได้ทั้งหมด
 create policy logs_insert on public.audit_logs

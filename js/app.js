@@ -138,14 +138,28 @@ const SBH = {
   },
 
   async getSchedule() {
-    const { data, error } = await _sb.from('schedules').select('*, areas(area_name)').eq('status','pending');
+    // คืนทั้ง pending + completed เพื่อให้การ์ด "งานของฉัน" แสดงงานที่ตรวจเสร็จแล้วได้ด้วย
+    const { data, error } = await _sb.from('schedules')
+      .select('*, areas(area_name, area_type), plants(plant_name)')
+      .in('status', ['pending','completed']);
     if (error) throw error;
     return { success:true, data:(data||[]).map(s => ({
       Schedule_ID:s.schedule_id, Plant_ID:s.plant_id, Area_ID:s.area_id,
       Area_Name:(s.areas && s.areas.area_name) || s.area_id,
+      Area_Type:(s.areas && MAP.areaType[s.areas.area_type]) || '',
+      Plant_Name:(s.plants && s.plants.plant_name) || s.plant_id,
       Auditor_ID:(s.auditor_ids||[]).join(','),
-      Audit_Date:s.audit_date, Audit_Round:s.audit_round, Status:'Pending'
+      Audit_Date:s.audit_date, Audit_Round:s.audit_round,
+      Status: s.status === 'completed' ? 'Completed' : 'Pending'
     })) };
+  },
+
+  /** mark schedule เป็น completed (เรียกหลัง auditor ตรวจงานที่มอบหมายเสร็จ) */
+  async completeSchedule({ scheduleId }) {
+    if (!scheduleId) return { success:false, error:'ไม่มี scheduleId' };
+    const { error } = await _sb.from('schedules').update({ status:'completed' }).eq('schedule_id', scheduleId);
+    if (error) return { success:false, error:error.message };
+    return { success:true };
   },
 
   // ---- History / detail ----
@@ -1325,25 +1339,31 @@ async function initHome() {
         if (list) {
           list.innerHTML = myTasks.map(s => {
             const dateStr = UI.formatDate(s.Audit_Date);
-            const isOverdue = s.Audit_Date && new Date(s.Audit_Date) < new Date();
-            const badgeClass = isOverdue ? 'danger' : 'warning';
-            const badgeText  = isOverdue ? '⚠️ เกินกำหนด' : '📅 รอตรวจ';
+            const isDone  = s.Status === 'Completed';
+            const isOverdue = !isDone && s.Audit_Date && new Date(s.Audit_Date) < new Date();
+            const badgeClass = isDone ? 'success' : (isOverdue ? 'danger' : 'warning');
+            const badgeText  = isDone ? '✓ เสร็จสิ้น' : (isOverdue ? '⚠️ เกินกำหนด' : '📅 รอตรวจ');
+            const cta = isDone
+              ? `<div class="btn btn-block" style="height:40px;font-size:0.85rem;background:var(--gray-100);color:var(--success);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;cursor:default;">
+                   <i class="bi bi-check-circle-fill"></i> ดำเนินการตรวจเสร็จสิ้นแล้ว
+                 </div>`
+              : `<button class="btn btn-primary btn-block" style="height:40px;font-size:0.85rem;"
+                        onclick="startAssignedAudit('${escAttr(s.Plant_ID)}','${escAttr(s.Plant_Name || s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Area_Name || s.Area_ID)}','${escAttr(s.Area_Type || '')}','${escAttr(s.Schedule_ID || '')}')">
+                   <i class="bi bi-play-circle"></i> เริ่มตรวจ
+                 </button>`;
             return `
-              <div class="card mb-2" style="padding:14px 16px;border-left:4px solid var(--${badgeClass})">
+              <div class="card mb-2" style="padding:14px 16px;border-left:4px solid var(--${badgeClass})${isDone ? ';opacity:.85' : ''}">
                 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
                   <div>
                     <div style="font-weight:700;font-size:0.9rem">${escHtml(s.Area_Name || s.Area_ID || '-')}</div>
-                    <div style="font-size:0.75rem;color:var(--gray-600)">${escHtml(s.Plant_ID || '')} · ${escHtml(s.Audit_Round || '')}</div>
+                    <div style="font-size:0.75rem;color:var(--gray-600)">${escHtml(s.Plant_Name || s.Plant_ID || '')} · ${escHtml(s.Audit_Round || '')}</div>
                   </div>
                   <span class="badge badge-${badgeClass}" style="font-size:0.65rem;padding:3px 8px;border-radius:20px;">${badgeText}</span>
                 </div>
                 <div style="font-size:0.78rem;color:var(--gray-600);margin-bottom:10px;">
                   <i class="bi bi-calendar3"></i> ${dateStr}
                 </div>
-                <button class="btn btn-primary btn-block" style="height:40px;font-size:0.85rem;"
-                        onclick="startAssignedAudit('${escAttr(s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Schedule_ID || '')}')">
-                  <i class="bi bi-play-circle"></i> เริ่มตรวจ
-                </button>
+                ${cta}
               </div>`;
           }).join('');
         }
@@ -1362,12 +1382,17 @@ async function initHome() {
   }
 }
 
-// เริ่มตรวจจาก Assigned Task — ข้าม Plant/Area selection
-function startAssignedAudit(plantId, areaId, scheduleId) {
+// เริ่มตรวจจาก Assigned Task — ข้าม Plant/Area selection เข้าหน้าตรวจตรงพื้นที่ที่มอบหมาย
+function startAssignedAudit(plantId, plantName, areaId, areaName, areaType, scheduleId) {
   if (!plantId || !areaId) { navigate('plant.html'); return; }
-  AppState.selectedPlant = { Plant_ID: plantId, Plant_Name: plantId };
-  AppState.selectedArea  = { Area_ID: areaId,  Area_Name: areaId, scheduleId };
-  navigate('audit.html');
+  navigate('audit.html', {
+    plantId,
+    plantName: plantName || plantId,
+    areaId,
+    areaName: areaName || areaId,
+    areaType: areaType || '',
+    scheduleId: scheduleId || ''
+  });
 }
 
 // ============================================================
@@ -2157,6 +2182,12 @@ async function submitAudit() {
     UI.hideLoading();
 
     if (finalRes.success) {
+      // ถ้ามาจากงานที่มอบหมาย → mark schedule เป็น completed (ไม่ให้ล้มทั้ง flow ถ้าพลาด)
+      const scheduleId = getParam('scheduleId');
+      if (scheduleId) {
+        try { await API.get('completeSchedule', { scheduleId }); }
+        catch (e) { console.warn('[Submit] completeSchedule failed:', e.message); }
+      }
       sessionStorage.setItem('lastAuditResult', JSON.stringify(finalRes));
       navigate('summary.html', { auditId: finalRes.auditId });
     } else {
