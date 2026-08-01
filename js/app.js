@@ -1348,38 +1348,61 @@ async function initLogin() {
 // ============================================================
 // HOME PAGE
 // ============================================================
-// สร้าง HTML การ์ดงานที่ได้รับมอบหมาย (ใช้ร่วมกันหน้า Home/งานที่ได้รับมอบหมาย)
+// กำหนดสถานะงานจากข้อมูลจริง: done / overdue / today / pending
+function taskState(s) {
+  if (s.Status === 'Completed') return 'done';
+  if (!s.Audit_Date) return 'pending';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(s.Audit_Date); d.setHours(0, 0, 0, 0);
+  if (d.getTime() < today.getTime()) return 'overdue';
+  if (d.getTime() === today.getTime()) return 'today';
+  return 'pending';
+}
+
+// ค่าคอนฟิกการแสดงผลของแต่ละสถานะ
+const TASK_STATE_CFG = {
+  today:   { icon: 'bi-pencil-square',            label: 'ถึงกำหนดวันนี้', ico_bg: 'var(--primary-light)', ico_fg: 'var(--primary)', bd_bg: 'var(--primary-light)', bd_fg: 'var(--primary)' },
+  pending: { icon: 'bi-clipboard',                label: 'รอตรวจ',        ico_bg: 'var(--gray-100)',      ico_fg: 'var(--gray-500)', bd_bg: 'var(--gray-100)',      bd_fg: 'var(--gray-600)' },
+  overdue: { icon: 'bi-exclamation-triangle-fill', label: 'เกินกำหนด',    ico_bg: '#fdecec',              ico_fg: 'var(--danger)',   bd_bg: '#fdecec',              bd_fg: 'var(--danger)' },
+  done:    { icon: 'bi-check-circle-fill',        label: 'เสร็จสิ้น',      ico_bg: '#e9f7ee',              ico_fg: 'var(--success)',  bd_bg: '#e9f7ee',              bd_fg: 'var(--success)' }
+};
+
+// สร้าง HTML แถวงานที่ได้รับมอบหมาย (สไตล์รายการกะทัดรัด)
 function renderAssignedTaskCards(tasks) {
   return tasks.map(s => {
-    const dateStr = UI.formatDate(s.Audit_Date);
-    const isDone  = s.Status === 'Completed';
-    const isOverdue = !isDone && s.Audit_Date && new Date(s.Audit_Date) < new Date();
-    const badgeClass = isDone ? 'success' : (isOverdue ? 'danger' : 'warning');
-    const badgeText  = isDone ? '✓ เสร็จสิ้น' : (isOverdue ? '⚠️ เกินกำหนด' : '📅 รอตรวจ');
-    const cta = isDone
-      ? `<div class="btn btn-block" style="height:40px;font-size:0.85rem;background:var(--gray-100);color:var(--success);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;cursor:default;">
-           <i class="bi bi-check-circle-fill"></i> ดำเนินการตรวจเสร็จสิ้นแล้ว
-         </div>`
-      : `<button class="btn btn-primary btn-block" style="height:40px;font-size:0.85rem;"
-                onclick="startAssignedAudit('${escAttr(s.Plant_ID)}','${escAttr(s.Plant_Name || s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Area_Name || s.Area_ID)}','${escAttr(s.Area_Type || '')}','${escAttr(s.Schedule_ID || '')}')">
-           <i class="bi bi-play-circle"></i> เริ่มตรวจ
-         </button>`;
+    const st  = taskState(s);
+    const cfg = TASK_STATE_CFG[st];
+    const dateLabel = st === 'today' ? 'วันนี้' : UI.formatDate(s.Audit_Date);
+    const sub = [s.Plant_Name || s.Plant_ID || '', s.Audit_Round || '', dateLabel]
+      .filter(Boolean).map(escHtml).join(' · ');
+    const startArgs = `'${escAttr(s.Plant_ID)}','${escAttr(s.Plant_Name || s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Area_Name || s.Area_ID)}','${escAttr(s.Area_Type || '')}','${escAttr(s.Schedule_ID || '')}'`;
+    let action;
+    if (st === 'done') {
+      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="navigate('history.html')">ดูผล</button>`;
+    } else if (st === 'today') {
+      action = `<button class="btn btn-primary" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700" onclick="startAssignedAudit(${startArgs})">เริ่มตรวจ</button>`;
+    } else {
+      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 18px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="startAssignedAudit(${startArgs})">เริ่ม</button>`;
+    }
     return `
-      <div class="card mb-2" style="padding:14px 16px;border-left:4px solid var(--${badgeClass})${isDone ? ';opacity:.85' : ''}">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
-          <div>
-            <div style="font-weight:700;font-size:0.9rem">${escHtml(s.Area_Name || s.Area_ID || '-')}</div>
-            <div style="font-size:0.75rem;color:var(--gray-600)">${escHtml(s.Plant_Name || s.Plant_ID || '')} · ${escHtml(s.Audit_Round || '')}</div>
+      <div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:12px 14px;margin-bottom:10px${st === 'done' ? ';opacity:.72' : ''}">
+        <div style="width:42px;height:42px;border-radius:11px;background:${cfg.ico_bg};color:${cfg.ico_fg};display:flex;align-items:center;justify-content:center;font-size:1.15rem;flex-shrink:0">
+          <i class="bi ${cfg.icon}"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">
+            <span style="font-weight:700;font-size:0.92rem;color:var(--dark)">${escHtml(s.Area_Name || s.Area_ID || '-')}</span>
+            <span style="font-size:0.64rem;font-weight:700;padding:2px 8px;border-radius:20px;background:${cfg.bd_bg};color:${cfg.bd_fg};white-space:nowrap">${cfg.label}</span>
           </div>
-          <span class="badge badge-${badgeClass}" style="font-size:0.65rem;padding:3px 8px;border-radius:20px;">${badgeText}</span>
+          <div style="font-size:0.75rem;color:var(--gray-600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>
         </div>
-        <div style="font-size:0.78rem;color:var(--gray-600);margin-bottom:10px;">
-          <i class="bi bi-calendar3"></i> ${dateStr}
-        </div>
-        ${cta}
+        ${action}
       </div>`;
   }).join('');
 }
+
+// ลำดับความสำคัญของสถานะสำหรับการเรียง
+const TASK_STATE_ORDER = { today: 0, overdue: 1, pending: 2, done: 3 };
 
 // โหลด + กรอง schedules ที่ user นี้ถูกมอบหมาย
 function filterMyTasks(schedData, user) {
@@ -1397,6 +1420,7 @@ async function initMyTasks() {
   updateUserUI();
   const user = AppState.user || {};
   const list = document.getElementById('myTasksList');
+  const summary = document.getElementById('tasksSummary');
   try {
     UI.showLoading(I18n.t('msg.loading_home'));
     const schedRes = await API.get('getSchedule', {});
@@ -1404,17 +1428,21 @@ async function initMyTasks() {
     const myTasks = schedRes.success ? filterMyTasks(schedRes.data, user) : [];
     if (!list) return;
     if (myTasks.length > 0) {
-      // เรียงงานค้างก่อน แล้วตามด้วยที่เสร็จแล้ว
+      // เรียงตามสถานะ (วันนี้ → เกินกำหนด → รอตรวจ → เสร็จสิ้น) แล้วตามวันที่
       myTasks.sort((a, b) => {
-        const ad = a.Status === 'Completed', bd = b.Status === 'Completed';
-        if (ad !== bd) return ad ? 1 : -1;
+        const oa = TASK_STATE_ORDER[taskState(a)], ob = TASK_STATE_ORDER[taskState(b)];
+        if (oa !== ob) return oa - ob;
         return String(a.Audit_Date || '').localeCompare(String(b.Audit_Date || ''));
       });
+      const pendingCount = myTasks.filter(t => t.Status !== 'Completed').length;
+      if (summary) summary.innerHTML =
+        `<span style="color:var(--dark);font-weight:700">${myTasks.length} รายการ</span> · ค้าง ${pendingCount}`;
       list.innerHTML = renderAssignedTaskCards(myTasks);
     } else {
+      if (summary) summary.textContent = '';
       list.innerHTML = `
         <div class="card text-center" style="padding:32px 20px">
-          <i class="bi bi-clipboard-check" style="font-size:2.4rem;color:var(--gray-400)"></i>
+          <i class="bi bi-clipboard-check" style="font-size:2.4rem;color:var(--gray-500)"></i>
           <div style="margin-top:10px;font-weight:700;color:var(--dark)">ยังไม่มีงานที่ได้รับมอบหมาย</div>
           <div style="font-size:0.82rem;color:var(--gray-600);margin:6px 0 16px">คุณสามารถเลือกพื้นที่ตรวจเองได้</div>
           <button class="btn btn-primary btn-block" onclick="navigate('plant.html')" style="height:46px">
