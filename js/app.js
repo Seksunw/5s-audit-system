@@ -219,7 +219,8 @@ const SBH = {
 
   // ---- History / detail ----
   async getHistory({ plantId, month, year } = {}) {
-    let q = _sb.from('audit_headers').select('*, profiles(name)');
+    // ตัด audit ที่ยังไม่สมบูรณ์/N-A ทั้งหมด (status=pending) ให้สอดคล้องกับ dashboard
+    let q = _sb.from('audit_headers').select('*, profiles(name)').neq('status','pending');
     if (plantId) q = q.eq('plant_id', plantId);
     const range = _monthRange(month, year);
     if (range) q = q.gte('audit_date', range[0]).lt('audit_date', range[1]);
@@ -272,14 +273,15 @@ const SBH = {
     // → เห็นคะแนนแต่ละพื้นที่ได้แม้จำนวนเกณฑ์ต่างกัน สำหรับประเมินและหาจุดบกพร่อง
     const avgBy = (keyFn, nameMap, label) => {
       const g = {}; H.forEach(h=>{ const k=keyFn(h); (g[k]=g[k]||{t:0,m:0}); g[k].t+=tot(h); g[k].m+=mx(h); });
-      return Object.entries(g).map(([k,v])=>({ [label]:(nameMap[k]||k), avgScore:poolPct(v.t, v.m) }))
-                   .sort((a,b)=>b.avgScore-a.avgScore);
+      // avgScore = ค่าที่ปัดเศษไว้แสดง, avgScoreRaw = ค่าจริงไว้ตัดสินแถบสี (กัน .5 ข้ามแถบ)
+      return Object.entries(g).map(([k,v])=>({ [label]:(nameMap[k]||k), avgScore:poolPct(v.t, v.m), avgScoreRaw:(v.m>0?v.t*100/v.m:0) }))
+                   .sort((a,b)=>b.avgScoreRaw-a.avgScoreRaw);
     };
     const plantComparison = avgBy(h=>h.plant_id, plantName, 'plantName');
     const areaRanking = avgBy(h=>h.area_id, areaName, 'areaName');
 
     const mg = {}; H.forEach(h=>{ const mth=String(h.audit_date||'').slice(0,7); if(mth){(mg[mth]=mg[mth]||{t:0,m:0}); mg[mth].t+=tot(h); mg[mth].m+=mx(h);} });
-    const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month,v])=>({ month, avgScore:poolPct(v.t, v.m) }));
+    const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month,v])=>({ month, avgScore:poolPct(v.t, v.m), avgScoreRaw:(v.m>0?v.t*100/v.m:0) }));
 
     return { success:true, data:{
       totalAudit, avgScore, passRate, excellent, good, needImprovement,
@@ -1805,7 +1807,6 @@ function renderChecklist(grouped, totalItems, totalMaxScore) {
   if (!container) return;
 
   setEl('totalItemCount', totalItems);
-  setEl('totalMaxScore', totalMaxScore);
 
   container.innerHTML = Object.entries(grouped).map(([category, items]) => `
     <div class="category-section mb-2" data-category="${escAttr(category)}" id="cat-${escHtml(category).replace(/\s/g,'_')}">
@@ -2200,6 +2201,13 @@ async function submitAudit() {
     return;
   }
 
+  // Guard: session หลุด/ไม่มี userId → ห้าม submit (กัน auditor_id='unknown' ที่ insert ไม่ผ่าน RLS)
+  if (!AppState.user || !AppState.user.userId) {
+    UI.toast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'error', 5000);
+    navigate('index.html');
+    return;
+  }
+
   const unanswered = getUnansweredCriteria();
 
   if (unanswered.length > 0) {
@@ -2375,24 +2383,25 @@ async function initSummary() {
   if (!result) { navigate('home.html'); return; }
 
   const pct    = parseFloat(result.percent) || 0;
-  const status = UI.statusClass(pct);
+  const noItems = (Number(result.maxScore) || 0) === 0;   // มาร์ค N/A ทั้งหมด → ไม่มีข้อประเมิน
+  const status = noItems ? 'good' : UI.statusClass(pct);
 
-  setEl('resultPercent', Math.round(pct));
+  setEl('resultPercent', noItems ? '—' : Math.round(pct));
   setEl('resultScore',   `${result.totalScore} / ${result.maxScore}`);
-  setEl('resultStatus',  UI.statusTH(pct));
+  setEl('resultStatus',  noItems ? 'ไม่มีข้อประเมินในพื้นที่ (N/A ทั้งหมด)' : UI.statusTH(pct));
   setEl('resultAuditId', result.auditId || '-');
 
   // Circle color — ล้าง class เดิมก่อน แล้วค่อย add ใหม่
   const circle = document.getElementById('scoreCircle');
   if (circle) {
     circle.classList.remove('excellent', 'good', 'need-improve');
-    circle.classList.add(status);
+    if (!noItems) circle.classList.add(status);
   }
 
   const badge = document.getElementById('statusBadge');
   if (badge) {
-    badge.className = `status-badge status-${status}`;
-    badge.textContent = pct >= 90 ? '🏆 Excellent' : pct >= 75 ? '✅ Good' : '⚠️ Need Improvement';
+    badge.className = noItems ? 'status-badge' : `status-badge status-${status}`;
+    badge.textContent = noItems ? 'ไม่มีข้อประเมิน' : (pct >= 90 ? '🏆 Excellent' : pct >= 75 ? '✅ Good' : '⚠️ Need Improvement');
   }
 }
 
@@ -2534,22 +2543,25 @@ function renderRanking(containerId, items, nameField, limit = 10) {
     return;
   }
 
-  container.innerHTML = items.slice(0, limit).map((item, idx) => `
+  container.innerHTML = items.slice(0, limit).map((item, idx) => {
+    const band = (item.avgScoreRaw != null ? item.avgScoreRaw : item.avgScore);
+    return `
     <div class="ranking-item">
       <div class="rank-number rank-${idx+1}">${idx+1}</div>
       <div class="rank-bar-wrap">
         <div class="rank-name">${escHtml(item[nameField] || '-')}</div>
         <div class="rank-bar">
           <div class="rank-bar-fill" style="width:${Math.min(item.avgScore, 100)}%;
-               background:${item.avgScore>=90?'var(--excellent)':item.avgScore>=75?'var(--warning)':'var(--danger)'}">
+               background:${band>=90?'var(--excellent)':band>=75?'var(--warning)':'var(--danger)'}">
           </div>
         </div>
       </div>
-      <div class="rank-score ${item.avgScore>=90?'text-success':item.avgScore>=75?'text-warning':'text-danger'}">
+      <div class="rank-score ${band>=90?'text-success':band>=75?'text-warning':'text-danger'}">
         ${item.avgScore}%
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderMonthlyTrend(containerId, data) {
@@ -2560,15 +2572,15 @@ function renderMonthlyTrend(containerId, data) {
 
   container.innerHTML = `
     <div style="display:flex;align-items:flex-end;gap:8px;height:120px;padding:8px 0">
-      ${data.map(d => `
+      ${data.map(d => { const band = (d.avgScoreRaw != null ? d.avgScoreRaw : d.avgScore); return `
         <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div style="font-size:0.7rem;font-weight:700;color:${d.avgScore>=90?'var(--excellent)':d.avgScore>=75?'#c9a000':'var(--danger)'}">${d.avgScore}%</div>
-          <div style="width:100%;background:${d.avgScore>=90?'var(--excellent)':d.avgScore>=75?'var(--warning)':'var(--danger)'};
+          <div style="font-size:0.7rem;font-weight:700;color:${band>=90?'var(--excellent)':band>=75?'#c9a000':'var(--danger)'}">${d.avgScore}%</div>
+          <div style="width:100%;background:${band>=90?'var(--excellent)':band>=75?'var(--warning)':'var(--danger)'};
                       border-radius:4px 4px 0 0;height:${(d.avgScore/max)*90}px;
                       transition:height 0.8s ease"></div>
           <div style="font-size:0.65rem;color:var(--gray-600);white-space:nowrap">${d.month.slice(5)}</div>
         </div>
-      `).join('')}
+      `; }).join('')}
     </div>
   `;
 }

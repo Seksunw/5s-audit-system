@@ -218,9 +218,9 @@ alter table public.audit_details enable row level security;
 alter table public.schedules     enable row level security;
 alter table public.audit_logs    enable row level security;
 
--- profiles: อ่านโปรไฟล์ตัวเอง; staff เห็นทุกคน; admin แก้ไขได้ทุกคน
-create policy profiles_select_self on public.profiles
-  for select using (id = auth.uid() or public.is_staff());
+-- profiles: ผู้ล็อกอินทุกคนอ่านได้ (แสดงชื่อผู้ตรวจร่วม); admin แก้ไขได้ทุกคน
+create policy profiles_select_all on public.profiles
+  for select using (auth.uid() is not null);
 create policy profiles_admin_all on public.profiles
   for all using (public.auth_role() = 'admin')
   with check (public.auth_role() = 'admin');
@@ -233,9 +233,10 @@ create policy plants_admin   on public.plants   for all using (public.auth_role(
 create policy areas_admin    on public.areas    for all using (public.auth_role()='admin') with check (public.auth_role()='admin');
 create policy criteria_admin on public.criteria for all using (public.auth_role()='admin') with check (public.auth_role()='admin');
 
--- audit_headers: auditor เห็น/สร้าง/แก้เฉพาะของตัวเอง; staff เห็น/แก้ทุกอัน
+-- audit_headers: ผู้ล็อกอินทุกคน "อ่าน" ได้ (KPI ภาพรวมทั้งบริษัท);
+--   สร้าง/แก้/ลบ เฉพาะเจ้าของหรือ staff
 create policy headers_select on public.audit_headers
-  for select using (auditor_id = auth.uid() or public.is_staff());
+  for select using (auth.uid() is not null);
 create policy headers_insert on public.audit_headers
   for insert with check (auditor_id = auth.uid() or public.is_staff());
 create policy headers_update on public.audit_headers
@@ -243,7 +244,10 @@ create policy headers_update on public.audit_headers
 create policy headers_delete on public.audit_headers
   for delete using (auditor_id = auth.uid() or public.is_staff());
 
--- audit_details: สิทธิ์อิงตามเจ้าของ header (แก้ IDOR ที่รายงานเดิมชี้ไว้)
+-- audit_details: ผู้ล็อกอินทุกคน "อ่าน" ได้ (ดูรายละเอียดผลตรวจทั้งบริษัท)
+create policy details_select_all on public.audit_details
+  for select using (auth.uid() is not null);
+-- การเขียน (insert/update/delete) อิงตามเจ้าของ header (แก้ IDOR ที่รายงานเดิมชี้ไว้)
 create policy details_all on public.audit_details
   for all using (
     exists (select 1 from public.audit_headers h

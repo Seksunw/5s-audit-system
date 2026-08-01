@@ -190,3 +190,29 @@ end;
 $$;
 
 grant execute on function public.admin_reset_data() to authenticated;
+
+
+-- =====================================================================
+-- ส่วน D: KPI ภาพรวมทั้งบริษัท — เปิดสิทธิ์ "อ่าน" ให้ผู้ล็อกอินทุกคน
+-- (การ "เขียน" ยังจำกัดเจ้าของ header / admin เหมือนเดิม)
+-- รันซ้ำได้ (drop if exists ก่อน create)
+-- =====================================================================
+
+-- D1) audit_headers: ทุกคนที่ล็อกอินอ่านได้ → dashboard/home/history เห็นทั้งบริษัท
+drop policy if exists headers_select on public.audit_headers;
+create policy headers_select on public.audit_headers
+  for select using (auth.uid() is not null);
+
+-- D2) audit_details: เปิด "อ่าน" ให้ทุกคนที่ล็อกอิน (ดูรายละเอียดผลตรวจของทุกคน)
+--     การเขียนยังคุมด้วย policy details_all เดิม (เจ้าของ header/staff เท่านั้น)
+drop policy if exists details_select_all on public.audit_details;
+create policy details_select_all on public.audit_details
+  for select using (auth.uid() is not null);
+
+-- D3) profiles: เปิด "อ่าน" ให้ทุกคนที่ล็อกอิน → แสดงชื่อผู้ตรวจร่วมในตาราง/ประวัติ
+--     การแก้ไขยังเป็นของ admin เท่านั้น (policy profiles_admin_all เดิม)
+--     หมายเหตุ: ผู้ใช้ภายในจะอ่าน profiles ได้ทั้งตาราง (รวม email/role/department)
+drop policy if exists profiles_select_self on public.profiles;
+drop policy if exists profiles_select_all on public.profiles;
+create policy profiles_select_all on public.profiles
+  for select using (auth.uid() is not null);
