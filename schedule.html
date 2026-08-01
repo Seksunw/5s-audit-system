@@ -6,7 +6,7 @@
   <title>มอบหมายการตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=18">
+  <link rel="stylesheet" href="css/style.css?v=19">
   <style>
     /* Plant Tabs */
     .plant-tab-bar {
@@ -291,6 +291,40 @@
       height: 8px;
       border-radius: 50%;
     }
+
+    /* ===== Redesign controls ===== */
+    .sched-controls { padding: 12px 16px 4px; display: flex; flex-direction: column; gap: 10px; }
+    .sched-mode { display: inline-flex; background: var(--gray-100); border-radius: 9px; padding: 3px; align-self: flex-start; }
+    .smode { border: none; background: none; font-family: inherit; font-size: 0.8rem; font-weight: 700; color: var(--gray-600); padding: 6px 16px; border-radius: 7px; cursor: pointer; }
+    .smode.active { background: #fff; color: var(--primary); box-shadow: var(--shadow-sm); }
+    .sched-plan { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #eaf1fe; border: 1px solid #d3e2fc; border-radius: 11px; padding: 9px 14px; }
+    .plan-lb { font-size: 0.66rem; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 0.03em; }
+    .sched-plan label { font-size: 0.66rem; color: var(--gray-600); font-weight: 600; display: flex; flex-direction: column; gap: 3px; }
+    .sched-plan select, .sched-plan input { font-family: inherit; font-size: 0.82rem; color: var(--gray-800); padding: 5px 8px; border: 1px solid var(--gray-300); border-radius: 7px; background: #fff; -webkit-appearance: auto; }
+    .sched-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sfchip { border: 1px solid var(--gray-300); background: #fff; border-radius: 20px; padding: 6px 13px; font-family: inherit; font-size: 0.76rem; font-weight: 600; color: var(--gray-600); cursor: pointer; }
+    .sfchip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .sfsearch { flex: 1; min-width: 140px; font-family: inherit; font-size: 0.82rem; padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 20px; }
+    .sched-audpick { align-items: center; gap: 10px; flex-wrap: wrap; background: var(--gray-100); border-radius: 11px; padding: 9px 14px; }
+    .audpick-row { display: flex; gap: 7px; flex-wrap: wrap; }
+    .audpill { border: 1.5px solid var(--gray-300); background: #fff; border-radius: 20px; padding: 6px 14px; font-family: inherit; font-size: 0.8rem; font-weight: 700; color: var(--gray-800); cursor: pointer; }
+    .audpill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    /* selectable card */
+    .area-assign-card { position: relative; }
+    .area-assign-card.sel { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(26,115,232,0.18); background: #f5f9ff; }
+    .sched-ck { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; border: 2px solid var(--gray-300); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; color: #fff; background: #fff; }
+    .area-assign-card.sel .sched-ck { background: var(--primary); border-color: var(--primary); }
+
+    /* bulk bar */
+    .sched-bulk { position: fixed; left: 12px; right: 12px; bottom: 70px; z-index: 1500; max-width: 560px; margin: 0 auto; background: var(--primary); color: #fff; border-radius: 12px; padding: 11px 16px; display: none; justify-content: space-between; align-items: center; box-shadow: 0 4px 18px rgba(26,115,232,0.45); }
+    .sched-bulk.show { display: flex; }
+    .sched-bulk b { font-size: 1.1rem; }
+    .sched-bulk-act { display: flex; gap: 8px; }
+    .bulk-clear { background: rgba(255,255,255,0.2); border: none; color: #fff; font-family: inherit; font-weight: 700; font-size: 0.78rem; padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+    .bulk-go { background: #fff; border: none; color: var(--primary); font-family: inherit; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+    .bulk-area-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .bulk-area-chip { font-size: 0.72rem; font-weight: 600; background: var(--gray-100); border-radius: 20px; padding: 4px 10px; }
   </style>
 </head>
 <body>
@@ -348,13 +382,52 @@
   <div class="legend-item"><div class="legend-dot" style="background:var(--gray-400)"></div>ยังไม่มีตาราง</div>
 </div>
 
+<!-- Controls: mode + planning + filter -->
+<div class="sched-controls">
+  <div class="sched-mode">
+    <button class="smode active" id="smodeArea" onclick="schedSetMode('area')">ตามพื้นที่</button>
+    <button class="smode" id="smodeAud" onclick="schedSetMode('aud')">ตามคน</button>
+  </div>
+  <div class="sched-plan">
+    <span class="plan-lb">กำลังวางแผน</span>
+    <label>รอบ
+      <select id="planRound">
+        <option value="Round 1">รอบที่ 1</option>
+        <option value="Round 2" selected>รอบที่ 2</option>
+        <option value="Round 3">รอบที่ 3</option>
+        <option value="Round 4">รอบที่ 4</option>
+      </select>
+    </label>
+    <label>วันครบกำหนด <input type="date" id="planDate"></label>
+  </div>
+  <div class="sched-filter">
+    <button class="sfchip active" onclick="schedSetFilter('all',this)">ทั้งหมด</button>
+    <button class="sfchip" onclick="schedSetFilter('unassigned',this)">ยังไม่มอบ</button>
+    <button class="sfchip" onclick="schedSetFilter('overdue',this)">เกินกำหนด</button>
+    <input class="sfsearch" id="schedSearch" placeholder="🔍 ค้นหาพื้นที่..." oninput="schedSearchInput(this.value)">
+  </div>
+  <div class="sched-audpick" id="schedAudPick" style="display:none">
+    <span class="plan-lb">เลือกผู้ตรวจ</span>
+    <div class="audpick-row" id="audpickRow"></div>
+  </div>
+</div>
+
 <!-- Area Grid -->
-<div class="page-content" style="padding-top:12px;">
+<div class="page-content" style="padding-top:12px;padding-bottom:80px;">
   <div class="area-assign-grid" id="areaGrid">
     <div class="skeleton" style="height:160px;border-radius:var(--radius-md)"></div>
     <div class="skeleton" style="height:160px;border-radius:var(--radius-md)"></div>
     <div class="skeleton" style="height:160px;border-radius:var(--radius-md)"></div>
     <div class="skeleton" style="height:160px;border-radius:var(--radius-md)"></div>
+  </div>
+</div>
+
+<!-- Bulk action bar -->
+<div class="sched-bulk" id="schedBulk">
+  <div><b id="bulkCount">0</b> พื้นที่ที่เลือก</div>
+  <div class="sched-bulk-act">
+    <button class="bulk-clear" onclick="schedClearSel()">ล้าง</button>
+    <button class="bulk-go" id="bulkGo" onclick="schedBulkGo()">มอบหมาย →</button>
   </div>
 </div>
 
@@ -422,7 +495,46 @@
   </div>
 </div>
 
+<!-- Modal: Bulk Assign (โหมดตามพื้นที่) -->
+<div id="bulkModal" class="modal-overlay">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header-bar">
+      <div style="font-size:1rem;font-weight:700" id="bulkTitle">มอบหมายหลายพื้นที่</div>
+      <button class="btn-icon" onclick="schedCloseBulk()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div style="padding:20px;">
+      <div id="bulkAreaList" class="bulk-area-list"></div>
+      <div style="font-size:0.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.04em;margin:14px 0 10px;">
+        เลือกผู้ตรวจ <span style="font-size:0.7rem;font-weight:400;text-transform:none;">(หลายคนได้ · ตั้งค่าให้ทุกพื้นที่ที่เลือก)</span>
+      </div>
+      <div class="auditor-select-grid" id="bulkAuditorGrid"></div>
+      <div style="font-size:0.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.04em;margin:16px 0 10px;">
+        กำหนดตาราง
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group" style="margin:0">
+          <label class="form-label" style="font-size:0.75rem">วันที่ตรวจ</label>
+          <input type="date" id="bulkDate" class="form-control" style="font-size:0.85rem;">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label" style="font-size:0.75rem">รอบที่</label>
+          <select id="bulkRound" class="form-control" style="font-size:0.85rem;-webkit-appearance:auto;">
+            <option value="Round 1">รอบที่ 1</option>
+            <option value="Round 2" selected>รอบที่ 2</option>
+            <option value="Round 3">รอบที่ 3</option>
+            <option value="Round 4">รอบที่ 4</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-block mt-3" id="bulkSaveBtn" onclick="schedSaveBulk()">
+        <i class="bi bi-check-lg"></i> บันทึกทั้งหมด
+      </button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=18"></script>
+<script src="js/app.js?v=19"></script>
 </body>
 </html>

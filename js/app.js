@@ -2904,6 +2904,14 @@ let _schedAllAreas = [];
 let _schedAuditors = [];
 let _schedCurrentArea = null;
 let _schedSelectedAuds = new Set();
+// redesign state
+let _schedPlant    = 'all';
+let _schedMode     = 'area';      // 'area' | 'aud'
+let _schedFilter   = 'all';       // 'all' | 'unassigned' | 'overdue'
+let _schedSearch   = '';
+let _schedSelected = new Set();   // Area_IDs ที่ติ๊กเลือก (bulk)
+let _schedAudPick  = null;        // ผู้ตรวจที่เลือกในโหมด "ตามคน"
+let _bulkAuds      = new Set();   // ผู้ตรวจที่เลือกใน bulk modal (โหมดตามพื้นที่)
 
 async function initSchedule() {
   if (!Session.requireLogin()) return;
@@ -2924,6 +2932,8 @@ async function initSchedule() {
 
     _schedAllAreas  = res.areas   || [];
     _schedAuditors  = res.auditors || [];
+    _schedPlant = 'all'; _schedMode = 'area'; _schedFilter = 'all';
+    _schedSearch = ''; _schedSelected.clear(); _schedAudPick = null;
 
     // สร้าง Plant tabs
     const plants = res.plants || [];
@@ -2935,7 +2945,14 @@ async function initSchedule() {
       tabBar.insertAdjacentHTML('beforeend', extra);
     }
 
-    schedRenderGrid('all');
+    // วันครบกำหนด default = พรุ่งนี้
+    const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+    const planDate = document.getElementById('planDate');
+    if (planDate && !planDate.value) planDate.value = tmr.toISOString().split('T')[0];
+
+    schedRenderAudPick();
+    schedRenderGrid();
+    schedUpdateBulk();
   } catch(err) {
     UI.hideLoading();
     UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
@@ -2945,50 +2962,58 @@ async function initSchedule() {
 function schedFilterPlant(plant, btn) {
   document.querySelectorAll('.plant-tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  schedRenderGrid(plant);
+  _schedPlant = plant;
+  _schedSelected.clear();
+  schedRenderGrid();
+  schedUpdateBulk();
 }
 
-function schedRenderGrid(plant) {
-  const filtered = plant === 'all'
-    ? _schedAllAreas
-    : _schedAllAreas.filter(a => a.Plant_ID === plant);
-
+function _schedStatus(a) {
+  if (!a.Auditor_IDs || !a.Audit_Date) return 'unassigned';
   const today = new Date(); today.setHours(0,0,0,0);
-  const getStatus = a => {
-    if (!a.Auditor_IDs || !a.Audit_Date) return 'unassigned';
-    const d = new Date(a.Audit_Date); d.setHours(0,0,0,0);
-    if (a.Sched_Status === 'Completed') return 'completed';
-    if (d < today) return 'overdue';
-    return 'pending';
-  };
+  const d = new Date(a.Audit_Date); d.setHours(0,0,0,0);
+  if (a.Sched_Status === 'Completed') return 'completed';
+  if (d < today) return 'overdue';
+  return 'pending';
+}
+
+const _schedTypeInfo = {
+  Office:      { icon:'bi-briefcase', bg:'rgba(26,115,232,0.1)', color:'var(--primary)' },
+  Production:  { icon:'bi-building',  bg:'rgba(52,168,83,0.1)',  color:'var(--secondary)' },
+  Warehouse:   { icon:'bi-boxes',     bg:'rgba(249,171,0,0.1)',  color:'var(--warning)' },
+  Maintenance: { icon:'bi-tools',     bg:'rgba(234,67,53,0.1)',  color:'var(--danger)' },
+  Cafeteria:   { icon:'bi-cup-hot',   bg:'rgba(147,52,230,0.1)', color:'#9334e6' },
+  Outdoor:     { icon:'bi-tree',      bg:'rgba(52,168,83,0.1)',  color:'var(--secondary)' },
+};
+
+function schedRenderGrid() {
+  const base = _schedPlant === 'all'
+    ? _schedAllAreas
+    : _schedAllAreas.filter(a => a.Plant_ID === _schedPlant);
+
+  // stats จากทั้ง plant (ก่อนกรอง/ค้นหา)
+  setEl('statAssigned', base.filter(a => a.Auditor_IDs).length);
+  setEl('statPending',  base.filter(a => !a.Auditor_IDs).length);
+  setEl('statOverdue',  base.filter(a => _schedStatus(a) === 'overdue').length);
+  setEl('statTotal',    base.length);
+
+  const q = _schedSearch.trim().toLowerCase();
+  const filtered = base.filter(a => {
+    if (_schedFilter === 'unassigned' && a.Auditor_IDs) return false;
+    if (_schedFilter === 'overdue' && _schedStatus(a) !== 'overdue') return false;
+    if (q && !(a.Area_Name || a.Area_ID || '').toLowerCase().includes(q)) return false;
+    return true;
+  });
 
   const statusCfg = {
-    pending:    { label:'รอตรวจ',    cls:'warning', icon:'bi-clock' },
-    completed:  { label:'ตรวจแล้ว', cls:'success',  icon:'bi-check-circle-fill' },
-    overdue:    { label:'เกินกำหนด',cls:'danger',   icon:'bi-exclamation-circle' },
-    unassigned: { label:'ยังไม่มี', cls:'secondary',icon:'bi-dash-circle' },
+    pending:    { label:'รอตรวจ',    icon:'bi-clock' },
+    completed:  { label:'ตรวจแล้ว', icon:'bi-check-circle-fill' },
+    overdue:    { label:'เกินกำหนด',icon:'bi-exclamation-circle' },
+    unassigned: { label:'ยังไม่มี', icon:'bi-dash-circle' },
   };
-  const typeInfo = {
-    Office:      { icon:'bi-briefcase',   bg:'rgba(26,115,232,0.1)',   color:'var(--primary)' },
-    Production:  { icon:'bi-building',    bg:'rgba(52,168,83,0.1)',    color:'var(--secondary)' },
-    Warehouse:   { icon:'bi-boxes',       bg:'rgba(249,171,0,0.1)',    color:'var(--warning)' },
-    Maintenance: { icon:'bi-tools',       bg:'rgba(234,67,53,0.1)',    color:'var(--danger)' },
-    Cafeteria:   { icon:'bi-cup-hot',     bg:'rgba(147,52,230,0.1)',   color:'#9334e6' },
-    Outdoor:     { icon:'bi-tree',        bg:'rgba(52,168,83,0.1)',    color:'var(--secondary)' },
-  };
-
-  // update stats
-  const assigned   = filtered.filter(a => a.Auditor_IDs).length;
-  const unassigned = filtered.filter(a => !a.Auditor_IDs).length;
-  const overdue    = filtered.filter(a => getStatus(a) === 'overdue').length;
-  setEl('statAssigned', assigned);
-  setEl('statPending',  unassigned);
-  setEl('statOverdue',  overdue);
-  setEl('statTotal',    filtered.length);
 
   const grid = document.getElementById('areaGrid');
   if (!grid) return;
-
   if (!filtered.length) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--gray-500)">
       <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px"></i>ไม่พบพื้นที่
@@ -2997,53 +3022,252 @@ function schedRenderGrid(plant) {
   }
 
   grid.innerHTML = filtered.map(area => {
-    const st  = getStatus(area);
+    const st  = _schedStatus(area);
     const sc  = statusCfg[st] || statusCfg.unassigned;
-    const ti  = typeInfo[area.Area_Type] || typeInfo.Office;
+    const ti  = _schedTypeInfo[area.Area_Type] || _schedTypeInfo.Office;
     const typeClass = (area.Area_Type || '').toLowerCase();
+    const isSel = _schedSelected.has(area.Area_ID);
+    const audIds = area.Auditor_IDs ? area.Auditor_IDs.split(',').map(x => x.trim()).filter(Boolean) : [];
 
-    // auditor chips
-    const audIds  = area.Auditor_IDs ? area.Auditor_IDs.split(',').map(x => x.trim()).filter(Boolean) : [];
-    const chips   = audIds.length > 0
-      ? audIds.slice(0, 3).map(uid => {
-          const u = _schedAuditors.find(x => x.User_ID === uid);
-          if (!u) return '';
-          const initials = (u.Name || uid).substring(0, 2);
-          const hue = uid.charCodeAt(uid.length - 1) * 7 % 360;
-          return `<span class="auditor-mini-chip">
-            <span class="auditor-mini-avatar" style="background:hsl(${hue},55%,45%)">${escHtml(initials)}</span>
-            ${escHtml((u.Name || '').split(' ')[0] || uid)}
-          </span>`;
-        }).join('') + (audIds.length > 3 ? `<span style="font-size:0.66rem;color:var(--gray-600)">+${audIds.length-3}</span>` : '')
-      : `<span style="font-size:0.7rem;color:var(--gray-500);display:flex;align-items:center;gap:3px;">
-           <i class="bi bi-person-x"></i>ยังไม่มอบหมาย
-         </span>`;
-
-    const dateStr = area.Audit_Date
-      ? new Date(area.Audit_Date).toLocaleDateString('th-TH', {day:'numeric',month:'short'})
-      : '—';
+    // เนื้อการ์ดต่างกันตามโหมด
+    let body;
+    if (_schedMode === 'aud') {
+      const already = _schedAudPick && audIds.includes(_schedAudPick);
+      body = `
+        <div class="card-auditor-chips">
+          ${already
+            ? `<span class="sched-status-badge completed"><i class="bi bi-person-check"></i>อยู่ในทีมแล้ว</span>`
+            : `<span style="font-size:0.7rem;color:var(--gray-500)"><i class="bi bi-people"></i> ${audIds.length} คนตรวจ</span>`}
+        </div>`;
+    } else {
+      const chips = audIds.length
+        ? audIds.slice(0,3).map(uid => {
+            const u = _schedAuditors.find(x => x.User_ID === uid);
+            if (!u) return '';
+            const initials = (u.Name || uid).substring(0,2);
+            const hue = uid.charCodeAt(uid.length-1) * 7 % 360;
+            return `<span class="auditor-mini-chip"><span class="auditor-mini-avatar" style="background:hsl(${hue},55%,45%)">${escHtml(initials)}</span>${escHtml((u.Name||'').split(' ')[0] || uid)}</span>`;
+          }).join('') + (audIds.length>3 ? `<span style="font-size:0.66rem;color:var(--gray-600)">+${audIds.length-3}</span>` : '')
+        : `<span style="font-size:0.7rem;color:var(--gray-500);display:flex;align-items:center;gap:3px;"><i class="bi bi-person-x"></i>ยังไม่มอบหมาย</span>`;
+      const dateStr = area.Audit_Date ? new Date(area.Audit_Date).toLocaleDateString('th-TH',{day:'numeric',month:'short'}) : '—';
+      body = `
+        <div class="card-auditor-chips">${chips}</div>
+        <div class="card-date-row"><i class="bi bi-calendar3"></i>${dateStr}${area.Audit_Round ? ' · ' + escHtml(area.Audit_Round) : ''}</div>
+        <button class="btn-assign-dashed" onclick="event.stopPropagation();openSchedModal('${escAttr(area.Area_ID)}')">
+          <i class="bi bi-pencil-square"></i> แก้ไขเดี่ยว
+        </button>`;
+    }
 
     return `
-      <div class="area-assign-card type-${typeClass}" onclick="openSchedModal('${escAttr(area.Area_ID)}')">
+      <div class="area-assign-card type-${typeClass}${isSel ? ' sel' : ''}" onclick="schedToggleSelect('${escAttr(area.Area_ID)}')">
+        <div class="sched-ck">${isSel ? '<i class="bi bi-check-lg"></i>' : ''}</div>
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
-          <div class="area-type-icon" style="background:${ti.bg};color:${ti.color}">
-            <i class="bi ${ti.icon}"></i>
-          </div>
-          <span class="sched-status-badge ${st}">
-            <i class="bi ${sc.icon}"></i>${sc.label}
-          </span>
+          <div class="area-type-icon" style="background:${ti.bg};color:${ti.color}"><i class="bi ${ti.icon}"></i></div>
+          <span class="sched-status-badge ${st}"><i class="bi ${sc.icon}"></i>${sc.label}</span>
         </div>
         <div class="area-card-name">${escHtml(area.Area_Name || area.Area_ID)}</div>
         <div class="area-card-meta">${escHtml(area.Plant_ID)}</div>
-        <div class="card-auditor-chips">${chips}</div>
-        <div class="card-date-row">
-          <i class="bi bi-calendar3"></i>${dateStr}${area.Audit_Round ? ' · ' + escHtml(area.Audit_Round) : ''}
-        </div>
-        <button class="btn-assign-dashed" onclick="event.stopPropagation();openSchedModal('${escAttr(area.Area_ID)}')">
-          <i class="bi bi-person-plus"></i> มอบหมาย / แก้ไข
-        </button>
+        ${body}
       </div>`;
   }).join('');
+}
+
+// ---- selection / mode / filter ----
+function schedToggleSelect(areaId) {
+  if (_schedSelected.has(areaId)) _schedSelected.delete(areaId);
+  else _schedSelected.add(areaId);
+  schedRenderGrid();
+  schedUpdateBulk();
+}
+
+function schedSetMode(m) {
+  _schedMode = m;
+  _schedSelected.clear();
+  document.getElementById('smodeArea')?.classList.toggle('active', m === 'area');
+  document.getElementById('smodeAud')?.classList.toggle('active', m === 'aud');
+  const audPick = document.getElementById('schedAudPick');
+  if (audPick) audPick.style.display = m === 'aud' ? 'flex' : 'none';
+  if (m === 'aud' && !_schedAudPick && _schedAuditors.length) _schedAudPick = _schedAuditors[0].User_ID;
+  schedRenderAudPick();
+  schedRenderGrid();
+  schedUpdateBulk();
+}
+
+function schedSetFilter(f, btn) {
+  _schedFilter = f;
+  document.querySelectorAll('.sfchip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  schedRenderGrid();
+}
+
+function schedSearchInput(v) {
+  _schedSearch = v || '';
+  schedRenderGrid();
+}
+
+function schedRenderAudPick() {
+  const row = document.getElementById('audpickRow');
+  if (!row) return;
+  row.innerHTML = _schedAuditors.map(u => {
+    const first = (u.Name || '').split(' ')[0] || u.User_ID;
+    return `<button class="audpill ${_schedAudPick === u.User_ID ? 'active' : ''}" onclick="schedPickAuditor('${escAttr(u.User_ID)}')">${escHtml(first)}</button>`;
+  }).join('');
+}
+
+function schedPickAuditor(uid) {
+  _schedAudPick = uid;
+  _schedSelected.clear();
+  schedRenderAudPick();
+  schedRenderGrid();
+  schedUpdateBulk();
+}
+
+function schedClearSel() {
+  _schedSelected.clear();
+  schedRenderGrid();
+  schedUpdateBulk();
+}
+
+function schedUpdateBulk() {
+  const n = _schedSelected.size;
+  setEl('bulkCount', n);
+  const bar = document.getElementById('schedBulk');
+  if (bar) bar.classList.toggle('show', n > 0);
+  const go = document.getElementById('bulkGo');
+  if (go) {
+    if (_schedMode === 'aud') {
+      const u = _schedAuditors.find(x => x.User_ID === _schedAudPick);
+      const first = u ? ((u.Name || '').split(' ')[0] || u.User_ID) : 'ผู้ตรวจ';
+      go.innerHTML = `เพิ่ม ${escHtml(first)} →`;
+    } else {
+      go.innerHTML = 'มอบหมาย →';
+    }
+  }
+}
+
+function schedBulkGo() {
+  if (!_schedSelected.size) return;
+  if (_schedMode === 'aud') schedSaveByAuditor();
+  else schedOpenBulk();
+}
+
+// ---- bulk modal (โหมดตามพื้นที่ = SET) ----
+function schedOpenBulk() {
+  _bulkAuds = new Set();
+  const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
+  setEl('bulkTitle', `มอบหมาย ${areas.length} พื้นที่`);
+  const list = document.getElementById('bulkAreaList');
+  if (list) list.innerHTML = areas.map(a =>
+    `<span class="bulk-area-chip">${escHtml(a.Area_Name || a.Area_ID)}</span>`).join('');
+  schedRenderBulkAudGrid();
+  const planDate = document.getElementById('planDate')?.value || '';
+  const planRound = document.getElementById('planRound')?.value || 'Round 2';
+  const bd = document.getElementById('bulkDate'); if (bd) bd.value = planDate;
+  const br = document.getElementById('bulkRound'); if (br) br.value = planRound;
+  document.getElementById('bulkModal')?.classList.add('show');
+}
+
+function schedRenderBulkAudGrid() {
+  const grid = document.getElementById('bulkAuditorGrid');
+  if (!grid) return;
+  grid.innerHTML = _schedAuditors.map(u => {
+    const sel = _bulkAuds.has(u.User_ID);
+    const initials = (u.Name || u.User_ID).substring(0,2);
+    const hue = u.User_ID.charCodeAt(u.User_ID.length-1) * 7 % 360;
+    return `<div class="auditor-select-card ${sel ? 'selected' : ''}" onclick="schedBulkToggleAud('${escAttr(u.User_ID)}')">
+      <div class="aud-avatar" style="background:hsl(${hue},55%,45%)">${escHtml(initials)}</div>
+      <div style="min-width:0;flex:1;">
+        <div style="font-size:0.8rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml((u.Name||'').split(' ')[0] || u.User_ID)}</div>
+        <div style="font-size:0.68rem;color:var(--gray-600)">${escHtml(u.Department || u.Role || '')}</div>
+      </div>
+      <i class="bi bi-check-circle-fill check-icon"></i>
+    </div>`;
+  }).join('');
+}
+
+function schedBulkToggleAud(uid) {
+  if (_bulkAuds.has(uid)) _bulkAuds.delete(uid);
+  else _bulkAuds.add(uid);
+  schedRenderBulkAudGrid();
+}
+
+function schedCloseBulk() {
+  document.getElementById('bulkModal')?.classList.remove('show');
+}
+
+async function schedSaveBulk() {
+  const auds = Array.from(_bulkAuds).join(',');
+  if (!auds) { UI.toast('เลือกผู้ตรวจอย่างน้อย 1 คน', 'warning'); return; }
+  const date  = document.getElementById('bulkDate')?.value || '';
+  const round = document.getElementById('bulkRound')?.value || 'Round 2';
+  const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
+  const btn = document.getElementById('bulkSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก...'; }
+  try {
+    const results = await Promise.all(areas.map(a =>
+      API.post('saveSchedule', {
+        areaId:a.Area_ID, plantId:a.Plant_ID, auditDate:date, auditRound:round,
+        auditorIds:auds, scheduleId:a.Schedule_ID || ''
+      }).then(res => {
+        if (res.success) {
+          a.Auditor_IDs = auds; a.Audit_Date = date; a.Audit_Round = round;
+          a.Schedule_ID = res.scheduleId || a.Schedule_ID; a.Sched_Status = 'Pending';
+        }
+        return res;
+      })
+    ));
+    const failed = results.filter(r => !r.success).length;
+    schedCloseBulk();
+    _schedSelected.clear();
+    schedRenderGrid();
+    schedUpdateBulk();
+    if (failed) UI.toast(`บันทึกได้ ${results.length-failed}/${results.length} · ล้มเหลว ${failed}`, 'warning');
+    else UI.toast(`มอบหมาย ${results.length} พื้นที่เรียบร้อย ✅`, 'success');
+  } catch(err) {
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> บันทึกทั้งหมด'; }
+}
+
+// ---- by-auditor (โหมดตามคน = ADD) ----
+async function schedSaveByAuditor() {
+  const uid = _schedAudPick;
+  if (!uid) { UI.toast('เลือกผู้ตรวจก่อน', 'warning'); return; }
+  const u = _schedAuditors.find(x => x.User_ID === uid);
+  const first = u ? ((u.Name || '').split(' ')[0] || uid) : 'ผู้ตรวจ';
+  const planDate  = document.getElementById('planDate')?.value || '';
+  const planRound = document.getElementById('planRound')?.value || 'Round 2';
+  const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
+  const go = document.getElementById('bulkGo');
+  if (go) go.style.pointerEvents = 'none';
+  try {
+    const results = await Promise.all(areas.map(a => {
+      const existing = a.Auditor_IDs ? a.Auditor_IDs.split(',').map(x => x.trim()).filter(Boolean) : [];
+      if (!existing.includes(uid)) existing.push(uid);   // ADD (union)
+      const auds  = existing.join(',');
+      const date  = a.Audit_Date  || planDate;           // คงค่าเดิมถ้ามี
+      const round = a.Audit_Round || planRound;
+      return API.post('saveSchedule', {
+        areaId:a.Area_ID, plantId:a.Plant_ID, auditDate:date, auditRound:round,
+        auditorIds:auds, scheduleId:a.Schedule_ID || ''
+      }).then(res => {
+        if (res.success) {
+          a.Auditor_IDs = auds; a.Audit_Date = date; a.Audit_Round = round;
+          a.Schedule_ID = res.scheduleId || a.Schedule_ID; a.Sched_Status = 'Pending';
+        }
+        return res;
+      });
+    }));
+    const failed = results.filter(r => !r.success).length;
+    _schedSelected.clear();
+    schedRenderGrid();
+    schedUpdateBulk();
+    if (failed) UI.toast(`บันทึกได้ ${results.length-failed}/${results.length} · ล้มเหลว ${failed}`, 'warning');
+    else UI.toast(`เพิ่ม ${first} ให้ ${results.length} พื้นที่เรียบร้อย ✅`, 'success');
+  } catch(err) {
+    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+  if (go) go.style.pointerEvents = '';
 }
 
 function openSchedModal(areaId) {
@@ -3147,11 +3371,7 @@ async function saveSchedule() {
       area.Schedule_ID = res.scheduleId || area.Schedule_ID;
       area.Sched_Status = 'Pending';
       closeAssignModal();
-      schedRenderGrid(
-        document.querySelector('.plant-tab-btn.active')?.textContent === 'ทั้งหมด'
-          ? 'all'
-          : _schedCurrentArea.Plant_ID
-      );
+      schedRenderGrid();
       UI.toast('บันทึกการมอบหมายเรียบร้อย ✅', 'success');
     } else {
       UI.toast(res.error || 'บันทึกไม่สำเร็จ', 'error');
@@ -3175,8 +3395,10 @@ async function deleteSchedule() {
       area.Audit_Round = null;
       area.Schedule_ID = null;
       area.Sched_Status = 'unassigned';
+      _schedSelected.delete(area.Area_ID);
       closeAssignModal();
-      schedRenderGrid('all');
+      schedRenderGrid();
+      schedUpdateBulk();
       UI.toast('ยกเลิกตารางเรียบร้อย', 'success');
     } else {
       UI.toast(res.error || 'ยกเลิกไม่สำเร็จ', 'error');
