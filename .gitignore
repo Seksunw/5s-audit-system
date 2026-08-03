@@ -13,7 +13,6 @@ export_to_obsidian.py
 sync_commits.py
 *.docx
 Criteria_Master.csv
-URL*.txt
 
 # security — ห้ามขึ้น GitHub เด็ดขาด (repo เป็น public + เสิร์ฟผ่าน GitHub Pages)
 # รายงานช่องโหว่ที่ยังไม่ได้แก้ = แผนที่ให้ผู้โจมตี
