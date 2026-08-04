@@ -6,7 +6,94 @@
   <title>Dashboard | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=33">
+  <link rel="stylesheet" href="css/style.css?v=34">
+
+  <style>
+    /* ---------- Ranking (อ่านง่ายบนมือถือ) ---------- */
+    .rk-row{
+      display:flex; align-items:center; gap:10px;
+      padding:10px 0; border-bottom:1px solid rgba(16,24,40,.06);
+    }
+    .rk-row:last-child{ border-bottom:none }
+    .rk-pos{
+      width:26px; height:26px; border-radius:8px; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:800; font-size:.72rem;
+      background:#f2f5fa; color:var(--gray-600);
+    }
+    .rk-pos.m1{ background:#fdf3d7; color:#8a6200 }
+    .rk-pos.m2{ background:#eceff3; color:#5b6470 }
+    .rk-pos.m3{ background:#f7e6dc; color:#8a4b26 }
+    .rk-mid{ flex:1; min-width:0 }
+    .rk-name{
+      font-size:.82rem; font-weight:600; color:var(--dark);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .rk-meta{ font-size:.66rem; color:var(--gray-600); margin-top:1px }
+    .rk-track{ height:7px; border-radius:6px; background:var(--gray-200); overflow:hidden; margin-top:5px }
+    .rk-fill{ height:100%; border-radius:6px; transition:width .9s ease }
+    .rk-val{ flex-shrink:0; text-align:right; min-width:50px }
+    .rk-pct{ font-size:1.05rem; font-weight:800; line-height:1.1 }
+    .rk-band{ font-size:.6rem; font-weight:700; letter-spacing:.02em }
+
+    /* ---------- Filter (พื้นที่ต้องปรับปรุง) ---------- */
+    .imp-filters{ display:flex; flex-direction:column; gap:9px; margin-bottom:4px }
+    .imp-filters label{
+      font-size:.68rem; font-weight:700; color:var(--gray-600);
+      display:flex; flex-direction:column; gap:4px;
+      text-transform:uppercase; letter-spacing:.03em;
+    }
+    .imp-filters select{
+      font-family:inherit; font-size:.85rem; color:var(--gray-800);
+      padding:9px 10px; border:1.5px solid var(--gray-300);
+      border-radius:9px; background:#fff; -webkit-appearance:auto;
+      text-transform:none; letter-spacing:0; font-weight:500;
+    }
+    .imp-filters select:disabled{ background:var(--gray-100); color:var(--gray-500) }
+
+    /* ---------- สรุปผลการตรวจที่เลือก ---------- */
+    .imp-summary{
+      display:flex; align-items:center; gap:12px;
+      padding:11px 13px; border-radius:10px; margin:13px 0 4px;
+      background:var(--gray-100);
+    }
+    .imp-summary-pct{ font-size:1.4rem; font-weight:800; line-height:1 }
+    .imp-summary-txt{ font-size:.72rem; color:var(--gray-600); line-height:1.45 }
+
+    /* ---------- การ์ดข้อที่ตก ---------- */
+    .imp-item{
+      border:1px solid var(--hairline); border-radius:11px;
+      padding:11px 12px; margin-bottom:9px; background:#fff;
+    }
+    .imp-item.s0{ border-left:4px solid var(--danger) }
+    .imp-item.s1{ border-left:4px solid var(--warning) }
+    .imp-head{ display:flex; align-items:flex-start; gap:8px; margin-bottom:6px }
+    .imp-badge{
+      flex-shrink:0; font-size:.63rem; font-weight:800;
+      padding:3px 8px; border-radius:20px; white-space:nowrap;
+    }
+    .imp-badge.s0{ background:var(--red-bg); color:var(--danger) }
+    .imp-badge.s1{ background:var(--amber-bg); color:var(--warning) }
+    .imp-cat{ font-size:.63rem; color:var(--gray-500); font-weight:600; margin-bottom:2px }
+    .imp-q{ font-size:.8rem; font-weight:600; color:var(--dark); line-height:1.45 }
+    .imp-remark{
+      font-size:.76rem; color:var(--gray-700); line-height:1.5;
+      background:var(--gray-100); border-radius:8px;
+      padding:7px 9px; margin-top:7px;
+      display:flex; gap:6px; align-items:flex-start;
+    }
+    .imp-remark i{ color:var(--gray-500); flex-shrink:0; margin-top:2px }
+    .imp-photos{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px }
+    .imp-photos a{ display:block; line-height:0 }
+    .imp-photos img{
+      width:64px; height:64px; object-fit:cover;
+      border-radius:8px; border:1px solid var(--hairline);
+    }
+    .imp-empty{ text-align:center; padding:26px 12px; color:var(--gray-600) }
+    .imp-empty i{ font-size:2rem; display:block; margin-bottom:8px }
+    .imp-empty-t{ font-size:.85rem; font-weight:700; color:var(--dark) }
+    .imp-empty-d{ font-size:.75rem; margin-top:3px }
+  </style>
 </head>
 <body>
 <div id="loadingOverlay" class="loading-overlay">
@@ -24,103 +111,64 @@
 
 <div class="page-content">
 
-  <!-- KPI Summary -->
-  <div class="section-title"><i class="bi bi-speedometer2"></i> <span data-i18n="dash.overview">ภาพรวม</span></div>
-  <div class="stat-grid mb-4">
-    <div class="stat-card blue">
-      <div class="stat-number" id="dashTotalAudit">-</div>
-      <div class="stat-label" data-i18n="dash.total">การตรวจทั้งหมด</div>
+  <!-- 1) Plant Ranking -->
+  <div class="chart-container">
+    <div class="chart-title">
+      <i class="bi bi-trophy"></i> <span data-i18n="dash.plant_rank">Plant Ranking</span>
     </div>
-    <div class="stat-card green">
-      <div class="stat-number" id="dashAvgScore">-</div>
-      <div class="stat-label" data-i18n="dash.avg">คะแนนเฉลี่ย</div>
-    </div>
-    <div class="stat-card yellow">
-      <div class="stat-number" id="dashPassRate">-</div>
-      <div class="stat-label" data-i18n="dash.pass">อัตราผ่าน</div>
-    </div>
-    <div class="stat-card green">
-      <div class="stat-number" id="dashExcellent">-</div>
-      <div class="stat-label">Excellent</div>
-    </div>
-  </div>
-
-  <!-- Status Distribution -->
-  <div class="chart-container mb-3">
-    <div class="chart-title"><i class="bi bi-pie-chart"></i> <span data-i18n="dash.dist">การกระจายผล</span></div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">
-      <div style="padding:12px;background:#e8f5e9;border-radius:10px">
-        <div style="font-size:1.5rem;font-weight:800;color:var(--excellent)" id="dashExcellent2">-</div>
-        <div style="font-size:0.7rem;color:var(--excellent);font-weight:600">Excellent</div>
-      </div>
-      <div style="padding:12px;background:#fff8e1;border-radius:10px">
-        <div style="font-size:1.5rem;font-weight:800;color:#c9a000" id="dashGood">-</div>
-        <div style="font-size:0.7rem;color:#c9a000;font-weight:600">Good</div>
-      </div>
-      <div style="padding:12px;background:#fde8e8;border-radius:10px">
-        <div style="font-size:1.5rem;font-weight:800;color:var(--danger)" id="dashNeedImp">-</div>
-        <div style="font-size:0.7rem;color:var(--danger);font-weight:600">Need Imp.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Best & Worst Area -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-    <div class="card" style="border-left:4px solid var(--excellent)">
-      <div class="card-body" style="padding:12px">
-        <div style="font-size:0.7rem;color:var(--gray-600);margin-bottom:4px" data-i18n="dash.best">🏆 สูงสุด</div>
-        <div style="font-weight:700;font-size:0.85rem" id="highestAreaName">-</div>
-        <div style="font-size:1.1rem;font-weight:800;color:var(--excellent)" id="highestAreaScore">-</div>
-      </div>
-    </div>
-    <div class="card" style="border-left:4px solid var(--danger)">
-      <div class="card-body" style="padding:12px">
-        <div style="font-size:0.7rem;color:var(--gray-600);margin-bottom:4px" data-i18n="dash.worst">⚠️ ต้องปรับปรุง</div>
-        <div style="font-weight:700;font-size:0.85rem" id="lowestAreaName">-</div>
-        <div style="font-size:1.1rem;font-weight:800;color:var(--danger)" id="lowestAreaScore">-</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Monthly Trend -->
-  <div class="chart-container mb-3">
-    <div class="chart-title"><i class="bi bi-graph-up"></i> <span data-i18n="dash.monthly">แนวโน้มรายเดือน</span></div>
-    <div id="monthlyChart">
-      <div class="skeleton" style="height:120px;border-radius:8px"></div>
-    </div>
-  </div>
-
-  <!-- Plant Ranking -->
-  <div class="chart-container mb-3">
-    <div class="chart-title"><i class="bi bi-trophy"></i> Plant Ranking</div>
     <div id="plantRanking">
-      <div class="skeleton" style="height:40px;border-radius:8px;margin-bottom:6px"></div>
-      <div class="skeleton" style="height:40px;border-radius:8px;margin-bottom:6px"></div>
-      <div class="skeleton" style="height:40px;border-radius:8px"></div>
+      <div class="skeleton" style="height:44px;border-radius:8px;margin-bottom:7px"></div>
+      <div class="skeleton" style="height:44px;border-radius:8px;margin-bottom:7px"></div>
+      <div class="skeleton" style="height:44px;border-radius:8px"></div>
     </div>
   </div>
 
-  <!-- Area Ranking -->
-  <div class="chart-container mb-3">
-    <div class="chart-title"><i class="bi bi-grid"></i> Area Ranking (Top 10)</div>
+  <!-- 2) Area Ranking -->
+  <div class="chart-container">
+    <div class="chart-title">
+      <i class="bi bi-grid"></i> <span data-i18n="dash.area_rank">Area Ranking</span>
+    </div>
     <div id="areaRanking">
-      <div class="skeleton" style="height:40px;border-radius:8px;margin-bottom:6px"></div>
-      <div class="skeleton" style="height:40px;border-radius:8px;margin-bottom:6px"></div>
-      <div class="skeleton" style="height:40px;border-radius:8px"></div>
+      <div class="skeleton" style="height:44px;border-radius:8px;margin-bottom:7px"></div>
+      <div class="skeleton" style="height:44px;border-radius:8px;margin-bottom:7px"></div>
+      <div class="skeleton" style="height:44px;border-radius:8px"></div>
     </div>
   </div>
 
-  <!-- Looker Studio Link -->
-  <div class="card" style="border:2px solid var(--primary)">
-    <div class="card-body text-center">
-      <i class="bi bi-bar-chart-line" style="font-size:2rem;color:var(--primary)"></i>
-      <div style="font-weight:700;margin:8px 0 4px" data-i18n="dash.looker">Looker Studio Dashboard</div>
-      <div style="font-size:0.8rem;color:var(--gray-600);margin-bottom:12px" data-i18n="dash.looker_desc">
-        ดูรายงานเชิงลึกแบบ Interactive ใน Looker Studio
+  <!-- 3) พื้นที่ต้องปรับปรุง -->
+  <div class="chart-container">
+    <div class="chart-title">
+      <i class="bi bi-exclamation-triangle"></i>
+      <span data-i18n="imp.title">พื้นที่ต้องปรับปรุง</span>
+    </div>
+
+    <div class="imp-filters">
+      <label>
+        <span data-i18n="imp.pick_plant">เลือกโรงงาน</span>
+        <select id="impPlant" onchange="impPlantChange(this.value)">
+          <option value="" data-i18n="imp.opt_plant">— เลือกโรงงาน —</option>
+        </select>
+      </label>
+      <label>
+        <span data-i18n="imp.pick_area">เลือกพื้นที่</span>
+        <select id="impArea" onchange="impAreaChange(this.value)" disabled>
+          <option value="" data-i18n="imp.opt_area">— เลือกพื้นที่ —</option>
+        </select>
+      </label>
+      <label>
+        <span data-i18n="imp.pick_audit">ครั้งที่ตรวจ</span>
+        <select id="impAudit" onchange="impAuditChange(this.value)" disabled>
+          <option value="" data-i18n="imp.opt_audit">— เลือกครั้งที่ตรวจ —</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="impResult">
+      <div class="imp-empty">
+        <i class="bi bi-hand-index-thumb" style="color:var(--gray-400)"></i>
+        <div class="imp-empty-t" data-i18n="imp.start_t">เลือกโรงงานและพื้นที่</div>
+        <div class="imp-empty-d" data-i18n="imp.start_d">ระบบจะแสดงข้อที่ไม่ผ่านพร้อมหมายเหตุและรูปภาพ</div>
       </div>
-      <a href="#" class="btn btn-primary btn-block" target="_blank">
-        <i class="bi bi-box-arrow-up-right"></i> <span data-i18n="dash.looker_btn">เปิด Looker Studio</span>
-      </a>
     </div>
   </div>
 
@@ -134,7 +182,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=33"></script>
-<!-- dashExcellent2 ถูก sync โดย initDashboard() ใน app.js โดยตรง — ไม่ต้องใช้ MutationObserver -->
+<script src="js/app.js?v=34"></script>
 </body>
 </html>

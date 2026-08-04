@@ -88,13 +88,20 @@ const SBH = {
     return { success:true, data:data.map(mapPlant) };
   },
 
-  async getAreas({ plantId, areaType } = {}) {
+  /**
+   * @param {string}  plantId   กรองตามโรงงาน
+   * @param {string}  areaType  โหมดพื้นที่ส่วนกลาง (cafeteria / maintenance) ข้ามทุก plant
+   * @param {boolean} all       true = ไม่ตัด cafeteria/maintenance ออก
+   *                            ใช้ในหน้า "ดูผล" เช่น dashboard ที่ต้องเห็นทุกพื้นที่
+   *                            (หน้า plant.html ไม่ส่ง → คงพฤติกรรมเดิมที่แยกการ์ดโรงอาหาร/ช่าง)
+   */
+  async getAreas({ plantId, areaType, all } = {}) {
     let q = _sb.from('areas').select('*').eq('status','active');
     if (plantId)  q = q.eq('plant_id', plantId);
     if (areaType) {
       // โหมดพื้นที่ส่วนกลาง: ดึงตามชนิดพื้นที่ข้ามทุก plant (โรงอาหาร / ช่าง-ยูทิลิตี้)
       q = q.eq('area_type', String(areaType).toLowerCase());
-    } else if (plantId) {
+    } else if (plantId && !all) {
       // โหมดเลือก plant: ตัด cafeteria + maintenance ออก (แยกไปเป็นการ์ดต่างหากที่หน้า plant)
       q = q.not('area_type', 'in', '(cafeteria,maintenance)');
     }
@@ -247,6 +254,80 @@ const SBH = {
     return { success:true, data:mapped, total:mapped.length };
   },
 
+  /**
+   * เฉพาะโรงงาน/พื้นที่ที่ "มีผลตรวจจริง" — ใช้ใน dashboard
+   * ต่างจาก getAreas() 2 อย่าง:
+   *   1. ไม่มีทางตัน — เลือกแล้วต้องมีข้อมูลให้ดูเสมอ
+   *   2. รวมพื้นที่ที่ตั้ง inactive ไปแล้วแต่มีประวัติการตรวจ (ดูผลเก่าได้)
+   */
+  async getAuditedAreas() {
+    const [{ data:heads, error }, { data:areas }, { data:plants }] = await Promise.all([
+      _sb.from('audit_headers').select('area_id, plant_id').neq('status','pending'),
+      _sb.from('areas').select('area_id, area_name, plant_id, area_type, status'),
+      _sb.from('plants').select('plant_id, plant_name'),
+    ]);
+    if (error) return { success:false, error:error.message };
+
+    const H = heads || [];
+    // นับจำนวนครั้งที่ตรวจต่อพื้นที่ + จำ plant_id จาก header (เผื่อพื้นที่ถูกลบจากตาราง areas)
+    const cnt = {}, pidFromHead = {};
+    H.forEach(h => {
+      cnt[h.area_id] = (cnt[h.area_id] || 0) + 1;
+      if (!pidFromHead[h.area_id]) pidFromHead[h.area_id] = h.plant_id;
+    });
+
+    const areaById  = {}; (areas  || []).forEach(a => { areaById[a.area_id] = a; });
+    const plantName = {}; (plants || []).forEach(p => { plantName[p.plant_id] = p.plant_name; });
+
+    const list = Object.keys(cnt).map(aid => {
+      const a   = areaById[aid];
+      const pid = (a && a.plant_id) || pidFromHead[aid] || '';
+      return {
+        Area_ID:    aid,
+        Area_Name:  (a && a.area_name) || aid,
+        Plant_ID:   pid,
+        Plant_Name: plantName[pid] || pid || '-',
+        Area_Type:  a ? (MAP.areaType[a.area_type] || a.area_type) : null,
+        Inactive:   a ? a.status !== 'active' : true,   // ไม่พบใน areas = ถือว่าเลิกใช้
+        Audits:     cnt[aid],
+      };
+    }).sort((x, y) => (x.Plant_Name || '').localeCompare(y.Plant_Name || '', 'th')
+                   || (x.Area_Name  || '').localeCompare(y.Area_Name  || '', 'th'));
+
+    // โรงงานที่มีข้อมูลจริงเท่านั้น (เรียงชื่อ)
+    const seen = new Set(), plantList = [];
+    list.forEach(r => {
+      if (r.Plant_ID && !seen.has(r.Plant_ID)) {
+        seen.add(r.Plant_ID);
+        plantList.push({ Plant_ID:r.Plant_ID, Plant_Name:r.Plant_Name });
+      }
+    });
+
+    return { success:true, areas:list, plants:plantList };
+  },
+
+  /**
+   * รายการตรวจของพื้นที่หนึ่ง เรียงวันใหม่→เก่า
+   * ใช้ในการ์ด "พื้นที่ต้องปรับปรุง" (dashboard) เพื่อให้เลือกครั้งที่ตรวจได้
+   */
+  async getAreaAudits({ areaId }) {
+    if (!areaId) return { success:true, data:[] };
+    const { data, error } = await _sb.from('audit_headers')
+      .select('audit_id, audit_date, percent, total_score, max_score, status, profiles(name)')
+      .eq('area_id', areaId).neq('status','pending')
+      .order('audit_date', { ascending:false }).limit(50);
+    if (error) return { success:false, error:error.message };
+    return { success:true, data:(data||[]).map(h => ({
+      Audit_ID:   h.audit_id,
+      Audit_Date: h.audit_date,
+      Percent:    Number(h.percent) || 0,
+      Total_Score:h.total_score,
+      Max_Score:  h.max_score,
+      Status:     MAP.auditStatus[h.status] || h.status,
+      Auditor:    (h.profiles && h.profiles.name) || '-',
+    })) };
+  },
+
   async getAuditDetail({ auditId }) {
     const { data:h, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
     if (error) return { success:false, error:'ไม่พบข้อมูล Audit' };
@@ -289,9 +370,10 @@ const SBH = {
     // คะแนนรายกลุ่ม = pooled ภายในกลุ่ม (รวมคะแนนจริงของกลุ่ม / เต็มจริง)
     // → เห็นคะแนนแต่ละพื้นที่ได้แม้จำนวนเกณฑ์ต่างกัน สำหรับประเมินและหาจุดบกพร่อง
     const avgBy = (keyFn, nameMap, label) => {
-      const g = {}; H.forEach(h=>{ const k=keyFn(h); (g[k]=g[k]||{t:0,m:0}); g[k].t+=tot(h); g[k].m+=mx(h); });
+      const g = {}; H.forEach(h=>{ const k=keyFn(h); (g[k]=g[k]||{t:0,m:0,n:0}); g[k].t+=tot(h); g[k].m+=mx(h); g[k].n++; });
       // avgScore = ค่าที่ปัดเศษไว้แสดง, avgScoreRaw = ค่าจริงไว้ตัดสินแถบสี (กัน .5 ข้ามแถบ)
-      return Object.entries(g).map(([k,v])=>({ [label]:(nameMap[k]||k), avgScore:poolPct(v.t, v.m), avgScoreRaw:(v.m>0?v.t*100/v.m:0) }))
+      // n = จำนวนครั้งที่ตรวจ — ranking จาก 1 ครั้ง กับ 10 ครั้ง เชื่อถือได้ไม่เท่ากัน
+      return Object.entries(g).map(([k,v])=>({ [label]:(nameMap[k]||k), avgScore:poolPct(v.t, v.m), avgScoreRaw:(v.m>0?v.t*100/v.m:0), n:v.n }))
                    .sort((a,b)=>b.avgScoreRaw-a.avgScoreRaw);
     };
     const plantComparison = avgBy(h=>h.plant_id, plantName, 'plantName');
@@ -509,7 +591,7 @@ const TRANSLATIONS = {
     'dash.worst':          '⚠️ ต้องปรับปรุง',
     'dash.monthly':        'แนวโน้มรายเดือน',
     'dash.plant_rank':     'Plant Ranking',
-    'dash.area_rank':      'Area Ranking (Top 10)',
+    'dash.area_rank':      'Area Ranking',
     'dash.looker':         'Looker Studio Dashboard',
     'dash.looker_desc':    'ดูรายงานเชิงลึกแบบ Interactive ใน Looker Studio',
     'dash.looker_btn':     'เปิด Looker Studio',
@@ -620,6 +702,30 @@ const TRANSLATIONS = {
     'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส',
     'role.viewer_desc':       '👁️ Viewer — ดูอย่างเดียว',
     'audit.nav_answered':     'ตอบแล้ว',
+
+    /* ===== Dashboard ใหม่ (4 ส.ค. 2026) ===== */
+    // Dashboard — ranking
+    'rank.from':                 'จาก',
+    'rank.times':                'ครั้ง',
+    // Dashboard — พื้นที่ต้องปรับปรุง
+    'imp.title':                 'พื้นที่ต้องปรับปรุง',
+    'imp.pick_plant':            'เลือกโรงงาน',
+    'imp.pick_area':             'เลือกพื้นที่',
+    'imp.pick_audit':            'ครั้งที่ตรวจ',
+    'imp.opt_plant':             '— เลือกโรงงาน —',
+    'imp.opt_area':              '— เลือกพื้นที่ —',
+    'imp.opt_audit':             '— เลือกครั้งที่ตรวจ —',
+    'imp.start_t':               'เลือกโรงงานและพื้นที่',
+    'imp.start_d':               'ระบบจะแสดงข้อที่ไม่ผ่านพร้อมหมายเหตุและรูปภาพ',
+    'imp.no_data_t':             'ยังไม่มีผลการตรวจในระบบ',
+    'imp.no_data_d':             'เมื่อมีการตรวจแล้วจะเลือกดูข้อที่ต้องปรับปรุงได้ที่นี่',
+    'imp.inactive':             'เลิกใช้แล้ว',
+    'imp.no_audit_t':            'พื้นที่นี้ยังไม่มีผลการตรวจ',
+    'imp.no_audit_d':            'เมื่อมีการตรวจแล้วจะแสดงข้อที่ต้องปรับปรุงที่นี่',
+    'imp.perfect_t':             'ไม่มีข้อที่ต้องปรับปรุง',
+    'imp.perfect_d':             'การตรวจครั้งนี้ผ่านทุกข้อ',
+    'imp.failed_count':          'ข้อที่ต้องปรับปรุง',
+    'imp.total_items':           'จากทั้งหมด',
   },
   en: {
     // Common
@@ -704,7 +810,7 @@ const TRANSLATIONS = {
     'dash.worst':          '⚠️ Needs Improvement',
     'dash.monthly':        'Monthly Trend',
     'dash.plant_rank':     'Plant Ranking',
-    'dash.area_rank':      'Area Ranking (Top 10)',
+    'dash.area_rank':      'Area Ranking',
     'dash.looker':         'Looker Studio Dashboard',
     'dash.looker_desc':    'View interactive reports in Looker Studio',
     'dash.looker_btn':     'Open Looker Studio',
@@ -911,7 +1017,7 @@ const TRANSLATIONS = {
     'dash.worst':          '⚠️ Needs Improvement',
     'dash.monthly':        'Monthly Trend',
     'dash.plant_rank':     'Plant Ranking',
-    'dash.area_rank':      'Area Ranking (Top 10)',
+    'dash.area_rank':      'Area Ranking',
     'dash.looker':         'Looker Studio Dashboard',
     'dash.looker_desc':    'View interactive reports in Looker Studio',
     'dash.looker_btn':     'Open Looker Studio',
@@ -1034,6 +1140,30 @@ const TRANSLATIONS = {
     'role.auditor_desc':      '📋 Auditor — 5S Audit',
     'role.viewer_desc':       '👁️ Viewer — Read only',
     'audit.nav_answered':     'Answered',
+
+    /* ===== Dashboard ใหม่ (4 ส.ค. 2026) ===== */
+    // Dashboard — ranking
+    'rank.from':                 'from',
+    'rank.times':                'audit(s)',
+    // Dashboard — areas needing improvement
+    'imp.title':                 'Areas Needing Improvement',
+    'imp.pick_plant':            'Select plant',
+    'imp.pick_area':             'Select area',
+    'imp.pick_audit':            'Audit round',
+    'imp.opt_plant':             '— Select plant —',
+    'imp.opt_area':              '— Select area —',
+    'imp.opt_audit':             '— Select audit —',
+    'imp.start_t':               'Select a plant and area',
+    'imp.start_d':               'Failed items will be shown with remarks and photos',
+    'imp.no_data_t':             'No audit results yet',
+    'imp.no_data_d':             'Once an audit is submitted you can review its findings here',
+    'imp.inactive':             'inactive',
+    'imp.no_audit_t':            'No audit results for this area yet',
+    'imp.no_audit_d':            'Items needing improvement will appear here after an audit',
+    'imp.perfect_t':             'Nothing to improve',
+    'imp.perfect_d':             'This audit passed every item',
+    'imp.failed_count':          'items to improve',
+    'imp.total_items':           'out of',
   }
 };
 
@@ -2519,44 +2649,226 @@ async function initDashboard() {
 
   UI.showLoading(I18n.t('msg.loading_dashboard'));
   try {
-    const res = await API.get('getDashboard', {});
+    const [res, audRes] = await Promise.all([
+      API.get('getDashboard', {}),
+      API.get('getAuditedAreas', {}),      // เฉพาะที่มีผลตรวจจริง — ไม่มีทางตัน
+    ]);
     UI.hideLoading();
 
     if (!res.success) { UI.toast(res.error, 'error'); return; }
     const d = res.data;
 
-    // KPI Cards
-    setEl('dashTotalAudit', d.totalAudit || 0);
-    setEl('dashAvgScore',   (d.avgScore  || 0) + '%');
-    setEl('dashPassRate',   (d.passRate  || 0) + '%');
-    setEl('dashExcellent',  d.excellent  || 0);
-    setEl('dashExcellent2', d.excellent  || 0);  // sync โดยตรง ไม่ต้องใช้ MutationObserver
-    setEl('dashGood',       d.good       || 0);
-    setEl('dashNeedImp',    d.needImprovement || 0);
+    // 1) Plant Ranking — แสดงทุกโรงงาน
+    renderRanking('plantRanking', d.plantComparison || [], 'plantName', 100);
 
-    // Highest / Lowest
-    if (d.highestArea) {
-      setEl('highestAreaName',  d.highestArea.areaName);
-      setEl('highestAreaScore', d.highestArea.avgScore + '%');
-    }
-    if (d.lowestArea) {
-      setEl('lowestAreaName',  d.lowestArea.areaName);
-      setEl('lowestAreaScore', d.lowestArea.avgScore + '%');
-    }
-
-    // Plant Comparison Ranking
-    renderRanking('plantRanking', d.plantComparison || [], 'plantName');
-
-    // Area Ranking — แสดงครบทุกพื้นที่ เพื่อประเมินและหาจุดบกพร่องรายพื้นที่
+    // 2) Area Ranking — แสดงครบทุกพื้นที่ เพื่อหาจุดบกพร่องรายพื้นที่
     renderRanking('areaRanking', d.areaRanking || [], 'areaName', 100);
 
-    // Monthly Trend (simple bar chart)
-    renderMonthlyTrend('monthlyChart', d.monthlyTrend || []);
+    // 3) การ์ดพื้นที่ต้องปรับปรุง — โหลดรายการครั้งเดียว แล้วกรองในเครื่อง
+    _impAllAreas = (audRes.success && audRes.areas)  ? audRes.areas  : [];
+    _impPlants   = (audRes.success && audRes.plants) ? audRes.plants : [];
+    impFillPlants();
 
   } catch(err) {
     UI.hideLoading();
     UI.toast(I18n.t('msg.dash_failed'), 'error');
   }
+}
+
+// ============================================================
+// DASHBOARD — การ์ด "พื้นที่ต้องปรับปรุง"
+// เลือก โรงงาน → พื้นที่ → ครั้งที่ตรวจ → แสดงข้อที่ตก (0–1) + หมายเหตุ + รูป
+// ============================================================
+let _impPlants   = [];   // โรงงานที่มีผลตรวจ
+let _impAllAreas = [];   // ทุกพื้นที่ที่มีผลตรวจ (โหลดครั้งเดียว)
+let _impAreas    = [];   // พื้นที่ของโรงงานที่เลือก (กรองจาก _impAllAreas)
+let _impAudits   = [];
+
+/** ใส่ตัวเลือกใน select แบบปลอดภัย (ไม่ใช้ innerHTML กับข้อมูลจาก DB) */
+function impSetOptions(selectId, placeholderKey, items, valueOf, labelOf) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.textContent = '';
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = I18n.t(placeholderKey);
+  sel.appendChild(ph);
+  items.forEach(it => {
+    const o = document.createElement('option');
+    o.value = valueOf(it);
+    o.textContent = labelOf(it);   // textContent = ปลอดภัยจาก XSS โดยธรรมชาติ
+    sel.appendChild(o);
+  });
+  sel.disabled = items.length === 0;
+}
+
+function impFillPlants() {
+  impSetOptions('impPlant', 'imp.opt_plant', _impPlants,
+    p => p.Plant_ID, p => p.Plant_Name || p.Plant_ID);
+  const sel = document.getElementById('impPlant');
+  if (sel) sel.disabled = _impPlants.length === 0;
+
+  // ยังไม่มีผลตรวจในระบบเลย → บอกให้ชัด ไม่ปล่อยให้กดวนเปล่า ๆ
+  if (!_impPlants.length) impShowHint('imp.no_data_t', 'imp.no_data_d', 'bi-clipboard-x');
+
+  // มีโรงงานเดียว → เลือกให้เลย ลดคลิกบนมือถือ
+  else if (_impPlants.length === 1 && sel) {
+    sel.value = _impPlants[0].Plant_ID;
+    impPlantChange(sel.value);
+  }
+}
+
+/** ป้ายกำกับพื้นที่ใน dropdown — ใส่จำนวนครั้งและวงเล็บถ้าเลิกใช้แล้ว */
+function impAreaLabel(a) {
+  const parts = [a.Area_Name || a.Area_ID];
+  if (a.Audits)  parts.push(`· ${a.Audits} ${I18n.t('rank.times')}`);
+  if (a.Inactive) parts.push(`(${I18n.t('imp.inactive')})`);
+  return parts.join(' ');
+}
+
+/** รีเซ็ต select ระดับล่างให้ว่างและปิดใช้งาน */
+function impResetBelow(level) {
+  if (level <= 2) {
+    _impAreas = [];
+    impSetOptions('impArea', 'imp.opt_area', [], () => '', () => '');
+  }
+  if (level <= 3) {
+    _impAudits = [];
+    impSetOptions('impAudit', 'imp.opt_audit', [], () => '', () => '');
+  }
+  impShowHint('imp.start_t', 'imp.start_d', 'bi-hand-index-thumb');
+}
+
+/** กรองในเครื่องจากรายการที่โหลดไว้แล้ว — ไม่ยิง API ซ้ำ ตอบสนองทันที */
+function impPlantChange(plantId) {
+  impResetBelow(2);
+  if (!plantId) return;
+
+  _impAreas = _impAllAreas.filter(a => a.Plant_ID === plantId);
+  impSetOptions('impArea', 'imp.opt_area', _impAreas, a => a.Area_ID, impAreaLabel);
+
+  // มีพื้นที่เดียว → เลือกให้เลย
+  if (_impAreas.length === 1) {
+    const sel = document.getElementById('impArea');
+    if (sel) { sel.value = _impAreas[0].Area_ID; impAreaChange(sel.value); }
+  }
+}
+
+async function impAreaChange(areaId) {
+  impResetBelow(3);
+  if (!areaId) return;
+
+  UI.showLoading(I18n.t('loading'));
+  try {
+    const res = await API.get('getAreaAudits', { areaId });
+    UI.hideLoading();
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
+    _impAudits = res.data || [];
+
+    if (!_impAudits.length) {
+      impShowHint('imp.no_audit_t', 'imp.no_audit_d', 'bi-clipboard-x');
+      return;
+    }
+    impSetOptions('impAudit', 'imp.opt_audit', _impAudits,
+      a => a.Audit_ID,
+      a => `${UI.formatDate(a.Audit_Date)} · ${a.Percent}%`);
+
+    // มีครั้งเดียว → เลือกให้เลย ลดจำนวนคลิกบนมือถือ
+    if (_impAudits.length === 1) {
+      const sel = document.getElementById('impAudit');
+      if (sel) { sel.value = _impAudits[0].Audit_ID; impAuditChange(sel.value); }
+    }
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
+  }
+}
+
+async function impAuditChange(auditId) {
+  if (!auditId) { impShowHint('imp.start_t', 'imp.start_d', 'bi-hand-index-thumb'); return; }
+
+  UI.showLoading(I18n.t('loading'));
+  try {
+    const res = await API.get('getAuditDetail', { auditId });
+    UI.hideLoading();
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
+    impRenderItems(res.header, res.details || []);
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
+  }
+}
+
+/** ข้อความชี้แนะ/ว่างเปล่าในกล่องผลลัพธ์ */
+function impShowHint(titleKey, descKey, icon, tone) {
+  const box = document.getElementById('impResult');
+  if (!box) return;
+  const color = tone === 'ok' ? 'var(--excellent)' : 'var(--gray-400)';
+  box.innerHTML = `
+    <div class="imp-empty">
+      <i class="bi ${escAttr(icon)}" style="color:${color}"></i>
+      <div class="imp-empty-t">${escHtml(I18n.t(titleKey))}</div>
+      <div class="imp-empty-d">${escHtml(I18n.t(descKey))}</div>
+    </div>`;
+}
+
+/** แสดงเฉพาะข้อที่ตก (คะแนน 0–1, ไม่นับข้อที่ตัด N/A) พร้อมหมายเหตุและรูป */
+function impRenderItems(header, details) {
+  const box = document.getElementById('impResult');
+  if (!box) return;
+
+  const failed = details
+    .filter(d => !d.Na && d.Score != null && Number(d.Score) <= 1)
+    .sort((a, b) => Number(a.Score) - Number(b.Score));   // 0 ก่อน แล้ว 1
+
+  const pct  = Number(header && header.Percent) || 0;
+  const band = pct >= 90 ? 'var(--excellent)' : pct >= 75 ? 'var(--warning)' : 'var(--danger)';
+
+  const summary = `
+    <div class="imp-summary">
+      <div class="imp-summary-pct" style="color:${band}">${pct}%</div>
+      <div class="imp-summary-txt">
+        ${escHtml(UI.statusTH(pct))}<br>
+        ${escHtml(I18n.t('imp.failed_count'))} <b>${failed.length}</b> ${escHtml(I18n.t('audit.answered_suffix'))}
+        · ${escHtml(I18n.t('imp.total_items'))} ${details.filter(d => !d.Na).length}
+      </div>
+    </div>`;
+
+  if (!failed.length) {
+    box.innerHTML = summary + `
+      <div class="imp-empty">
+        <i class="bi bi-patch-check-fill" style="color:var(--excellent)"></i>
+        <div class="imp-empty-t">${escHtml(I18n.t('imp.perfect_t'))}</div>
+        <div class="imp-empty-d">${escHtml(I18n.t('imp.perfect_d'))}</div>
+      </div>`;
+    return;
+  }
+
+  box.innerHTML = summary + failed.map(d => {
+    const s = Number(d.Score);
+    const cls = s === 0 ? 's0' : 's1';
+    const scoreLabel = s === 0 ? I18n.t('audit.score_0') : I18n.t('audit.score_1');
+
+    const photos = String(d.Photo_URL || '')
+      .split(',').map(u => u.trim()).filter(Boolean)
+      .map(safeUrl).filter(Boolean)          // ตัด javascript:/data: ทิ้ง (ดู safeUrl)
+      .map(u => `<a href="${escAttr(u)}" target="_blank" rel="noopener noreferrer">
+                   <img src="${escAttr(u)}" alt="${escAttr(I18n.t('img.alt_photo'))}" loading="lazy">
+                 </a>`).join('');
+
+    return `
+      <div class="imp-item ${cls}">
+        <div class="imp-head">
+          <span class="imp-badge ${cls}">${escHtml(scoreLabel)} (${s})</span>
+          <div style="flex:1;min-width:0">
+            ${d.Category ? `<div class="imp-cat">${escHtml(d.Category)}</div>` : ''}
+            <div class="imp-q">${escHtml(d.Question || d.Criteria_ID || '-')}</div>
+          </div>
+        </div>
+        ${d.Remark ? `<div class="imp-remark"><i class="bi bi-chat-left-text"></i><span>${escHtml(d.Remark)}</span></div>` : ''}
+        ${photos ? `<div class="imp-photos">${photos}</div>` : ''}
+      </div>`;
+  }).join('');
 }
 
 function renderRanking(containerId, items, nameField, limit = 10) {
@@ -2569,45 +2881,32 @@ function renderRanking(containerId, items, nameField, limit = 10) {
   }
 
   container.innerHTML = items.slice(0, limit).map((item, idx) => {
-    const band = (item.avgScoreRaw != null ? item.avgScoreRaw : item.avgScore);
+    const band  = (item.avgScoreRaw != null ? item.avgScoreRaw : item.avgScore);
+    const color = band >= 90 ? 'var(--excellent)' : band >= 75 ? 'var(--warning)' : 'var(--danger)';
+    const label = band >= 90 ? I18n.t('badge.excellent')
+                : band >= 75 ? I18n.t('badge.good')
+                             : I18n.t('badge.need_improve');
+    // เหรียญ 3 อันดับแรกเฉพาะเมื่อมีของเทียบกันจริง (2 ตัวขึ้นไป)
+    const medal = (items.length > 1 && idx < 3) ? `m${idx + 1}` : '';
+    // n = จำนวนครั้งที่ตรวจ — บอกว่าคะแนนนี้มาจากกี่ครั้ง
+    const meta = item.n ? `${I18n.t('rank.from')} ${item.n} ${I18n.t('rank.times')}` : '';
+
     return `
-    <div class="ranking-item">
-      <div class="rank-number rank-${idx+1}">${idx+1}</div>
-      <div class="rank-bar-wrap">
-        <div class="rank-name">${escHtml(item[nameField] || '-')}</div>
-        <div class="rank-bar">
-          <div class="rank-bar-fill" style="width:${Math.min(item.avgScore, 100)}%;
-               background:${band>=90?'var(--excellent)':band>=75?'var(--warning)':'var(--danger)'}">
-          </div>
+    <div class="rk-row">
+      <div class="rk-pos ${medal}">${idx + 1}</div>
+      <div class="rk-mid">
+        <div class="rk-name">${escHtml(item[nameField] || '-')}</div>
+        ${meta ? `<div class="rk-meta">${escHtml(meta)}</div>` : ''}
+        <div class="rk-track">
+          <div class="rk-fill" style="width:${Math.max(Math.min(item.avgScore, 100), 2)}%;background:${color}"></div>
         </div>
       </div>
-      <div class="rank-score ${band>=90?'text-success':band>=75?'text-warning':'text-danger'}">
-        ${item.avgScore}%
+      <div class="rk-val">
+        <div class="rk-pct" style="color:${color}">${item.avgScore}%</div>
+        <div class="rk-band" style="color:${color}">${escHtml(label)}</div>
       </div>
-    </div>
-  `;
+    </div>`;
   }).join('');
-}
-
-function renderMonthlyTrend(containerId, data) {
-  const container = document.getElementById(containerId);
-  if (!container || !data.length) return;
-
-  const max = Math.max(...data.map(d => d.avgScore), 100);
-
-  container.innerHTML = `
-    <div style="display:flex;align-items:flex-end;gap:8px;height:120px;padding:8px 0">
-      ${data.map(d => { const band = (d.avgScoreRaw != null ? d.avgScoreRaw : d.avgScore); return `
-        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div style="font-size:0.7rem;font-weight:700;color:${band>=90?'var(--excellent)':band>=75?'#c9a000':'var(--danger)'}">${d.avgScore}%</div>
-          <div style="width:100%;background:${band>=90?'var(--excellent)':band>=75?'var(--warning)':'var(--danger)'};
-                      border-radius:4px 4px 0 0;height:${(d.avgScore/max)*90}px;
-                      transition:height 0.8s ease"></div>
-          <div style="font-size:0.65rem;color:var(--gray-600);white-space:nowrap">${d.month.slice(5)}</div>
-        </div>
-      `; }).join('')}
-    </div>
-  `;
 }
 
 // ============================================================
@@ -2618,6 +2917,20 @@ function renderMonthlyTrend(containerId, data) {
 function setEl(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+/**
+ * อนุญาตเฉพาะ URL ที่ปลอดภัยสำหรับใส่ใน href/src
+ * กัน javascript: / data: / vbscript: ที่อาจถูกเขียนลง DB (photo_urls) แล้วยิง XSS
+ * คืน '' ถ้าไม่ผ่าน → ฝั่งเรียกใช้ filter ทิ้ง
+ */
+function safeUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return '';
+  // อนุญาต absolute http(s) และ path ภายในเว็บเดียวกัน
+  if (/^https?:\/\//i.test(u)) return u;
+  if (/^\/[^/\\]/.test(u) || /^[\w.-]+\.(?:jpe?g|png|webp|gif)(?:\?.*)?$/i.test(u)) return u;
+  return '';
 }
 
 /** Escape HTML สำหรับ text content */
