@@ -666,6 +666,9 @@ a:hover{color:var(--primary-dark)}
 .asg-chev.open{transform:rotate(90deg)}
 .asg-aud-name{font-weight:700;font-size:.845rem;flex:1;min-width:0}
 .asg-aud-meta{font-size:.69rem;color:var(--gray-600)}
+/* กลุ่ม "คะแนนที่ให้" — มี label กำกับกัน เข้าใจผิดว่าเป็นคะแนนของพื้นที่ */
+.asg-give{flex-shrink:0;text-align:center;line-height:1.15}
+.asg-give-lb{font-size:.58rem;color:var(--gray-500);font-weight:600;margin-bottom:2px;white-space:nowrap}
 .asg-pill{padding:4px 9px;border-radius:999px;font-size:.69rem;font-weight:700;white-space:nowrap}
 .asg-pill.ok{background:var(--green-bg);color:var(--excellent)}
 .asg-pill.warn{background:var(--amber-bg);color:var(--warning)}

@@ -186,14 +186,30 @@ const SBH = {
     return { success:true };
   },
 
-  /** ข้อมูลสำหรับหน้า "ตารางตรวจ" — RLS จำกัดขอบเขตให้เอง (admin เห็นทุกคน / auditor เห็นของตัวเอง) */
+  /**
+   * ข้อมูลสำหรับหน้า "ตารางตรวจ"
+   *
+   * ขอบเขตข้อมูล:
+   *   • schedules   → RLS `schedules_select` จำกัดให้เอง (auditor เห็นเฉพาะที่ตัวเองถูกมอบหมาย)
+   *   • audit_headers → RLS `headers_select` เปิดให้ทุกคนที่ล็อกอิน (เจตนา: KPI ภาพรวมบริษัท
+   *     ที่หน้า home/dashboard) → **ต้องกรองเองที่นี่** ไม่งั้น auditor เห็นคะแนนคนอื่น
+   *
+   * ⚠️ การกรองนี้เป็นระดับ UI ไม่ใช่ security control
+   *    auditor ที่รู้เทคนิคยังเรียก _sb.from('audit_headers').select('*') เห็นได้
+   *    ถ้าต้องการบังคับจริง ต้องแก้ RLS + ทำ view สำหรับ KPI รวม (ดู work log 4 ส.ค.)
+   */
   async getAssignmentAnalytics() {
-    const [{ data:scheds }, { data:hdrs }, { data:profs }, { data:plants }] = await Promise.all([
+    const [{ data:scheds }, { data:hdrs }, { data:profs }, { data:plants }, prof] = await Promise.all([
       _sb.from('schedules').select('*, areas(area_name, area_type), plants(plant_name)'),
       _sb.from('audit_headers').select('auditor_id, plant_id, area_id, percent, audit_date').neq('status','pending'),
       _sb.from('profiles').select('id, name'),
       _sb.from('plants').select('plant_id, plant_name').eq('status','active').order('plant_id'),
+      _currentProfile(),
     ]);
+    const isStaff = !!(prof && ['admin','manager'].includes(prof.role));
+    // auditor / area_manager → เห็นผลการตรวจของตัวเองเท่านั้น
+    const myHdrs = isStaff ? (hdrs || []) : (hdrs || []).filter(h => prof && h.auditor_id === prof.id);
+
     const nameById = {}; (profs||[]).forEach(p => { nameById[p.id] = p.name; });
     const today = new Date().toISOString().slice(0,10);
     const schedules = (scheds||[]).map(s => ({
@@ -210,11 +226,11 @@ const SBH = {
       Completed:   s.status === 'completed',
       Overdue:     s.status !== 'completed' && s.audit_date && s.audit_date < today,
     }));
-    const headers = (hdrs||[]).map(h => ({
+    const headers = myHdrs.map(h => ({
       Auditor_ID:h.auditor_id, Plant_ID:h.plant_id, Area_ID:h.area_id,
       Percent:Number(h.percent)||0, Date:h.audit_date
     }));
-    return { success:true, schedules, headers,
+    return { success:true, schedules, headers, isStaff,
       plants:(plants||[]).map(p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name })) };
   },
 
@@ -4092,12 +4108,33 @@ function renderAssign() {
   setEl('asgProgPct', prog + '%');
   const fill = document.getElementById('asgProgFill'); if (fill) fill.style.width = prog + '%';
 
-  // คะแนนที่ให้ ต่อ (ผู้ตรวจ+พื้นที่) เอาล่าสุด + คะแนนเฉลี่ยต่อผู้ตรวจ (ในขอบเขตโรงงาน)
-  const scoreLU = {}, scoresByAud = {};
-  data.headers.filter(h => !plantF || h.Plant_ID === plantF).forEach(h => {
+  // คะแนนที่ผู้ตรวจ "ให้" — ต่อคู่ (ผู้ตรวจ + พื้นที่) เอาครั้งล่าสุด
+  //
+  // ⚠️ ขอบเขตต้องตรงกับ rows ที่แสดงบนการ์ด ไม่งั้นตัวเลขขัดกันเอง
+  //    (เคยมีบั๊ก: การ์ดโชว์ "1 พื้นที่ ได้ 100%" แต่ pill โชว์ 94%
+  //     เพราะ pill เฉลี่ยรวม audit จากรอบอื่นที่ไม่ได้แสดง)
+  //
+  // audit_headers ไม่มีคอลัมน์ audit_round → กรองตามรอบตรง ๆ ไม่ได้
+  // จึงจับคู่ผ่าน (ผู้ตรวจ|พื้นที่) ที่ปรากฏใน rows แทน
+  const inScope = new Set();
+  rows.forEach(s => (s.Auditor_IDs || []).forEach(aid => {
+    if (aid) inScope.add(aid + '|' + s.Area_ID);
+  }));
+
+  const scoreLU = {};
+  data.headers.forEach(h => {
     const k = h.Auditor_ID + '|' + h.Area_ID;
+    if (!inScope.has(k)) return;                       // นอกขอบเขตที่แสดง → ไม่นับ
     if (!scoreLU[k] || (h.Date || '') > (scoreLU[k].date || '')) scoreLU[k] = { pct:h.Percent, date:h.Date };
-    (scoresByAud[h.Auditor_ID] = scoresByAud[h.Auditor_ID] || []).push(h.Percent);
+  });
+
+  // เฉลี่ยจาก "ค่าที่แสดงจริง" (ครั้งล่าสุดของแต่ละพื้นที่)
+  // → เลขบน pill สอดคล้องกับ badge ข้างในเสมอ
+  const scoresByAud = {};
+  Object.entries(scoreLU).forEach(([k, v]) => {
+    // key = 'auditorUUID|areaId' — UUID ไม่มี '|' จึงใช้ indexOf (ปลอดภัยแม้ area_id มี '|')
+    const aid = k.slice(0, k.indexOf('|'));
+    (scoresByAud[aid] = scoresByAud[aid] || []).push(v.pct);
   });
 
   // group schedules ตามผู้ตรวจ (schedule อาจมีหลายคน)
@@ -4117,12 +4154,18 @@ function renderAssign() {
   const cont = document.getElementById('asgAuditors');
   const hint = document.getElementById('asgHint');
   if (!cont) return;
+
+  // auditor เห็นเฉพาะงาน/ผลตรวจของตัวเอง → เปลี่ยนหัวข้อให้ตรงบริบท
+  // และซ่อนคำอธิบาย "ความเข้มงวด" ที่มีความหมายเฉพาะเวลาเทียบผู้ตรวจหลายคน
+  const isStaff = !!(data && data.isStaff);
+  setEl('asgAudTitle', isStaff ? 'รายผู้ตรวจ' : 'งานของฉัน');
+
   if (!auditors.length) {
     cont.innerHTML = `<p class="text-muted text-center" style="padding:16px 0">ยังไม่มีงานที่มอบหมายในเงื่อนไขนี้</p>`;
     if (hint) hint.style.display = 'none';
     return;
   }
-  if (hint) hint.style.display = 'block';
+  if (hint) hint.style.display = isStaff ? 'block' : 'none';
 
   const cls = p => p==null ? 'muted' : (p>=90 ? 'ok' : p>=75 ? 'warn' : 'danger');
   cont.innerHTML = auditors.map((a, idx) => {
@@ -4145,7 +4188,10 @@ function renderAssign() {
             <div class="asg-aud-name">${escHtml(a.name)}</div>
             <div class="asg-aud-meta">${a.total} พื้นที่ · เสร็จ ${a.done}/${a.total}</div>
           </div>
-          <span class="asg-pill ${cls(a.avg)}">${a.avg==null ? '—' : a.avg + '%'}</span>
+          <div class="asg-give">
+            <div class="asg-give-lb">คะแนนที่ให้</div>
+            <span class="asg-pill ${cls(a.avg)}">${a.avg==null ? '—' : a.avg + '%'}</span>
+          </div>
           <div class="asg-mini"><div style="width:${a.prog}%"></div></div>
         </div>
         <div class="asg-detail" id="asgdet-${idx}">${detail}</div>

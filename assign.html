@@ -6,7 +6,7 @@
   <title>ตารางตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=34">
+  <link rel="stylesheet" href="css/style.css?v=36">
 </head>
 <body>
 <div id="loadingOverlay" class="loading-overlay">
@@ -54,7 +54,7 @@
   <!-- Per-auditor -->
   <div class="chart-container">
     <div class="chart-title">
-      <i class="bi bi-people"></i> รายผู้ตรวจ
+      <i class="bi bi-people"></i> <span id="asgAudTitle">รายผู้ตรวจ</span>
       <span style="font-weight:400;color:var(--gray-600);font-size:0.72rem">— แตะชื่อเพื่อดูพื้นที่ทั้งหมด</span>
     </div>
     <div id="asgAuditors">
@@ -63,7 +63,9 @@
       <div class="skeleton" style="height:44px;border-radius:8px"></div>
     </div>
     <div id="asgHint" style="font-size:0.72rem;color:var(--gray-600);margin-top:10px;line-height:1.5;display:none">
-      <i class="bi bi-info-circle"></i> คะแนนเฉลี่ยที่ให้ = ตัวชี้ "ความเข้มงวด" ของผู้ตรวจ — สูง/ต่ำกว่าค่ากลางมากอาจต้องสอบเทียบมาตรฐาน
+      <i class="bi bi-info-circle"></i>
+      <b>คะแนนที่ให้</b> = คะแนนเฉลี่ยที่ผู้ตรวจคนนั้นให้กับพื้นที่ <u>ที่แสดงอยู่</u>
+      (ไม่ใช่ผลงานของผู้ตรวจ) — ใช้ดู "ความเข้มงวด" ถ้าสูง/ต่ำกว่าค่ากลางมากอาจต้องสอบเทียบมาตรฐานกัน
     </div>
   </div>
 
@@ -77,6 +79,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=34"></script>
+<script src="js/app.js?v=36"></script>
 </body>
 </html>
