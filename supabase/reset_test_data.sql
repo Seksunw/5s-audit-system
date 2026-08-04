@@ -21,6 +21,20 @@ create table if not exists public.audit_details_backup as table public.audit_det
 create table if not exists public.schedules_backup     as table public.schedules;
 create table if not exists public.audit_logs_backup    as table public.audit_logs;
 
+-- ⚠️ ปิดตารางสำรองไม่ให้เข้าถึงผ่าน API — ห้ามลืม!
+-- Supabase ตั้ง ALTER DEFAULT PRIVILEGES ให้ตารางใหม่ใน public grant แก่ anon/authenticated
+-- อัตโนมัติ และ RLS ปิดโดยปริยาย → ถ้าไม่ล็อก ผู้ใช้ที่ล็อกอินคนไหนก็อ่านผลตรวจ
+-- ทั้งบริษัทจากตารางสำรองได้ (bypass RLS ของตารางจริงทั้งหมด)
+-- การกู้คืนทำผ่าน SQL Editor (role postgres bypass RLS) จึงไม่กระทบ
+revoke all on public.audit_headers_backup from anon, authenticated;
+revoke all on public.audit_details_backup from anon, authenticated;
+revoke all on public.schedules_backup     from anon, authenticated;
+revoke all on public.audit_logs_backup    from anon, authenticated;
+alter table public.audit_headers_backup enable row level security;
+alter table public.audit_details_backup enable row level security;
+alter table public.schedules_backup     enable row level security;
+alter table public.audit_logs_backup    enable row level security;
+
 -- (ถ้าเคยสำรองไว้แล้วและอยากเขียนทับด้วยข้อมูลล่าสุด ให้ลบ backup เก่าก่อน:)
 --   drop table if exists public.audit_headers_backup, public.audit_details_backup,
 --                        public.schedules_backup, public.audit_logs_backup;

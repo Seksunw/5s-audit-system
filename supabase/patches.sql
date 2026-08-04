@@ -174,6 +174,18 @@ begin
   create table public.audit_details_backup as table public.audit_details;
   create table public.schedules_backup     as table public.schedules;
 
+  -- ⚠️ ปิดตารางสำรองไม่ให้เข้าถึงผ่าน API — สำคัญมาก
+  -- Supabase ตั้ง ALTER DEFAULT PRIVILEGES ให้ตารางใหม่ใน public grant ให้ anon/authenticated
+  -- อัตโนมัติ → ถ้าไม่ revoke ผู้ใช้ที่ล็อกอินคนไหนก็อ่านผลตรวจทั้งบริษัทจากตารางสำรองได้
+  -- (bypass RLS ของตารางจริง) · enable RLS โดยไม่มี policy = ล็อกตาย เข้าถึงผ่าน API ไม่ได้เลย
+  -- การกู้คืนทำผ่าน SQL Editor (รันเป็น role postgres ซึ่ง bypass RLS) จึงไม่กระทบ
+  revoke all on public.audit_headers_backup from anon, authenticated;
+  revoke all on public.audit_details_backup from anon, authenticated;
+  revoke all on public.schedules_backup     from anon, authenticated;
+  alter table public.audit_headers_backup enable row level security;
+  alter table public.audit_details_backup enable row level security;
+  alter table public.schedules_backup     enable row level security;
+
   -- ลบ (truncate ไม่ปลุก trigger log)
   truncate table public.audit_details, public.audit_headers, public.schedules restart identity cascade;
 
@@ -216,3 +228,68 @@ drop policy if exists profiles_select_self on public.profiles;
 drop policy if exists profiles_select_all on public.profiles;
 create policy profiles_select_all on public.profiles
   for select using (auth.uid() is not null);
+
+
+-- =====================================================================
+-- ส่วน F: ปิดช่องตารางสำรอง *_backup ไม่ให้เข้าถึงผ่าน API
+-- =====================================================================
+-- ที่มา: รายงานประเมินความปลอดภัย 3 ส.ค. 2026
+--
+-- ปัญหา: `create table X_backup as table X` สร้างตารางใหม่ใน schema public
+--   ซึ่ง Supabase ตั้ง ALTER DEFAULT PRIVILEGES ให้ grant แก่ anon/authenticated อัตโนมัติ
+--   และ RLS ของตารางใหม่ "ปิด" โดยปริยาย
+--   → ผู้ใช้ที่ล็อกอินคนไหนก็ SELECT ผลตรวจทั้งบริษัทจากตารางสำรองได้
+--     (bypass RLS ทั้งหมดที่ตั้งไว้บน audit_headers / audit_details / schedules)
+--
+-- แก้ 2 ที่:
+--   1. ในตัวฟังก์ชัน admin_reset_data() (ส่วน D) — ล็อกทันทีหลังสร้าง
+--   2. บล็อกด้านล่าง — ล็อกตารางสำรองที่ "มีอยู่แล้ว" เผื่อเคยรันเวอร์ชันเก่า
+--      หรือเคยรัน reset_test_data.sql มาก่อน
+--
+-- ทำไม enable RLS โดยไม่สร้าง policy: ตารางสำรองมีไว้กู้คืนผ่าน SQL Editor เท่านั้น
+--   ไม่มีหน้าไหนในแอปอ่าน → ล็อกตายคือ least privilege ที่ถูกต้อง
+--   SQL Editor รันเป็น role postgres ซึ่ง bypass RLS จึงกู้คืนได้ปกติ
+--
+-- รันซ้ำได้ 100%
+-- =====================================================================
+
+do $$
+declare
+  t record;
+  n int := 0;
+begin
+  for t in
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename like '%\_backup'      -- escape _ เพราะเป็น wildcard ใน LIKE
+    order by tablename
+  loop
+    execute format('revoke all on public.%I from anon, authenticated', t.tablename);
+    execute format('alter table public.%I enable row level security',  t.tablename);
+    n := n + 1;
+    raise notice 'ล็อกตารางสำรอง: public.%', t.tablename;
+  end loop;
+
+  if n = 0 then
+    raise notice 'ไม่พบตาราง *_backup — ยังไม่เคยรีเซ็ตข้อมูล (ปกติ)';
+  else
+    raise notice 'ล็อกเสร็จ % ตาราง', n;
+  end if;
+end $$;
+
+
+-- ---------------------------------------------------------------------
+-- ตรวจผล: ตารางสำรองทุกตัวต้อง rls=true และ authenticated ต้องไม่มีสิทธิ์
+-- ---------------------------------------------------------------------
+-- select t.tablename,
+--        t.rowsecurity as rls,
+--        coalesce(string_agg(g.privilege_type, ',' order by g.privilege_type), '— ไม่มีสิทธิ์ ✓') as authenticated_grants
+--   from pg_tables t
+--   left join information_schema.role_table_grants g
+--          on g.table_schema = t.schemaname
+--         and g.table_name   = t.tablename
+--         and g.grantee      = 'authenticated'
+--  where t.schemaname = 'public' and t.tablename like '%\_backup'
+--  group by t.tablename, t.rowsecurity
+--  order by t.tablename;

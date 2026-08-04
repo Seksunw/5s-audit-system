@@ -348,6 +348,18 @@ begin
   create table public.audit_details_backup as table public.audit_details;
   create table public.schedules_backup     as table public.schedules;
 
+  -- ⚠️ ปิดตารางสำรองไม่ให้เข้าถึงผ่าน API — ห้ามลบบล็อกนี้
+  -- Supabase ตั้ง ALTER DEFAULT PRIVILEGES ให้ตารางใหม่ใน public grant แก่ anon/authenticated
+  -- อัตโนมัติ และ RLS ปิดโดยปริยาย → ถ้าไม่ล็อก ผู้ใช้ที่ล็อกอินคนไหนก็อ่านผลตรวจทั้งบริษัท
+  -- จากตารางสำรองได้ (bypass RLS ของ audit_headers/audit_details/schedules ทั้งหมด)
+  -- enable RLS โดยไม่มี policy = ล็อกตาย · กู้คืนผ่าน SQL Editor (role postgres) ได้ปกติ
+  revoke all on public.audit_headers_backup from anon, authenticated;
+  revoke all on public.audit_details_backup from anon, authenticated;
+  revoke all on public.schedules_backup     from anon, authenticated;
+  alter table public.audit_headers_backup enable row level security;
+  alter table public.audit_details_backup enable row level security;
+  alter table public.schedules_backup     enable row level security;
+
   truncate table public.audit_details, public.audit_headers, public.schedules restart identity cascade;
   delete from storage.objects where bucket_id = 'audit-photos';
 
