@@ -333,7 +333,10 @@ declare
   v_h int; v_d int; v_s int;
   v_uid uuid := auth.uid();
 begin
-  if coalesce(public.auth_role(), '') <> 'admin' then
+  -- ⚠️ ต้อง cast เป็น text ก่อนเทียบ — auth_role() คืน enum user_role
+  -- coalesce(auth_role(), '') จะพัง เพราะ '' ไม่ใช่ค่าที่ถูกต้องของ enum
+  -- error: invalid input value for enum user_role: ""
+  if coalesce(public.auth_role()::text, '') <> 'admin' then
     raise exception 'permission denied: admin only';
   end if;
 
@@ -361,7 +364,11 @@ begin
   alter table public.schedules_backup     enable row level security;
 
   truncate table public.audit_details, public.audit_headers, public.schedules restart identity cascade;
-  delete from storage.objects where bucket_id = 'audit-photos';
+
+  -- ⚠️ ไม่ลบรูปที่นี่ — Supabase บล็อก DELETE ตรงบน storage.objects
+  --    (Direct deletion from storage tables is not allowed. Use the Storage API instead.)
+  --    ถ้าใส่ไว้จะ raise แล้ว rollback ทั้ง transaction → รีเซ็ตไม่สำเร็จ
+  --    ลบรูปทำที่ฝั่ง client ผ่าน Storage API ก่อนเรียกฟังก์ชันนี้ (ดู confirmReset() ใน js/app.js)
 
   insert into public.audit_logs(user_id, action, entity, detail)
   values (v_uid, 'RESET', 'system',

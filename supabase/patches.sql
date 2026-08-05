@@ -158,7 +158,12 @@ declare
   v_h int; v_d int; v_s int;
   v_uid uuid := auth.uid();
 begin
-  if coalesce(public.auth_role(), '') <> 'admin' then
+  -- ⚠️ ต้อง cast เป็น text ก่อนเทียบ
+  -- auth_role() คืนชนิด user_role (enum) · เขียน coalesce(auth_role(), '') จะพัง
+  -- เพราะ Postgres ต้องแปลง '' ให้เป็น user_role เพื่อให้ชนิดตรงกับ argument แรก
+  -- แต่ '' ไม่ใช่ค่าที่ถูกต้องของ enum → error: invalid input value for enum user_role: ""
+  -- (บั๊กนี้ทำให้ปุ่มรีเซ็ตไม่เคยทำงานได้เลย — พบ 5 ส.ค. 2026)
+  if coalesce(public.auth_role()::text, '') <> 'admin' then
     raise exception 'permission denied: admin only';
   end if;
 
@@ -189,8 +194,12 @@ begin
   -- ลบ (truncate ไม่ปลุก trigger log)
   truncate table public.audit_details, public.audit_headers, public.schedules restart identity cascade;
 
-  -- ลบรูปใน Storage
-  delete from storage.objects where bucket_id = 'audit-photos';
+  -- ⚠️ ไม่ลบรูปที่นี่ — Supabase บล็อก DELETE ตรงบน storage.objects แล้ว
+  --    error: Direct deletion from storage tables is not allowed. Use the Storage API instead.
+  --    (พบ 5 ส.ค. 2026 · ถ้าใส่ไว้ ฟังก์ชันจะ raise แล้ว rollback ทั้ง transaction
+  --     ทำให้รีเซ็ตไม่สำเร็จเลย)
+  --    การลบรูปย้ายไปทำที่ฝั่ง client ผ่าน Storage API ก่อนเรียกฟังก์ชันนี้
+  --    ดู confirmReset() ใน js/app.js
 
   -- บันทึกการรีเซ็ตลง audit_logs (เก็บ log ไว้)
   insert into public.audit_logs(user_id, action, entity, detail)

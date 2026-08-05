@@ -63,7 +63,17 @@ truncate table public.schedules restart identity;
 truncate table public.audit_logs restart identity;
 
 -- 4) รูปภาพการตรวจใน Storage (bucket: audit-photos)
-delete from storage.objects where bucket_id = 'audit-photos';
+-- ⚠️ ลบทาง SQL ไม่ได้แล้ว — Supabase บล็อก DELETE ตรงบน storage.objects
+--    error: Direct deletion from storage tables is not allowed. Use the Storage API instead.
+--    (พบ 5 ส.ค. 2026)
+--
+-- ลบรูปด้วยวิธีใดวิธีหนึ่ง:
+--   ก) Supabase Dashboard → Storage → audit-photos → เลือกไฟล์ → Delete
+--   ข) ใช้ปุ่ม "รีเซ็ตข้อมูลระบบ" ในแอป (เรียก SBH.purgeAuditPhotos() ผ่าน Storage API)
+--   ค) รันใน DevTools Console ตอนล็อกอินเป็น admin:
+--        await SBH.purgeAuditPhotos()
+--
+-- delete from storage.objects where bucket_id = 'audit-photos';   -- ❌ ใช้ไม่ได้
 
 
 -- =====================================================================

@@ -251,10 +251,53 @@ const SBH = {
   },
 
   /** รีเซ็ตข้อมูล (admin) — เรียก RPC ที่เช็คสิทธิ์ + สำรอง + ลบ ฝั่ง DB */
+  /**
+   * ลบรูปทั้ง bucket ผ่าน Storage API
+   *
+   * ⚠️ ทำที่ client ไม่ใช่ใน SQL — Supabase บล็อก `delete from storage.objects` แล้ว
+   *    (Direct deletion from storage tables is not allowed. Use the Storage API instead.)
+   *    ถ้าใส่ใน admin_reset_data() จะ raise แล้ว rollback ทั้ง transaction
+   *
+   * เดินทีละโฟลเดอร์เพราะ list() คืนไฟล์เฉพาะชั้นเดียว (path จริงคือ audit/xxx.jpg)
+   */
+  async purgeAuditPhotos() {
+    const B = CONFIG.STORAGE_BUCKET;
+    let removed = 0, failed = 0;
+
+    const walk = async (prefix) => {
+      const { data:items, error } = await _sb.storage.from(B)
+        .list(prefix, { limit: 1000, sortBy: { column:'name', order:'asc' } });
+      if (error) { failed++; return; }
+
+      const files = [], dirs = [];
+      (items || []).forEach(it => {
+        // โฟลเดอร์ไม่มี metadata / id
+        if (it.id === null || it.metadata == null) dirs.push(it.name);
+        else files.push(prefix ? `${prefix}/${it.name}` : it.name);
+      });
+
+      // ลบเป็นชุดละ 100 กัน payload ใหญ่เกิน
+      for (let i = 0; i < files.length; i += 100) {
+        const chunk = files.slice(i, i + 100);
+        const { error: rmErr } = await _sb.storage.from(B).remove(chunk);
+        if (rmErr) failed += chunk.length; else removed += chunk.length;
+      }
+      for (const d of dirs) await walk(prefix ? `${prefix}/${d}` : d);
+    };
+
+    await walk('');
+    return { removed, failed };
+  },
+
   async resetData() {
+    // 1) ลบรูปก่อน (ผ่าน Storage API) — ถ้าล้มก็ยังรีเซ็ต DB ต่อได้ แค่รายงานจำนวน
+    let photos = { removed: 0, failed: 0 };
+    try { photos = await SBH.purgeAuditPhotos(); } catch(_) {}
+
+    // 2) รีเซ็ตตารางใน DB (สำรองลง *_backup ให้เอง)
     const { data, error } = await _sb.rpc('admin_reset_data');
-    if (error) return { success:false, error:error.message };
-    return { success:true, ...(data || {}) };
+    if (error) return { success:false, error:error.message, photos };
+    return { success:true, ...(data || {}), photos };
   },
 
   // ---- History / detail ----
@@ -3343,7 +3386,10 @@ async function confirmReset() {
     UI.hideLoading();
     if (res.success) {
       closeResetModal();
-      UI.toast(`รีเซ็ตแล้ว: ประวัติ ${res.headers||0} · มอบหมาย ${res.schedules||0} (สำรองไว้ที่ *_backup)`, 'success', 6000);
+      const ph = res.photos || {};
+      const phTxt = ph.failed ? ` · รูป ${ph.removed||0} (ลบไม่ได้ ${ph.failed})`
+                              : (ph.removed ? ` · รูป ${ph.removed}` : '');
+      UI.toast(`รีเซ็ตแล้ว: ประวัติ ${res.headers||0} · มอบหมาย ${res.schedules||0}${phTxt} (สำรองไว้ที่ *_backup)`, 'success', 6000);
     } else {
       if (err) err.textContent = res.error || 'รีเซ็ตไม่สำเร็จ';
     }
