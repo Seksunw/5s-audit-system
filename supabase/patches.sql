@@ -604,7 +604,7 @@ begin
    where sp.schedule_id = v_sid;
 
   update public.schedules
-     set status = case when coalesce(v_done, false) then 'completed' else 'pending' end
+     set status = (case when coalesce(v_done, false) then 'completed' else 'pending' end)::schedule_status
    where schedule_id = v_sid
      and status is distinct from
          (case when coalesce(v_done, false) then 'completed' else 'pending' end)::schedule_status;

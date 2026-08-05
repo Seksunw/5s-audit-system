@@ -394,72 +394,82 @@ const SBH = {
    *   1. ไม่มีทางตัน — เลือกแล้วต้องมีข้อมูลให้ดูเสมอ
    *   2. รวมพื้นที่ที่ตั้ง inactive ไปแล้วแต่มีประวัติการตรวจ (ดูผลเก่าได้)
    */
-  async getAuditedAreas() {
-    const [{ data:heads, error }, { data:areas }, { data:plants }] = await Promise.all([
-      _sb.from('audit_headers').select('area_id, plant_id').neq('status','pending'),
-      _sb.from('areas').select('area_id, area_name, plant_id, area_type, status'),
-      _sb.from('plants').select('plant_id, plant_name'),
-    ]);
+  /**
+   * "พื้นที่ต้องปรับปรุง" — ดึงข้อที่ตก (คะแนน 0-1) ของทุกพื้นที่ในรอบที่เลือก
+   *
+   * แทน getAuditedAreas + getAreaAudits เดิม (ที่ต้องไล่ 3 dropdown เจาะเข้าไป)
+   * → เปิดมาเห็นทุกจุดที่ตกเลย ไม่ต้องหา
+   *
+   * @param {string} round  กรองตามรอบ ('' = ทุกรอบ) — ใช้ค่าเดียวกับ dropdown ของ Ranking
+   *
+   * ทำได้เพราะ ส่วน H — audit_headers มี audit_round แล้ว
+   */
+  async getImprovementItems({ round } = {}) {
+    let hq = _sb.from('audit_headers')
+      .select('audit_id, area_id, plant_id, audit_date, audit_round, auditor_id')
+      .neq('status', 'pending');
+    if (round) hq = hq.eq('audit_round', round);
+    const { data:heads, error } = await hq;
     if (error) return { success:false, error:error.message };
 
     const H = heads || [];
-    // นับจำนวนครั้งที่ตรวจต่อพื้นที่ + จำ plant_id จาก header (เผื่อพื้นที่ถูกลบจากตาราง areas)
-    const cnt = {}, pidFromHead = {};
-    H.forEach(h => {
-      cnt[h.area_id] = (cnt[h.area_id] || 0) + 1;
-      if (!pidFromHead[h.area_id]) pidFromHead[h.area_id] = h.plant_id;
-    });
+    if (!H.length) return { success:true, items:[], areas:[] };
 
-    const areaById  = {}; (areas  || []).forEach(a => { areaById[a.area_id] = a; });
+    const auditIds = H.map(h => h.audit_id);
+    const headById = {}; H.forEach(h => { headById[h.audit_id] = h; });
+
+    // ดึงเฉพาะข้อที่ตก (0-1) ที่ไม่ได้ตัด N/A — ยิงทีเดียวทุก audit ในรอบ
+    const [{ data:dets, error:dErr }, { data:areas }, { data:plants }, { data:profs }] =
+      await Promise.all([
+        _sb.from('audit_details')
+          .select('audit_id, score, na, remark, photo_urls, criteria(question, category)')
+          .in('audit_id', auditIds).eq('na', false).lte('score', 1),
+        _sb.from('areas').select('area_id, area_name, status'),
+        _sb.from('plants').select('plant_id, plant_name'),
+        _sb.from('profiles').select('id, name'),
+      ]);
+    if (dErr) return { success:false, error:dErr.message };
+
+    const areaById  = {}; (areas  || []).forEach(a => { areaById[a.area_id]   = a; });
     const plantName = {}; (plants || []).forEach(p => { plantName[p.plant_id] = p.plant_name; });
+    const nameById  = {}; (profs  || []).forEach(p => { nameById[p.id]        = p.name; });
 
-    const list = Object.keys(cnt).map(aid => {
-      const a   = areaById[aid];
-      const pid = (a && a.plant_id) || pidFromHead[aid] || '';
+    const items = (dets || []).map(d => {
+      const h    = headById[d.audit_id] || {};
+      const a    = areaById[h.area_id];
+      const pid  = (a && a.plant_id) || h.plant_id || '';
       return {
-        Area_ID:    aid,
-        Area_Name:  (a && a.area_name) || aid,
-        Plant_ID:   pid,
-        Plant_Name: plantName[pid] || pid || '-',
-        Area_Type:  a ? (MAP.areaType[a.area_type] || a.area_type) : null,
-        Inactive:   a ? a.status !== 'active' : true,   // ไม่พบใน areas = ถือว่าเลิกใช้
-        Audits:     cnt[aid],
+        Audit_ID:   d.audit_id,
+        Area_ID:    h.area_id,
+        Area_Name:  (a && a.area_name) || h.area_id || '-',
+        Plant_ID:   h.plant_id,
+        Plant_Name: plantName[h.plant_id] || h.plant_id || '-',
+        Audit_Date: h.audit_date,
+        Audit_Round:h.audit_round || '',
+        Auditor:    nameById[h.auditor_id] || '-',
+        Score:      Number(d.score),
+        Category:   d.criteria && d.criteria.category,
+        Question:   (d.criteria && d.criteria.question) || '-',
+        Remark:     d.remark || '',
+        Photos:     (d.photo_urls || []).filter(Boolean),
       };
-    }).sort((x, y) => (x.Plant_Name || '').localeCompare(y.Plant_Name || '', 'th')
-                   || (x.Area_Name  || '').localeCompare(y.Area_Name  || '', 'th'));
+    }).sort((x, y) =>
+      x.Score - y.Score                                            // 0 ก่อน แล้ว 1
+      || (y.Audit_Date || '').localeCompare(x.Audit_Date || '')    // ใหม่ก่อน
+      || (x.Area_Name || '').localeCompare(y.Area_Name || '', 'th'));
 
-    // โรงงานที่มีข้อมูลจริงเท่านั้น (เรียงชื่อ)
-    const seen = new Set(), plantList = [];
-    list.forEach(r => {
-      if (r.Plant_ID && !seen.has(r.Plant_ID)) {
-        seen.add(r.Plant_ID);
-        plantList.push({ Plant_ID:r.Plant_ID, Plant_Name:r.Plant_Name });
+    // พื้นที่ที่ "มีข้อตก" ในรอบนี้ — ไว้ทำ dropdown กรอง (เรียงชื่อ)
+    const seen = new Set(), areaList = [];
+    items.forEach(it => {
+      if (it.Area_ID && !seen.has(it.Area_ID)) {
+        seen.add(it.Area_ID);
+        areaList.push({ Area_ID:it.Area_ID, Area_Name:it.Area_Name, Plant_Name:it.Plant_Name });
       }
     });
+    areaList.sort((x, y) => (x.Plant_Name||'').localeCompare(y.Plant_Name||'', 'th')
+                         || (x.Area_Name ||'').localeCompare(y.Area_Name ||'', 'th'));
 
-    return { success:true, areas:list, plants:plantList };
-  },
-
-  /**
-   * รายการตรวจของพื้นที่หนึ่ง เรียงวันใหม่→เก่า
-   * ใช้ในการ์ด "พื้นที่ต้องปรับปรุง" (dashboard) เพื่อให้เลือกครั้งที่ตรวจได้
-   */
-  async getAreaAudits({ areaId }) {
-    if (!areaId) return { success:true, data:[] };
-    const { data, error } = await _sb.from('audit_headers')
-      .select('audit_id, audit_date, percent, total_score, max_score, status, profiles(name)')
-      .eq('area_id', areaId).neq('status','pending')
-      .order('audit_date', { ascending:false }).limit(50);
-    if (error) return { success:false, error:error.message };
-    return { success:true, data:(data||[]).map(h => ({
-      Audit_ID:   h.audit_id,
-      Audit_Date: h.audit_date,
-      Percent:    Number(h.percent) || 0,
-      Total_Score:h.total_score,
-      Max_Score:  h.max_score,
-      Status:     MAP.auditStatus[h.status] || h.status,
-      Auditor:    (h.profiles && h.profiles.name) || '-',
-    })) };
+    return { success:true, items, areas:areaList };
   },
 
   async getAuditDetail({ auditId }) {
@@ -1074,6 +1084,12 @@ const TRANSLATIONS = {
     'rank.from':                 'จาก',
     'rank.times':                'ครั้ง',
     // Dashboard — พื้นที่ต้องปรับปรุง
+    'imp.hint':                  'ข้อที่ตก (0–1) ของทุกพื้นที่ในรอบที่เลือก · แตะแต่ละข้อเพื่อดูหมายเหตุและรูป',
+    'imp.all_areas':             '— ทุกพื้นที่ —',
+    'imp.cnt_fail':              'ข้อไม่ผ่าน',
+    'imp.cnt_weak':              'ข้อต้องเฝ้าระวัง',
+    'imp.no_in_area_t':          'พื้นที่นี้ผ่านหมด',
+    'imp.no_in_area_d':          'ไม่มีข้อที่ตกในพื้นที่ที่เลือก',
     'imp.title':                 'พื้นที่ต้องปรับปรุง',
     'imp.pick_plant':            'เลือกโรงงาน',
     'imp.pick_area':             'เลือกพื้นที่',
@@ -1538,6 +1554,12 @@ const TRANSLATIONS = {
     'rank.from':                 'from',
     'rank.times':                'audit(s)',
     // Dashboard — areas needing improvement
+    'imp.hint':                  'Failed items (0–1) across all areas in the selected round · tap an item for notes and photos',
+    'imp.all_areas':             '— All areas —',
+    'imp.cnt_fail':              'failed',
+    'imp.cnt_weak':              'to watch',
+    'imp.no_in_area_t':          'This area passed everything',
+    'imp.no_in_area_d':          'No failed items in the selected area',
     'imp.title':                 'Areas Needing Improvement',
     'imp.pick_plant':            'Select plant',
     'imp.pick_area':             'Select area',
@@ -3189,9 +3211,11 @@ function applyHistoryFilter() {
 // รอบที่เลือกอยู่บน Dashboard ('' = ทุกรอบ) — คงไว้ระหว่างกดรีเฟรช
 let _dashRound = '';
 
-/** เปลี่ยนรอบแล้วโหลด ranking ใหม่ (ส่วน H) */
+/** เปลี่ยนรอบ → โหลดใหม่ทั้ง Ranking และ "พื้นที่ต้องปรับปรุง" พร้อมกัน (ส่วน H)
+ *  รอบเป็น dropdown เดียวคุมทั้งหน้า → ไม่มีทางเลือกรอบไม่ตรงกันเอง */
 function dashRoundChange(v) {
   _dashRound = v || '';
+  _impAreaFilter = '';        // เปลี่ยนรอบ → รีเซ็ตตัวกรองพื้นที่
   initDashboard();
 }
 
@@ -3201,9 +3225,9 @@ async function initDashboard() {
 
   UI.showLoading(I18n.t('msg.loading_dashboard'));
   try {
-    const [res, audRes] = await Promise.all([
+    const [res, impRes] = await Promise.all([
       API.get('getDashboard', { round: _dashRound }),
-      API.get('getAuditedAreas', {}),      // เฉพาะที่มีผลตรวจจริง — ไม่มีทางตัน
+      API.get('getImprovementItems', { round: _dashRound }),
     ]);
     UI.hideLoading();
 
@@ -3229,10 +3253,11 @@ async function initDashboard() {
     // 2) Area Ranking — แสดงครบทุกพื้นที่ เพื่อหาจุดบกพร่องรายพื้นที่
     renderRanking('areaRanking', d.areaRanking || [], 'areaName', 100);
 
-    // 3) การ์ดพื้นที่ต้องปรับปรุง — โหลดรายการครั้งเดียว แล้วกรองในเครื่อง
-    _impAllAreas = (audRes.success && audRes.areas)  ? audRes.areas  : [];
-    _impPlants   = (audRes.success && audRes.plants) ? audRes.plants : [];
-    impFillPlants();
+    // 3) พื้นที่ต้องปรับปรุง — ข้อที่ตก (0-1) ของทุกพื้นที่ในรอบนี้ เห็นเลยไม่ต้องหา
+    _impItems = (impRes.success && impRes.items) ? impRes.items : [];
+    _impAreaList = (impRes.success && impRes.areas) ? impRes.areas : [];
+    impFillAreaFilter();
+    impRenderFeed();
 
   } catch(err) {
     UI.hideLoading();
@@ -3241,166 +3266,53 @@ async function initDashboard() {
 }
 
 // ============================================================
-// DASHBOARD — การ์ด "พื้นที่ต้องปรับปรุง"
-// เลือก โรงงาน → พื้นที่ → ครั้งที่ตรวจ → แสดงข้อที่ตก (0–1) + หมายเหตุ + รูป
+// DASHBOARD — "พื้นที่ต้องปรับปรุง"  (ส่วน H rework)
+//
+// เปิดมาเห็นข้อที่ตก (0-1) ของทุกพื้นที่ในรอบที่เลือกเลย — ไม่ต้องไล่ dropdown
+//   • รอบ: ใช้ dropdown เดียวกับ Ranking (dashRound) → เปลี่ยนที่เดียวขยับทั้งหน้า
+//   • area dropdown: ตัวกรองเสริม ('' = ทุกพื้นที่)
+//   • แต่ละข้อ: แตะแถวเพื่อกางดู comment + รูปย่อ · แตะรูปซูมเต็มจอ
 // ============================================================
-let _impPlants   = [];   // โรงงานที่มีผลตรวจ
-let _impAllAreas = [];   // ทุกพื้นที่ที่มีผลตรวจ (โหลดครั้งเดียว)
-let _impAreas    = [];   // พื้นที่ของโรงงานที่เลือก (กรองจาก _impAllAreas)
-let _impAudits   = [];
+let _impItems      = [];   // ข้อที่ตกทั้งหมดในรอบปัจจุบัน (จาก getImprovementItems)
+let _impAreaList   = [];   // พื้นที่ที่มีข้อตก (ไว้ทำ dropdown)
+let _impAreaFilter = '';   // area_id ที่กรองอยู่ ('' = ทุกพื้นที่)
 
-/** ใส่ตัวเลือกใน select แบบปลอดภัย (ไม่ใช้ innerHTML กับข้อมูลจาก DB) */
-function impSetOptions(selectId, placeholderKey, items, valueOf, labelOf) {
-  const sel = document.getElementById(selectId);
+/** ใส่ตัวเลือกพื้นที่ใน dropdown แบบปลอดภัย (textContent กัน XSS) */
+function impFillAreaFilter() {
+  const sel = document.getElementById('impArea');
   if (!sel) return;
   sel.textContent = '';
   const ph = document.createElement('option');
   ph.value = '';
-  ph.textContent = I18n.t(placeholderKey);
+  ph.textContent = I18n.t('imp.all_areas');
   sel.appendChild(ph);
-  items.forEach(it => {
+  _impAreaList.forEach(a => {
     const o = document.createElement('option');
-    o.value = valueOf(it);
-    o.textContent = labelOf(it);   // textContent = ปลอดภัยจาก XSS โดยธรรมชาติ
+    o.value = a.Area_ID;
+    o.textContent = `${a.Plant_Name} · ${a.Area_Name}`;
     sel.appendChild(o);
   });
-  sel.disabled = items.length === 0;
+  sel.value = _impAreaFilter;
+  sel.disabled = _impAreaList.length === 0;
 }
 
-function impFillPlants() {
-  impSetOptions('impPlant', 'imp.opt_plant', _impPlants,
-    p => p.Plant_ID, p => p.Plant_Name || p.Plant_ID);
-  const sel = document.getElementById('impPlant');
-  if (sel) sel.disabled = _impPlants.length === 0;
-
-  // ยังไม่มีผลตรวจในระบบเลย → บอกให้ชัด ไม่ปล่อยให้กดวนเปล่า ๆ
-  if (!_impPlants.length) impShowHint('imp.no_data_t', 'imp.no_data_d', 'bi-clipboard-x');
-
-  // มีโรงงานเดียว → เลือกให้เลย ลดคลิกบนมือถือ
-  else if (_impPlants.length === 1 && sel) {
-    sel.value = _impPlants[0].Plant_ID;
-    impPlantChange(sel.value);
-  }
+/** เปลี่ยนตัวกรองพื้นที่ — กรองในเครื่อง ไม่ยิง API ซ้ำ */
+function impAreaChange(areaId) {
+  _impAreaFilter = areaId || '';
+  impRenderFeed();
 }
 
-/** ป้ายกำกับพื้นที่ใน dropdown — ใส่จำนวนครั้งและวงเล็บถ้าเลิกใช้แล้ว */
-function impAreaLabel(a) {
-  const parts = [a.Area_Name || a.Area_ID];
-  if (a.Audits)  parts.push(`· ${a.Audits} ${I18n.t('rank.times')}`);
-  if (a.Inactive) parts.push(`(${I18n.t('imp.inactive')})`);
-  return parts.join(' ');
-}
-
-/** รีเซ็ต select ระดับล่างให้ว่างและปิดใช้งาน */
-function impResetBelow(level) {
-  if (level <= 2) {
-    _impAreas = [];
-    impSetOptions('impArea', 'imp.opt_area', [], () => '', () => '');
-  }
-  if (level <= 3) {
-    _impAudits = [];
-    impSetOptions('impAudit', 'imp.opt_audit', [], () => '', () => '');
-  }
-  impShowHint('imp.start_t', 'imp.start_d', 'bi-hand-index-thumb');
-}
-
-/** กรองในเครื่องจากรายการที่โหลดไว้แล้ว — ไม่ยิง API ซ้ำ ตอบสนองทันที */
-function impPlantChange(plantId) {
-  impResetBelow(2);
-  if (!plantId) return;
-
-  _impAreas = _impAllAreas.filter(a => a.Plant_ID === plantId);
-  impSetOptions('impArea', 'imp.opt_area', _impAreas, a => a.Area_ID, impAreaLabel);
-
-  // มีพื้นที่เดียว → เลือกให้เลย
-  if (_impAreas.length === 1) {
-    const sel = document.getElementById('impArea');
-    if (sel) { sel.value = _impAreas[0].Area_ID; impAreaChange(sel.value); }
-  }
-}
-
-async function impAreaChange(areaId) {
-  impResetBelow(3);
-  if (!areaId) return;
-
-  UI.showLoading(I18n.t('loading'));
-  try {
-    const res = await API.get('getAreaAudits', { areaId });
-    UI.hideLoading();
-    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
-    _impAudits = res.data || [];
-
-    if (!_impAudits.length) {
-      impShowHint('imp.no_audit_t', 'imp.no_audit_d', 'bi-clipboard-x');
-      return;
-    }
-    impSetOptions('impAudit', 'imp.opt_audit', _impAudits,
-      a => a.Audit_ID,
-      a => `${UI.formatDate(a.Audit_Date)} · ${a.Percent}%`);
-
-    // มีครั้งเดียว → เลือกให้เลย ลดจำนวนคลิกบนมือถือ
-    if (_impAudits.length === 1) {
-      const sel = document.getElementById('impAudit');
-      if (sel) { sel.value = _impAudits[0].Audit_ID; impAuditChange(sel.value); }
-    }
-  } catch(err) {
-    UI.hideLoading();
-    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
-  }
-}
-
-async function impAuditChange(auditId) {
-  if (!auditId) { impShowHint('imp.start_t', 'imp.start_d', 'bi-hand-index-thumb'); return; }
-
-  UI.showLoading(I18n.t('loading'));
-  try {
-    const res = await API.get('getAuditDetail', { auditId });
-    UI.hideLoading();
-    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
-    impRenderItems(res.header, res.details || []);
-  } catch(err) {
-    UI.hideLoading();
-    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
-  }
-}
-
-/** ข้อความชี้แนะ/ว่างเปล่าในกล่องผลลัพธ์ */
-function impShowHint(titleKey, descKey, icon, tone) {
-  const box = document.getElementById('impResult');
-  if (!box) return;
-  const color = tone === 'ok' ? 'var(--excellent)' : 'var(--gray-400)';
-  box.innerHTML = `
-    <div class="imp-empty">
-      <i class="bi ${escAttr(icon)}" style="color:${color}"></i>
-      <div class="imp-empty-t">${escHtml(I18n.t(titleKey))}</div>
-      <div class="imp-empty-d">${escHtml(I18n.t(descKey))}</div>
-    </div>`;
-}
-
-/** แสดงเฉพาะข้อที่ตก (คะแนน 0–1, ไม่นับข้อที่ตัด N/A) พร้อมหมายเหตุและรูป */
-function impRenderItems(header, details) {
+/** แสดงรายการข้อที่ตก (accordion) */
+function impRenderFeed() {
   const box = document.getElementById('impResult');
   if (!box) return;
 
-  const failed = details
-    .filter(d => !d.Na && d.Score != null && Number(d.Score) <= 1)
-    .sort((a, b) => Number(a.Score) - Number(b.Score));   // 0 ก่อน แล้ว 1
+  const items = _impAreaFilter
+    ? _impItems.filter(it => it.Area_ID === _impAreaFilter)
+    : _impItems;
 
-  const pct  = Number(header && header.Percent) || 0;
-  const band = pct >= 90 ? 'var(--excellent)' : pct >= 75 ? 'var(--warning)' : 'var(--danger)';
-
-  const summary = `
-    <div class="imp-summary">
-      <div class="imp-summary-pct" style="color:${band}">${pct}%</div>
-      <div class="imp-summary-txt">
-        ${escHtml(UI.statusTH(pct))}<br>
-        ${escHtml(I18n.t('imp.failed_count'))} <b>${failed.length}</b> ${escHtml(I18n.t('audit.answered_suffix'))}
-        · ${escHtml(I18n.t('imp.total_items'))} ${details.filter(d => !d.Na).length}
-      </div>
-    </div>`;
-
-  if (!failed.length) {
-    box.innerHTML = summary + `
+  if (!_impItems.length) {
+    box.innerHTML = `
       <div class="imp-empty">
         <i class="bi bi-patch-check-fill" style="color:var(--excellent)"></i>
         <div class="imp-empty-t">${escHtml(I18n.t('imp.perfect_t'))}</div>
@@ -3408,33 +3320,86 @@ function impRenderItems(header, details) {
       </div>`;
     return;
   }
+  if (!items.length) {
+    box.innerHTML = `
+      <div class="imp-empty">
+        <i class="bi bi-search" style="color:var(--gray-400)"></i>
+        <div class="imp-empty-t">${escHtml(I18n.t('imp.no_in_area_t'))}</div>
+        <div class="imp-empty-d">${escHtml(I18n.t('imp.no_in_area_d'))}</div>
+      </div>`;
+    return;
+  }
 
-  box.innerHTML = summary + failed.map(d => {
-    const s = Number(d.Score);
+  const n0 = items.filter(it => it.Score === 0).length;
+  const n1 = items.length - n0;
+  const summary = `
+    <div class="imp-count">
+      <span class="imp-count-0"><b>${n0}</b> ${escHtml(I18n.t('imp.cnt_fail'))}</span>
+      <span class="imp-count-1"><b>${n1}</b> ${escHtml(I18n.t('imp.cnt_weak'))}</span>
+    </div>`;
+
+  box.innerHTML = summary + items.map((it, idx) => {
+    const s   = it.Score;
     const cls = s === 0 ? 's0' : 's1';
     const scoreLabel = s === 0 ? I18n.t('audit.score_0') : I18n.t('audit.score_1');
+    const loc = [it.Area_Name, it.Plant_Name, it.Audit_Round].filter(Boolean).join(' · ');
 
-    const photos = String(d.Photo_URL || '')
-      .split(',').map(u => u.trim()).filter(Boolean)
-      .map(safeUrl).filter(Boolean)          // ตัด javascript:/data: ทิ้ง (ดู safeUrl)
-      .map(u => `<a href="${escAttr(u)}" target="_blank" rel="noopener noreferrer">
-                   <img src="${escAttr(u)}" alt="${escAttr(I18n.t('img.alt_photo'))}" loading="lazy">
-                 </a>`).join('');
+    const photos = (it.Photos || [])
+      .map(safeUrl).filter(Boolean)
+      .map(u => `<img src="${escAttr(u)}" alt="${escAttr(I18n.t('img.alt_photo'))}"
+                   loading="lazy" onclick="impZoom('${escAttr(u)}')">`).join('');
 
+    const hasBody = !!(it.Remark || photos);
+    // แถวหัว (แตะเพื่อกาง) + ตัวกาง (comment + รูปย่อ)
     return `
-      <div class="imp-item ${cls}">
-        <div class="imp-head">
+      <div class="imp-acc ${cls}" ${hasBody ? `onclick="impToggle(${idx})"` : ''}>
+        <div class="imp-acc-head">
           <span class="imp-badge ${cls}">${escHtml(scoreLabel)} (${s})</span>
           <div style="flex:1;min-width:0">
-            ${d.Category ? `<div class="imp-cat">${escHtml(d.Category)}</div>` : ''}
-            <div class="imp-q">${escHtml(d.Question || d.Criteria_ID || '-')}</div>
+            ${it.Category ? `<div class="imp-cat">${escHtml(it.Category)}</div>` : ''}
+            <div class="imp-q">${escHtml(it.Question)}</div>
+            <div class="imp-loc">${escHtml(loc)}</div>
           </div>
+          ${hasBody ? `<i class="bi bi-chevron-down imp-chev" id="impchev-${idx}"></i>` : ''}
         </div>
-        ${d.Remark ? `<div class="imp-remark"><i class="bi bi-chat-left-text"></i><span>${escHtml(d.Remark)}</span></div>` : ''}
-        ${photos ? `<div class="imp-photos">${photos}</div>` : ''}
+        ${hasBody ? `
+          <div class="imp-acc-body" id="impbody-${idx}">
+            ${it.Remark ? `<div class="imp-remark"><i class="bi bi-chat-left-text"></i><span>${escHtml(it.Remark)}</span></div>` : ''}
+            ${photos ? `<div class="imp-photos">${photos}</div>` : ''}
+          </div>` : ''}
       </div>`;
   }).join('');
 }
+
+/** กาง/หุบ 1 แถว */
+function impToggle(idx) {
+  const body = document.getElementById('impbody-' + idx);
+  const chev = document.getElementById('impchev-' + idx);
+  if (!body) return;
+  const open = body.classList.toggle('open');
+  if (chev) chev.classList.toggle('open', open);
+}
+
+/** ซูมรูปเต็มจอ (lightbox) — เรียกจากการแตะรูปในแถวที่กางอยู่
+ *  event.stopPropagation กันไม่ให้ทะลุไปหุบ accordion */
+function impZoom(url) {
+  if (event) event.stopPropagation();
+  const safe = safeUrl(url);
+  if (!safe) return;
+  const box = document.getElementById('impLightbox');
+  const img = document.getElementById('impLightboxImg');
+  if (!box || !img) return;
+  img.src = safe;
+  box.classList.add('show');
+}
+
+function impCloseZoom() {
+  const box = document.getElementById('impLightbox');
+  const img = document.getElementById('impLightboxImg');
+  if (box) box.classList.remove('show');
+  if (img) img.src = '';   // คืน memory + กันรูปเก่าแวบตอนเปิดใหม่
+}
+
 
 function renderRanking(containerId, items, nameField, limit = 10) {
   const container = document.getElementById(containerId);
