@@ -196,6 +196,24 @@ select public.mark_schedule_done('00000000-0000-0000-0000-000000000000'::uuid);
 
 
 -- #####################################################################
+-- ขั้นที่ 5 — [ยังไม่ได้รัน · ไม่บังคับ] กัน viewer อัปโหลดรูป
+-- #####################################################################
+-- ช่องที่ยังเปิดอยู่: policy audit_photos_insert เช็กแค่ bucket_id
+-- → viewer อัปโหลดไฟล์เข้า bucket ได้ (ไม่กระทบข้อมูลผลตรวจ เพราะ
+--   headers_insert บล็อกไว้แล้ว แต่เปลืองพื้นที่/เปิดช่องให้ทิ้งไฟล์)
+--
+-- ยังไม่รันเพราะยังไม่ตัดสินใจ — จะรันเมื่อไหร่ก็ได้ ไม่ต้องแก้โค้ด client
+
+-- drop policy if exists audit_photos_insert on storage.objects;
+-- create policy audit_photos_insert on storage.objects
+--   for insert to authenticated
+--   with check (
+--     bucket_id = 'audit-photos'
+--     and coalesce(public.auth_role()::text, '') <> 'viewer'
+--   );
+
+
+-- #####################################################################
 -- แผนย้อนกลับ (ถ้าจำเป็น)
 -- #####################################################################
 -- ลบ enum value ไม่ได้ (Postgres ไม่มี drop value) — แต่ไม่กระทบอะไร

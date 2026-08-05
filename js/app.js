@@ -791,7 +791,7 @@ const TRANSLATIONS = {
     'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส + ดูผลทั้งบริษัท',
     'role.viewer_desc':       '👁️ Viewer — ผู้บริหาร ดูได้ทุกอย่าง (ตรวจไม่ได้)',
     'audit.nav_answered':     'ตอบแล้ว',
-    'msg.viewer_no_audit':    'บัญชีผู้บริหาร (Viewer) ไม่มีสิทธิ์ตรวจ 5ส',
+    'msg.viewer_no_audit':    'บัญชีผู้บริหาร (Viewer) ตรวจ 5ส ไม่ได้ — ดูผลและรายงานได้ทุกส่วน',
     'err.no_schedule_id':     'ไม่พบรหัสงานที่มอบหมาย',
 
     /* ===== Dashboard ใหม่ (4 ส.ค. 2026) ===== */
@@ -1231,7 +1231,7 @@ const TRANSLATIONS = {
     'role.auditor_desc':      '📋 Auditor — audit + view all results',
     'role.viewer_desc':       '👁️ Viewer — executive, full read access (cannot audit)',
     'audit.nav_answered':     'Answered',
-    'msg.viewer_no_audit':    'Viewer accounts cannot perform audits',
+    'msg.viewer_no_audit':    'Viewer accounts cannot perform audits — view-only access',
     'err.no_schedule_id':     'Assignment ID not found',
 
     /* ===== Dashboard ใหม่ (4 ส.ค. 2026) ===== */
@@ -1394,6 +1394,42 @@ const Session = {
       }
     } catch(e) {}
     return false;
+  },
+
+  /**
+   * ดึง role ล่าสุดจาก DB มาทับค่าใน session
+   *
+   * ⚠️ จำเป็นเพราะ role ถูก "แช่" ไว้ใน localStorage ตอน login
+   *    ถ้า admin เปลี่ยน role ให้คนที่กำลังล็อกอินอยู่ เครื่องนั้นจะยังใช้ role เดิม
+   *    ไปเรื่อย ๆ จนกว่าจะ logout → พบจากการทดสอบ 5 ส.ค. 2026
+   *    (เปลี่ยนเป็น viewer แล้วยังเห็นปุ่มตรวจ)
+   *
+   * เป็น query เบา ๆ 1 ครั้งต่อการเปิดหน้า · ล้มก็ไม่ทำให้หน้าพัง (คืน null)
+   */
+  async refreshRole() {
+    const uid = (AppState.user || {}).userId;
+    if (!uid) return null;
+    try {
+      const { data, error } = await _sb
+        .from('profiles').select('role,status').eq('id', uid).single();
+      if (error || !data) return null;
+
+      // ถูกระงับการใช้งานระหว่างที่ยังล็อกอินอยู่ → เตะออก
+      if (data.status && data.status !== 'active') {
+        Session.clear();
+        navigate('index.html');
+        return null;
+      }
+
+      const fresh = MAP.role[data.role] || data.role;
+      if (fresh !== AppState.user.role) {
+        console.log('[Session] role เปลี่ยน:', AppState.user.role, '→', fresh);
+        AppState.user.role = fresh;
+        localStorage.setItem(CONFIG.SESSION_KEY,
+          JSON.stringify({ token: AppState.token, user: AppState.user }));
+      }
+      return currentRole();
+    } catch (_) { return null; }
   },
 
   /** ล้าง session (localStorage + Supabase auth) */
@@ -1674,8 +1710,9 @@ function filterMyTasks(schedData, user) {
 // หน้า "งานที่ได้รับมอบหมาย"
 async function initMyTasks() {
   if (!Session.requireLogin()) return;
+  await Session.refreshRole();   // role อาจถูกเปลี่ยนหลัง login — ต้องดึงใหม่ก่อนเช็ก
   // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
-  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
+  if (isViewer()) { bounceHome('msg.viewer_no_audit'); return; }
   updateUserUI();
   const user = AppState.user || {};
   const list = document.getElementById('myTasksList');
@@ -1717,7 +1754,14 @@ async function initMyTasks() {
 
 async function initHome() {
   if (!Session.requireLogin()) return;
+  await Session.refreshRole();   // role อาจถูกเปลี่ยนหลัง login — ต้องดึงใหม่ก่อนเช็กสิทธิ์
   updateUserUI();
+
+  // ข้อความที่หน้าอื่นฝากไว้ตอนเด้งกลับมา (ดู bounceHome)
+  try {
+    const bm = sessionStorage.getItem('bounceMsg');
+    if (bm) { sessionStorage.removeItem('bounceMsg'); UI.toast(I18n.t(bm), 'error'); }
+  } catch(_) {}
 
   // แสดง/ซ่อน menu ตาม role
   // FIX: Session.load() คืน boolean — ต้องอ่าน role/userId จาก AppState.user
@@ -1731,16 +1775,18 @@ async function initHome() {
   const menuLogs = document.getElementById('menuLogs');
   if (menuLogs) menuLogs.style.display = isAdmin ? 'block' : 'none';
 
-  // viewer (ผู้บริหาร) = ดูได้ทุกอย่าง แต่ตรวจไม่ได้ → ซ่อนทางเข้าการตรวจ
-  // ด่านจริงอยู่ที่ RLS `headers_insert` ที่บล็อก viewer ไม่ให้สร้างผลตรวจ (ส่วน G1)
-  // ที่นี่เป็นแค่ UX ไม่ให้กดแล้วเจอ error
-  if (isViewer()) {
-    const startBtn = document.getElementById('startAuditBtn');
-    if (startBtn) startBtn.style.display = 'none';
-    document.querySelectorAll('.bottom-nav-item').forEach(btn => {
-      if ((btn.getAttribute('onclick') || '').includes('plant.html')) btn.style.display = 'none';
-    });
-  }
+  // viewer (ผู้บริหาร) = ดูได้ทุกอย่าง แต่ตรวจไม่ได้
+  //
+  // 🔑 นโยบาย (ตัดสินใจ 5 ส.ค. 2026): ใช้ "เด้งกลับ" ไม่ใช่ "ซ่อนปุ่ม"
+  //    ปุ่มยังอยู่ครบเหมือน role อื่น — viewer กดแล้วเจอ toast + กลับหน้าหลัก
+  //    เหตุผล: ซ่อนปุ่มทำให้หน้าหลักดูโหว่ และต้องไปตามซ่อนอีก 7 หน้าที่มี
+  //    bottom-nav "ตรวจ" (dashboard, history, summary, criteria, users,
+  //    assign, schedule) ทุกครั้งที่เพิ่มหน้าใหม่
+  //
+  //    ด่านที่เชื่อได้จริงคือ RLS `headers_insert` (patches.sql ส่วน G1)
+  //    ซึ่งบล็อกที่ระดับฐานข้อมูล — การเด้งกลับเป็นแค่ UX
+  //
+  // ทางเข้าการตรวจทุกทางมี guard: initMyTasks · initPlant · initArea · initAudit
 
   try {
     UI.showLoading(I18n.t('msg.loading_home'));
@@ -1798,8 +1844,9 @@ function startAssignedAudit(plantId, plantName, areaId, areaName, areaType, sche
 // ============================================================
 async function initPlant() {
   if (!Session.requireLogin()) return;
+  await Session.refreshRole();   // role อาจถูกเปลี่ยนหลัง login — ต้องดึงใหม่ก่อนเช็ก
   // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
-  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
+  if (isViewer()) { bounceHome('msg.viewer_no_audit'); return; }
   updateUserUI();
 
   // แสดงปุ่ม "มอบหมายงาน" เฉพาะ Admin
@@ -1890,8 +1937,9 @@ function openFacility(type) {
 // ============================================================
 async function initArea() {
   if (!Session.requireLogin()) return;
+  await Session.refreshRole();   // role อาจถูกเปลี่ยนหลัง login — ต้องดึงใหม่ก่อนเช็ก
   // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
-  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
+  if (isViewer()) { bounceHome('msg.viewer_no_audit'); return; }
   updateUserUI();
 
   const plantId   = getParam('plantId');
@@ -2021,8 +2069,9 @@ function selectArea(areaId, areaName, areaType, plantId, plantName) {
 // ============================================================
 async function initAudit() {
   if (!Session.requireLogin()) return;
+  await Session.refreshRole();   // role อาจถูกเปลี่ยนหลัง login — ต้องดึงใหม่ก่อนเช็ก
   // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
-  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
+  if (isViewer()) { bounceHome('msg.viewer_no_audit'); return; }
   updateUserUI();
 
   const plantId  = getParam('plantId');
@@ -3051,6 +3100,18 @@ function safeUrl(url) {
  * (manager / area_manager ยังอยู่ใน enum เพราะ Postgres ลบค่าออกไม่ได้
  *  แต่เอาออกจาก dropdown แล้ว — ถ้ามีคนเป็น role เก่าอยู่ ได้สิทธิ์เท่า auditor)
  */
+/**
+ * เด้งกลับหน้าหลัก + ฝากข้อความไว้ให้ initHome() แสดง
+ *
+ * ⚠️ ห้ามใช้ UI.toast() แล้ว navigate() ทันที — navigate เปลี่ยน location
+ *    ทำให้หน้าถูกทำลายก่อนคนอ่านทัน toast จะกะพริบแล้วหายไปเลย
+ *    จึงฝาก key ไว้ใน sessionStorage แล้วให้หน้าปลายทางแสดงแทน
+ */
+function bounceHome(msgKey) {
+  try { sessionStorage.setItem('bounceMsg', msgKey); } catch(_) {}
+  navigate('home.html');
+}
+
 function currentRole() {
   return String((AppState.user || {}).role || '').trim().toLowerCase();
 }
