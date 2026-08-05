@@ -20,6 +20,29 @@ const CONFIG = {
 };
 
 // ============================================================
+// ปิด console.log บน production
+//
+// เหตุผล: log มีข้อมูลภายใน (role, uuid, ชื่อ, จำนวนแถว) ที่ไม่ควรโชว์
+// ให้ใครที่เปิด DevTools บนเครื่องผู้ใช้เห็น
+//
+// คง console.warn / console.error ไว้ — จำเป็นตอนตามปัญหาจริง
+// เปิด log กลับชั่วคราวได้โดยรันใน Console:
+//     localStorage.setItem('5s_debug', '1')   แล้ว refresh
+//     localStorage.removeItem('5s_debug')     เพื่อปิดกลับ
+// ============================================================
+(function () {
+  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  let debugOn = false;
+  try { debugOn = localStorage.getItem('5s_debug') === '1'; } catch (_) {}
+  if (!isLocal && !debugOn) {
+    const noop = function () {};
+    console.log = noop;
+    console.debug = noop;
+    console.info = noop;
+  }
+})();
+
+// ============================================================
 // SUPABASE BACKEND ADAPTER
 // แทน Google Apps Script — supabase-js query + แปลง response
 // ให้เป็นรูปแบบ key เดิม (PascalCase) ที่หน้าเว็บใช้อยู่
@@ -478,16 +501,44 @@ const SBH = {
     return { success:true, message:'อัปเดตผู้ใช้เรียบร้อย' };
   },
 
-  async deleteUser({ userId }) {
-    if (userId === (AppState.user && AppState.user.userId)) return { success:false, error:'ลบบัญชีตัวเองไม่ได้' };
-    const { data:target } = await _sb.from('profiles').select('role,status').eq('id', userId).single();
-    if (target && target.role === 'admin' && target.status === 'active') {
-      const { data:admins } = await _sb.from('profiles').select('id').eq('role','admin').eq('status','active');
-      if ((admins||[]).length <= 1) return { success:false, error:'ลบ Admin คนสุดท้ายไม่ได้' };
+  /**
+   * ระงับ / เปิดใช้งานผู้ใช้  (แทนการลบ)
+   *
+   * ทำไมไม่ลบ — ลบผ่านแอปไม่ได้จริง:
+   *   • audit_logs.user_id และ audit_headers.auditor_id อ้าง profiles(id)
+   *     แบบไม่มี `on delete` → Postgres บล็อก
+   *     ทุกคนที่เคย login มีแถวใน audit_logs (logEvent 'LOGIN') จึงติดแทบทุกคน
+   *   • ถ้าลบได้ก็ลบแค่ profiles ไม่ลบ auth.users → อีเมลยังถูกจอง
+   *     คนนั้น login ผ่าน auth ได้แต่เจอ "ไม่พบโปรไฟล์"
+   *   • ระบบ audit: ลบคนออกทำให้ผลตรวจเก่าไม่มีเจ้าของ = เสีย audit trail
+   *
+   * ลบถาวรจริงทำที่ Supabase — ขั้นตอนอยู่ใน supabase/delete_user.sql
+   *
+   * @param {string} userId
+   * @param {'active'|'inactive'} status
+   */
+  async setUserStatus({ userId, status }) {
+    const next = status === 'inactive' ? 'inactive' : 'active';
+    if (userId === (AppState.user && AppState.user.userId)) {
+      return { success:false, error:I18n.t('err.self_suspend') };
     }
-    const { error } = await _sb.from('profiles').delete().eq('id', userId);
+
+    // กันระงับ admin ที่ active คนสุดท้าย → ไม่มีใครเข้าจัดการระบบได้เลย
+    if (next === 'inactive') {
+      const { data:target } = await _sb.from('profiles')
+        .select('role,status').eq('id', userId).single();
+      if (target && target.role === 'admin' && target.status === 'active') {
+        const { data:admins } = await _sb.from('profiles')
+          .select('id').eq('role','admin').eq('status','active');
+        if ((admins || []).length <= 1) return { success:false, error:I18n.t('err.last_admin') };
+      }
+    }
+
+    const { error } = await _sb.from('profiles')
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq('id', userId);
     if (error) return { success:false, error:error.message };
-    return { success:true };
+    return { success:true, status:next };
   },
 
   // ---- Schedule (admin) ----
@@ -727,6 +778,18 @@ const TRANSLATIONS = {
     'msg.users_failed':       'โหลดไม่สำเร็จ',
     'msg.header_failed':      'สร้าง Header ไม่สำเร็จ',
     'msg.finalize_failed':    'Finalize ไม่สำเร็จ',
+    'msg.saving':             'กำลังบันทึก...',
+    'msg.suspended':          'ระงับการใช้งานแล้ว',
+    'msg.restored':           'เปิดใช้งานอีกครั้งแล้ว',
+    'err.self_suspend':       'ระงับบัญชีตัวเองไม่ได้',
+    'err.last_admin':         'ระงับ Admin คนสุดท้ายไม่ได้ — จะไม่มีใครเข้าจัดการระบบได้',
+    'users.suspend':          'ระงับการใช้งาน',
+    'users.restore':          'เปิดใช้งานอีกครั้ง',
+    'users.suspend_hint':     'ระงับแล้วเข้าสู่ระบบไม่ได้ และถูกออกจากระบบทันที · ผลตรวจและประวัติยังอยู่ครบ',
+    'confirm.suspend_title':  'ยืนยันการระงับการใช้งาน',
+    'confirm.suspend_body':   'ระงับ "{name}" ไม่ให้เข้าใช้งานหรือไม่? ผลตรวจและประวัติยังอยู่ครบ เปิดใช้งานคืนได้ทุกเมื่อ',
+    'confirm.restore_title':  'เปิดใช้งานอีกครั้ง',
+    'confirm.restore_body':   'ให้ "{name}" กลับมาเข้าใช้งานได้หรือไม่?',
     'msg.save_failed':        'บันทึกไม่สำเร็จ',
     'msg.error_prefix':       'เกิดข้อผิดพลาด: ',
     'msg.no_criteria':        'ไม่มีรายการ Checklist กรุณาติดต่อผู้ดูแลระบบ เพื่อเพิ่มข้อมูลใน Criteria_Master',
@@ -1158,6 +1221,18 @@ const TRANSLATIONS = {
     'msg.users_failed':       'Load failed',
     'msg.header_failed':      'Failed to create audit header',
     'msg.finalize_failed':    'Finalize failed',
+    'msg.saving':             'Saving...',
+    'msg.suspended':          'Account suspended',
+    'msg.restored':           'Account reactivated',
+    'err.self_suspend':       'You cannot suspend your own account',
+    'err.last_admin':         'Cannot suspend the last active Admin — no one would be able to manage the system',
+    'users.suspend':          'Suspend access',
+    'users.restore':          'Reactivate',
+    'users.suspend_hint':     'Suspended users cannot sign in and are signed out immediately · audit results and history are kept',
+    'confirm.suspend_title':  'Confirm suspension',
+    'confirm.suspend_body':   'Suspend access for "{name}"? Audit results and history are kept — you can reactivate at any time.',
+    'confirm.restore_title':  'Reactivate account',
+    'confirm.restore_body':   'Allow "{name}" to sign in again?',
     'msg.save_failed':        'Save failed',
     'msg.error_prefix':       'Error: ',
     // Audit submit
@@ -3132,7 +3207,8 @@ function escHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');   // เผื่อกรณีถูกวางใน attribute ที่ครอบด้วย single quote
 }
 
 /** Escape สำหรับ HTML attribute (รวม single quote) */
@@ -3329,7 +3405,9 @@ function openUserModal(userId) {
   const searchEl = document.getElementById('assignedAreasSearch');
   if (searchEl) searchEl.value = '';
 
-  const delBtn = document.getElementById('deleteUserBtn');
+  const suspBtn  = document.getElementById('suspendUserBtn');
+  const suspLb   = document.getElementById('suspendUserLabel');
+  const suspHint = document.getElementById('suspendUserHint');
 
   if (userId) {
     const u = _allUsers.find(x => x.User_ID === userId);
@@ -3345,45 +3423,65 @@ function openUserModal(userId) {
     document.getElementById('fPassword').value  = '';
     const sr = document.querySelector(`input[name="fStatus"][value="${u.Status}"]`);
     if (sr) sr.checked = true;
-    // แสดงปุ่มลบเฉพาะตอนแก้ไข และห้ามลบบัญชีตัวเอง
-    if (delBtn) delBtn.style.display = (u.User_ID === AppState.user?.userId) ? 'none' : 'block';
+    // ปุ่มระงับ/เปิดใช้งาน — เฉพาะตอนแก้ไข และไม่ให้ทำกับบัญชีตัวเอง
+    const isSelf     = u.User_ID === AppState.user?.userId;
+    const isInactive = String(u.Status || '').toLowerCase() === 'inactive';
+    if (suspBtn) {
+      suspBtn.style.display = isSelf ? 'none' : 'block';
+      // ระงับ = แดง · เปิดใช้งานอีกครั้ง = เขียว
+      suspBtn.style.background = isInactive ? 'var(--success)' : 'var(--danger)';
+      suspBtn.style.color = '#fff';
+      suspBtn.dataset.next = isInactive ? 'active' : 'inactive';
+      suspBtn.querySelector('i').className = isInactive
+        ? 'bi bi-arrow-counterclockwise' : 'bi bi-slash-circle';
+      if (suspLb) suspLb.textContent = I18n.t(isInactive ? 'users.restore' : 'users.suspend');
+    }
+    if (suspHint) suspHint.style.display = (isSelf || isInactive) ? 'none' : 'block';
   } else {
     title.textContent = I18n.t('modal.add_user');
     const sr = document.querySelector('input[name="fStatus"][value="Active"]');
     if (sr) sr.checked = true;
-    if (delBtn) delBtn.style.display = 'none';
+    if (suspBtn)  suspBtn.style.display  = 'none';
+    if (suspHint) suspHint.style.display = 'none';
   }
   modal.classList.add('show');
 }
 
-// ลบผู้ใช้ (ออกจากทั้งแอปและ Google Sheet)
-async function deleteUser() {
+/**
+ * ระงับ / เปิดใช้งานผู้ใช้ (แทนปุ่ม "ลบผู้ใช้" เดิมที่ใช้ไม่ได้จริง)
+ * ลบถาวรทำที่ Supabase — ดู supabase/delete_user.sql
+ */
+async function toggleUserStatus() {
   const userId = document.getElementById('editUserId').value.trim();
   if (!userId) return;
-  const u = _allUsers.find(x => x.User_ID === userId);
+  const u    = _allUsers.find(x => x.User_ID === userId);
+  const name = u?.Name || userId;
+  const next = document.getElementById('suspendUserBtn')?.dataset.next || 'inactive';
 
   const ok = await showConfirm(
-    'ยืนยันการลบผู้ใช้',
-    `ต้องการลบ "${u?.Name || userId}" ออกจากระบบและ Google Sheet ถาวรหรือไม่?`
+    I18n.t(next === 'inactive' ? 'confirm.suspend_title' : 'confirm.restore_title'),
+    I18n.t(next === 'inactive' ? 'confirm.suspend_body'  : 'confirm.restore_body')
+      .replace('{name}', name)
   );
   if (!ok) return;
 
   try {
-    UI.showLoading('กำลังลบผู้ใช้...');
-    const res = await API.get('deleteUser', { userId });
+    UI.showLoading(I18n.t('msg.saving'));
+    const res = await API.post('setUserStatus', { userId, status: next });
     UI.hideLoading();
-    if (res.success) {
-      UI.toast('ลบผู้ใช้สำเร็จ', 'success');
-      closeUserModal();
-      _allUsers = _allUsers.filter(x => x.User_ID !== userId);
-      _updateUserStats();
-      _renderUsers(_allUsers);
-    } else {
-      UI.toast(res.error || 'ลบไม่สำเร็จ', 'error');
-    }
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.save_failed'), 'error'); return; }
+
+    UI.toast(I18n.t(next === 'inactive' ? 'msg.suspended' : 'msg.restored'), 'success');
+    closeUserModal();
+
+    // อัปเดตในหน่วยความจำ ไม่ต้องโหลดใหม่ทั้งหน้า
+    const row = _allUsers.find(x => x.User_ID === userId);
+    if (row) row.Status = next === 'inactive' ? 'Inactive' : 'Active';
+    _updateUserStats();
+    _renderUsers(_allUsers);
   } catch(err) {
     UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
 }
 

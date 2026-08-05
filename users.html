@@ -3,10 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <!-- Security headers (GitHub Pages ตั้ง HTTP header เองไม่ได้ จึงใช้ meta)
+       ⚠️ ถ้าหน้าพัง/CDN โหลดไม่ขึ้น ให้ลบ 2 บรรทัดนี้ออกเพื่อย้อนกลับ
+       'unsafe-inline' ยังต้องมีเพราะทุกหน้าใช้ inline onclick + <style> -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https://oibjnkngraulcccdqevm.supabase.co; connect-src 'self' https://oibjnkngraulcccdqevm.supabase.co wss://oibjnkngraulcccdqevm.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>จัดการผู้ใช้งาน | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=39">
+  <link rel="stylesheet" href="css/style.css?v=40">
   <style>
     .user-card {
       background:#fff; border-radius:12px; padding:14px 16px;
@@ -253,18 +258,24 @@
           <i class="bi bi-check-lg"></i> <span data-i18n="form.save">บันทึก</span>
         </button>
       </div>
-      <!-- ปุ่มลบ — แสดงเฉพาะตอนแก้ไขผู้ใช้ที่มีอยู่ -->
-      <button type="button" id="deleteUserBtn" class="btn btn-block"
-              style="display:none;margin-top:10px;background:var(--danger);color:#fff"
-              onclick="deleteUser()">
-        <i class="bi bi-trash"></i> <span>ลบผู้ใช้นี้</span>
+      <!-- ระงับ / เปิดใช้งาน — แสดงเฉพาะตอนแก้ไขผู้ใช้ที่มีอยู่
+           ไม่มีปุ่ม "ลบ" เพราะลบผ่านแอปไม่ได้จริง (FK จาก audit_logs/audit_headers)
+           และลบคนออกทำให้ผลตรวจเก่าไม่มีเจ้าของ — ดู supabase/delete_user.sql -->
+      <button type="button" id="suspendUserBtn" class="btn btn-block"
+              style="display:none;margin-top:10px" onclick="toggleUserStatus()">
+        <i class="bi bi-slash-circle"></i> <span id="suspendUserLabel">ระงับการใช้งาน</span>
       </button>
+      <p id="suspendUserHint" style="display:none;font-size:0.72rem;color:var(--gray-600);
+                                     line-height:1.5;margin:8px 0 0;text-align:center"
+         data-i18n="users.suspend_hint">
+        ระงับแล้วเข้าสู่ระบบไม่ได้ และถูกออกจากระบบทันที · ผลตรวจและประวัติยังอยู่ครบ
+      </p>
     </form>
   </div>
 </div>
 
 <!-- โหลด app.js เพียงไฟล์เดียว — Logic อยู่ใน app.js ทั้งหมด -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=39"></script>
+<script src="js/app.js?v=40"></script>
 </body>
 </html>
