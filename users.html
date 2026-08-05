@@ -6,7 +6,7 @@
   <title>จัดการผู้ใช้งาน | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=37">
+  <link rel="stylesheet" href="css/style.css?v=38">
   <style>
     .user-card {
       background:#fff; border-radius:12px; padding:14px 16px;
@@ -74,7 +74,6 @@
     <select id="filterRole" class="filter-select" onchange="filterUsers()">
       <option value="" data-i18n="users.all_role">👥 ทุก Role</option>
       <option value="Admin">👑 Admin</option>
-      <option value="Manager">🏢 Manager</option>
       <option value="Auditor">📋 Auditor</option>
       <option value="Viewer">👁️ Viewer</option>
     </select>
@@ -229,10 +228,8 @@
         <select id="fRole" class="form-control" required style="-webkit-appearance:auto;cursor:pointer">
           <option value="" data-i18n="form.select_role">-- เลือก Role --</option>
           <option value="Admin" data-i18n="role.admin_desc">👑 Admin — จัดการทุกอย่าง</option>
-          <option value="Manager" data-i18n="role.manager_desc">🏢 Manager — ดู Dashboard + ประวัติ</option>
-          <option value="Area Manager" data-i18n="role.area_mgr_desc">🗂️ Area Manager — จัดการพื้นที่ที่รับผิดชอบ</option>
-          <option value="Auditor" data-i18n="role.auditor_desc">📋 Auditor — ตรวจ 5ส</option>
-          <option value="Viewer" data-i18n="role.viewer_desc">👁️ Viewer — ดูอย่างเดียว</option>
+          <option value="Auditor" data-i18n="role.auditor_desc">📋 Auditor — ตรวจ 5ส + ดูผลทั้งบริษัท</option>
+          <option value="Viewer" data-i18n="role.viewer_desc">👁️ Viewer — ผู้บริหาร ดูได้ทุกอย่าง (ตรวจไม่ได้)</option>
         </select>
       </div>
 
@@ -268,6 +265,6 @@
 
 <!-- โหลด app.js เพียงไฟล์เดียว — Logic อยู่ใน app.js ทั้งหมด -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=37"></script>
+<script src="js/app.js?v=38"></script>
 </body>
 </html>

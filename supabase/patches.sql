@@ -58,10 +58,19 @@ begin
 end;
 $$;
 
--- A3) RLS: auditor ที่ถูกมอบหมายอัปเดตสถานะงานของตัวเองได้ (mark completed หลังตรวจเสร็จ)
-drop policy if exists schedules_auditor_update on public.schedules;
-create policy schedules_auditor_update on public.schedules
-  for update using (auth.uid() = any(auditor_ids)) with check (auth.uid() = any(auditor_ids));
+-- A3) [ยกเลิกแล้ว — ดูส่วน G4] RLS ให้ auditor อัปเดตสถานะงานตัวเอง
+--
+-- ⚠️ policy นี้ถูก DROP ทิ้งในส่วน G4 (5 ส.ค. 2026) เพราะกว้างเกินเจตนา:
+--    `for update` ไม่จำกัดคอลัมน์ → auditor แก้ audit_date หนีเกินกำหนด
+--    หรือถอดคนอื่นออกจาก auditor_ids ได้ (BOPLA)
+--    แทนด้วย RPC public.mark_schedule_done(uuid) ที่แก้ได้แค่ status
+--
+-- คงบล็อกนี้ไว้เป็นคอมเมนต์เพื่อรักษาลำดับประวัติของไฟล์
+-- (ถ้า uncomment จะถูก G4 ลบทิ้งอยู่ดี เพราะไฟล์รันจากบนลงล่าง)
+--
+-- drop policy if exists schedules_auditor_update on public.schedules;
+-- create policy schedules_auditor_update on public.schedules
+--   for update using (auth.uid() = any(auditor_ids)) with check (auth.uid() = any(auditor_ids));
 
 
 -- =====================================================================
@@ -302,3 +311,151 @@ end $$;
 --  where t.schemaname = 'public' and t.tablename like '%\_backup'
 --  group by t.tablename, t.rowsecurity
 --  order by t.tablename;
+
+
+-- =====================================================================
+-- ส่วน G: จัดระเบียบสิทธิ์ให้เหลือ 3 roles + ล็อกผลตรวจ (5 ส.ค. 2026)
+-- =====================================================================
+-- ที่มา: ตัดสินใจร่วมกันว่าระบบใช้แค่ 3 roles
+--   👑 admin   — จัดการทุกอย่าง · แก้ผลตรวจได้ตลอด
+--   📋 auditor — ตรวจ 5ส ได้ · ดูผลตรวจทั้งบริษัท · แก้ผลตัวเองไม่ได้หลัง submit
+--   👁️ viewer  — ผู้บริหาร ดูได้ทุกอย่าง แต่ตรวจไม่ได้ แก้ไม่ได้
+--
+-- ⚠️ ต้องรัน "ขั้นที่ 1" (alter type) แยกก่อน แล้วค่อยรันส่วนที่เหลือ
+--    เพราะค่า enum ที่เพิ่งเพิ่มใช้งานใน transaction เดียวกันไม่ได้
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- G0) [ขั้นที่ 1 — รันแยกก่อน] เพิ่ม viewer เข้า enum
+-- ---------------------------------------------------------------------
+-- manager / area_manager ยังอยู่ใน enum เพราะ Postgres ลบค่าออกไม่ได้
+-- แต่จะถูกเอาออกจาก dropdown ใน users.html → เลือกไม่ได้อีก
+-- คนที่เป็น role เก่าอยู่ยังใช้งานได้ต่อ (ได้สิทธิ์เท่า auditor)
+--
+--   alter type user_role add value if not exists 'viewer';
+--
+-- ↑ uncomment แล้วรันบรรทัดนี้เดี่ยว ๆ ก่อน จากนั้นรันส่วนที่เหลือด้านล่าง
+
+
+-- ---------------------------------------------------------------------
+-- G1) viewer ตรวจ 5ส ไม่ได้ — จุดต่างหลักจาก auditor
+-- ---------------------------------------------------------------------
+-- เดิม: with check (auditor_id = auth.uid() or is_staff())
+--   is_staff() = admin+manager → ยังเปิดช่องให้ manager ปลอม auditor_id เป็นคนอื่นได้
+-- ใหม่: บังคับ auditor_id = ตัวเอง (ปิด BOPLA) และ viewer ห้าม insert
+drop policy if exists headers_insert on public.audit_headers;
+create policy headers_insert on public.audit_headers
+  for insert with check (
+    auditor_id = auth.uid()
+    and coalesce(public.auth_role()::text, '') <> 'viewer'
+  );
+
+
+-- ---------------------------------------------------------------------
+-- G2) 🔒 ล็อกผลตรวจหลัง submit — auditor แก้ย้อนหลังไม่ได้
+-- ---------------------------------------------------------------------
+alter table public.audit_headers
+  add column if not exists locked_at timestamptz;
+
+-- auditor แก้ได้เฉพาะใบที่ยังไม่ล็อก · admin แก้ได้ตลอด
+drop policy if exists headers_update on public.audit_headers;
+create policy headers_update on public.audit_headers
+  for update using (
+    (auditor_id = auth.uid() and locked_at is null)
+    or coalesce(public.auth_role()::text, '') = 'admin'
+  );
+
+-- ลบได้เฉพาะ admin (เดิม is_staff() หรือเจ้าของ — เปิดกว้างเกินสำหรับผลตรวจที่ล็อกแล้ว)
+drop policy if exists headers_delete on public.audit_headers;
+create policy headers_delete on public.audit_headers
+  for delete using (
+    coalesce(public.auth_role()::text, '') = 'admin'
+    or (auditor_id = auth.uid() and locked_at is null)
+  );
+
+-- กันแก้/ลบรายละเอียดข้อของ audit ที่ล็อกแล้ว
+-- (RLS คุมได้แค่ "แถวไหน" ไม่ได้คุมข้ามตาราง จึงต้องใช้ trigger)
+create or replace function public.chk_header_locked()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_locked timestamptz;
+begin
+  select h.locked_at into v_locked
+    from public.audit_headers h
+   where h.audit_id = coalesce(new.audit_id, old.audit_id);
+
+  if v_locked is not null and coalesce(public.auth_role()::text, '') <> 'admin' then
+    raise exception 'ผลการตรวจนี้ถูกล็อกแล้ว แก้ไขไม่ได้ (ติดต่อ Admin)';
+  end if;
+  return coalesce(new, old);
+end $$;
+
+drop trigger if exists trg_chk_locked on public.audit_details;
+create trigger trg_chk_locked
+before insert or update or delete on public.audit_details
+for each row execute function public.chk_header_locked();
+
+
+-- ---------------------------------------------------------------------
+-- G3) log การแก้คะแนน — เดิมไม่มีร่องรอยเลย
+-- ---------------------------------------------------------------------
+drop trigger if exists trg_log_details on public.audit_details;
+create trigger trg_log_details
+after update of score, na, remark or delete on public.audit_details
+for each row execute function public.log_activity('detail_id');
+
+
+-- ---------------------------------------------------------------------
+-- G4) แก้ BOPLA ของ schedules — auditor แก้ได้แค่สถานะ
+-- ---------------------------------------------------------------------
+-- เดิม: for update using (auth.uid() = any(auditor_ids))  ← ไม่จำกัดคอลัมน์
+--   → auditor เลื่อน audit_date หนีเกินกำหนด / ถอดคนอื่นออกจาก auditor_ids ได้
+drop policy if exists schedules_auditor_update on public.schedules;
+
+-- แทนด้วย RPC ที่แก้ได้แค่ status  (schedule_id เป็น uuid ไม่ใช่ bigint)
+create or replace function public.mark_schedule_done(p_schedule_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (
+    select 1 from public.schedules
+     where schedule_id = p_schedule_id
+       and (auth.uid() = any(auditor_ids) or coalesce(public.auth_role()::text,'') = 'admin')
+  ) then
+    raise exception 'ไม่ได้รับมอบหมายงานนี้';
+  end if;
+
+  update public.schedules
+     set status = 'completed'
+   where schedule_id = p_schedule_id;
+end $$;
+
+grant execute on function public.mark_schedule_done(uuid) to authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- G5) is_staff() — เหลือแค่ admin (manager ไม่ใช้แล้ว)
+-- ---------------------------------------------------------------------
+-- เดิม admin+manager · ตอนนี้ระบบใช้ 3 roles ไม่มี manager
+-- คงฟังก์ชันไว้เพื่อไม่ให้ policy อื่นที่อ้างถึงพัง แต่เปลี่ยนความหมาย
+create or replace function public.is_staff()
+returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select coalesce(public.auth_role()::text = 'admin', false);
+$$;
+
+
+-- ---------------------------------------------------------------------
+-- ตรวจผลหลังรัน
+-- ---------------------------------------------------------------------
+-- select unnest(enum_range(null::user_role))::text as roles_ที่มี;
+--
+-- select policyname, cmd, qual, with_check from pg_policies
+--  where schemaname='public' and tablename in ('audit_headers','schedules')
+--  order by tablename, policyname;
+--
+-- select column_name from information_schema.columns
+--  where table_schema='public' and table_name='audit_headers' and column_name='locked_at';
+--
+-- select tgname from pg_trigger
+--  where tgrelid='public.audit_details'::regclass and not tgisinternal;

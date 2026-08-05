@@ -30,13 +30,13 @@ const _sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KE
 // map enum (DB) → label เดิม (frontend)
 const MAP = {
   areaType:    { office:'Office', production:'Production', warehouse:'Warehouse', cafeteria:'Cafeteria', outdoor:'Outdoor', maintenance:'Maintenance' },
-  role:        { admin:'Admin', manager:'Manager', auditor:'Auditor', area_manager:'Area Manager' },
+  role:        { admin:'Admin', manager:'Manager', auditor:'Auditor', area_manager:'Area Manager', viewer:'Viewer' },
   status:      { active:'Active', inactive:'Inactive' },
   auditStatus: { excellent:'Excellent', good:'Good', need_improvement:'Need Improvement', pending:'Pending', failed:'Failed' },
 };
 // reverse: label เดิม → enum (DB)
 const REV = {
-  role:   { 'Admin':'admin', 'Manager':'manager', 'Auditor':'auditor', 'Area Manager':'area_manager' },
+  role:   { 'Admin':'admin', 'Manager':'manager', 'Auditor':'auditor', 'Area Manager':'area_manager', 'Viewer':'viewer' },
   status: { 'Active':'active', 'Inactive':'inactive' },
 };
 
@@ -179,9 +179,16 @@ const SBH = {
   },
 
   /** mark schedule เป็น completed (เรียกหลัง auditor ตรวจงานที่มอบหมายเสร็จ) */
+  /**
+   * mark งานที่มอบหมายว่าเสร็จ — ผ่าน RPC ที่แก้ได้แค่คอลัมน์ status
+   *
+   * เดิมยิง .update() ตรงโดยพึ่ง RLS `schedules_auditor_update` ซึ่งเป็น `for update`
+   * ไม่จำกัดคอลัมน์ → auditor เลื่อน audit_date หนีเกินกำหนด หรือถอดคนอื่นออกจาก
+   * auditor_ids ได้ (BOPLA) · policy นั้นถูกลบใน patches.sql ส่วน G4 แล้ว
+   */
   async completeSchedule({ scheduleId }) {
-    if (!scheduleId) return { success:false, error:'ไม่มี scheduleId' };
-    const { error } = await _sb.from('schedules').update({ status:'completed' }).eq('schedule_id', scheduleId);
+    if (!scheduleId) return { success:false, error:I18n.t('err.no_schedule_id') };
+    const { error } = await _sb.rpc('mark_schedule_done', { p_schedule_id: scheduleId });
     if (error) return { success:false, error:error.message };
     return { success:true };
   },
@@ -550,10 +557,33 @@ const SBH = {
     return { success:true, saved:rows.length };   // trigger คำนวณคะแนน header ให้เอง
   },
 
+  /**
+   * ปิดงานตรวจ — อ่านคะแนนที่ trigger คำนวณไว้ แล้ว "ล็อก" ไม่ให้แก้ย้อนหลัง
+   *
+   * 🔒 locked_at: หลังตั้งค่าแล้ว auditor แก้ไม่ได้อีก (RLS headers_update + trigger
+   *    trg_chk_locked บน audit_details) · admin แก้ได้ตลอด
+   *    ดู patches.sql ส่วน G2
+   *
+   * ⚠️ ต้องล็อก "หลัง" อ่านคะแนนเสร็จ — ถ้าล็อกก่อน trigger recalc ทำงานไม่ได้
+   *    การล็อกล้มไม่ทำให้ submit ล้ม (ผลตรวจบันทึกแล้ว) แค่รายงานว่าล็อกไม่สำเร็จ
+   */
   async finalizeAudit({ auditId }) {
     const { data, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
     if (error) return { success:false, error:error.message };
-    return { success:true, auditId, totalScore:data.total_score, maxScore:data.max_score, percent:Number(data.percent), status:MAP.auditStatus[data.status]||data.status };
+
+    let locked = false;
+    if (!data.locked_at) {
+      const { error: lockErr } = await _sb.from('audit_headers')
+        .update({ locked_at: new Date().toISOString() }).eq('audit_id', auditId);
+      if (lockErr) console.warn('[finalize] ล็อกผลตรวจไม่สำเร็จ:', lockErr.message);
+      else locked = true;
+    } else {
+      locked = true;
+    }
+
+    return { success:true, auditId, locked,
+      totalScore:data.total_score, maxScore:data.max_score,
+      percent:Number(data.percent), status:MAP.auditStatus[data.status]||data.status };
   },
 
   async deleteAudit({ auditId }) {
@@ -758,9 +788,11 @@ const TRANSLATIONS = {
     'role.admin_desc':        '👑 Admin — จัดการทุกอย่าง',
     'role.manager_desc':      '🏢 Manager — ดู Dashboard + ประวัติ',
     'role.area_mgr_desc':     '🗂️ Area Manager — จัดการพื้นที่ที่รับผิดชอบ',
-    'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส',
-    'role.viewer_desc':       '👁️ Viewer — ดูอย่างเดียว',
+    'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส + ดูผลทั้งบริษัท',
+    'role.viewer_desc':       '👁️ Viewer — ผู้บริหาร ดูได้ทุกอย่าง (ตรวจไม่ได้)',
     'audit.nav_answered':     'ตอบแล้ว',
+    'msg.viewer_no_audit':    'บัญชีผู้บริหาร (Viewer) ไม่มีสิทธิ์ตรวจ 5ส',
+    'err.no_schedule_id':     'ไม่พบรหัสงานที่มอบหมาย',
 
     /* ===== Dashboard ใหม่ (4 ส.ค. 2026) ===== */
     // Dashboard — ranking
@@ -989,8 +1021,8 @@ const TRANSLATIONS = {
     'role.admin_desc':        '👑 Admin — จัดการทุกอย่าง',
     'role.manager_desc':      '🏢 Manager — ดู Dashboard + ประวัติ',
     'role.area_mgr_desc':     '🗂️ Area Manager — จัดการพื้นที่ที่รับผิดชอบ',
-    'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส',
-    'role.viewer_desc':       '👁️ Viewer — ดูอย่างเดียว',
+    'role.auditor_desc':      '📋 Auditor — ตรวจ 5ส + ดูผลทั้งบริษัท',
+    'role.viewer_desc':       '👁️ Viewer — ผู้บริหาร ดูได้ทุกอย่าง (ตรวจไม่ได้)',
     'audit.nav_answered':     'ตอบแล้ว',
   },
   en: {
@@ -1196,9 +1228,11 @@ const TRANSLATIONS = {
     'role.admin_desc':        '👑 Admin — Full access',
     'role.manager_desc':      '🏢 Manager — Dashboard + History',
     'role.area_mgr_desc':     '🗂️ Area Manager — Manage assigned areas',
-    'role.auditor_desc':      '📋 Auditor — 5S Audit',
-    'role.viewer_desc':       '👁️ Viewer — Read only',
+    'role.auditor_desc':      '📋 Auditor — audit + view all results',
+    'role.viewer_desc':       '👁️ Viewer — executive, full read access (cannot audit)',
     'audit.nav_answered':     'Answered',
+    'msg.viewer_no_audit':    'Viewer accounts cannot perform audits',
+    'err.no_schedule_id':     'Assignment ID not found',
 
     /* ===== Dashboard ใหม่ (4 ส.ค. 2026) ===== */
     // Dashboard — ranking
@@ -1640,6 +1674,8 @@ function filterMyTasks(schedData, user) {
 // หน้า "งานที่ได้รับมอบหมาย"
 async function initMyTasks() {
   if (!Session.requireLogin()) return;
+  // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
+  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
   updateUserUI();
   const user = AppState.user || {};
   const list = document.getElementById('myTasksList');
@@ -1694,6 +1730,17 @@ async function initHome() {
   if (menuUsers) menuUsers.style.display = isAdmin ? 'block' : 'none';
   const menuLogs = document.getElementById('menuLogs');
   if (menuLogs) menuLogs.style.display = isAdmin ? 'block' : 'none';
+
+  // viewer (ผู้บริหาร) = ดูได้ทุกอย่าง แต่ตรวจไม่ได้ → ซ่อนทางเข้าการตรวจ
+  // ด่านจริงอยู่ที่ RLS `headers_insert` ที่บล็อก viewer ไม่ให้สร้างผลตรวจ (ส่วน G1)
+  // ที่นี่เป็นแค่ UX ไม่ให้กดแล้วเจอ error
+  if (isViewer()) {
+    const startBtn = document.getElementById('startAuditBtn');
+    if (startBtn) startBtn.style.display = 'none';
+    document.querySelectorAll('.bottom-nav-item').forEach(btn => {
+      if ((btn.getAttribute('onclick') || '').includes('plant.html')) btn.style.display = 'none';
+    });
+  }
 
   try {
     UI.showLoading(I18n.t('msg.loading_home'));
@@ -1751,6 +1798,8 @@ function startAssignedAudit(plantId, plantName, areaId, areaName, areaType, sche
 // ============================================================
 async function initPlant() {
   if (!Session.requireLogin()) return;
+  // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
+  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
   updateUserUI();
 
   // แสดงปุ่ม "มอบหมายงาน" เฉพาะ Admin
@@ -1841,6 +1890,8 @@ function openFacility(type) {
 // ============================================================
 async function initArea() {
   if (!Session.requireLogin()) return;
+  // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
+  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
   updateUserUI();
 
   const plantId   = getParam('plantId');
@@ -1970,6 +2021,8 @@ function selectArea(areaId, areaName, areaType, plantId, plantName) {
 // ============================================================
 async function initAudit() {
   if (!Session.requireLogin()) return;
+  // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
+  if (isViewer()) { UI.toast(I18n.t('msg.viewer_no_audit'), 'error'); navigate('home.html'); return; }
   updateUserUI();
 
   const plantId  = getParam('plantId');
@@ -2991,6 +3044,25 @@ function safeUrl(url) {
   if (/^\/[^/\\]/.test(u) || /^[\w.-]+\.(?:jpe?g|png|webp|gif)(?:\?.*)?$/i.test(u)) return u;
   return '';
 }
+
+/**
+ * role ปัจจุบัน (ตัวเล็ก) จาก session ที่โหลดไว้
+ * ระบบใช้ 3 roles: admin · auditor · viewer
+ * (manager / area_manager ยังอยู่ใน enum เพราะ Postgres ลบค่าออกไม่ได้
+ *  แต่เอาออกจาก dropdown แล้ว — ถ้ามีคนเป็น role เก่าอยู่ ได้สิทธิ์เท่า auditor)
+ */
+function currentRole() {
+  return String((AppState.user || {}).role || '').trim().toLowerCase();
+}
+
+/** admin — จัดการทุกอย่าง */
+function isAdminRole() { return currentRole() === 'admin'; }
+
+/**
+ * viewer (ผู้บริหาร) — ดูได้ทุกอย่าง แต่ตรวจไม่ได้ แก้ไม่ได้
+ * ⚠️ ใช้ซ่อน UI เท่านั้น ด่านจริงคือ RLS `headers_insert` (patches.sql ส่วน G1)
+ */
+function isViewer() { return currentRole() === 'viewer'; }
 
 /** Escape HTML สำหรับ text content */
 function escHtml(str) {
