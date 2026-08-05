@@ -12,7 +12,7 @@
   <title>ผลการตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=40">
+  <link rel="stylesheet" href="css/style.css?v=41">
 </head>
 <body>
 <div id="loadingOverlay" class="loading-overlay">
@@ -95,6 +95,21 @@
     </button>
   </div>
 
+  <!-- ลบผลตรวจ — admin เท่านั้น (JS เปิดให้ ดู initSummary)
+       จำเป็นเพราะผลตรวจถูกล็อกหลัง submit และตรวจซ้ำงานเดิมไม่ได้
+       ถ้าตรวจผิด admin ต้องลบให้ก่อน auditor จึงตรวจใหม่ได้ -->
+  <div id="sumAdminDel" style="display:none;margin-top:26px;
+       border-top:1px solid var(--hairline);padding-top:16px">
+    <p style="font-size:0.72rem;color:var(--gray-600);line-height:1.55;margin:0 0 10px;text-align:center"
+       data-i18n="summary.del_hint">
+      ลบผลตรวจใบนี้ถาวร (รวมรูปภาพ) · งานที่มอบหมายจะกลับเป็น "ค้าง" ให้ตรวจใหม่ได้
+    </p>
+    <button class="btn btn-block" style="background:var(--danger);color:#fff"
+            onclick="deleteAuditResult()">
+      <i class="bi bi-trash3"></i> <span data-i18n="summary.del_btn">ลบผลตรวจนี้</span>
+    </button>
+  </div>
+
 </div>
 
 <nav class="bottom-nav">
@@ -105,6 +120,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=40"></script>
+<script src="js/app.js?v=41"></script>
 </body>
 </html>

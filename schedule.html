@@ -11,7 +11,7 @@
   <title>มอบหมายการตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=40">
+  <link rel="stylesheet" href="css/style.css?v=41">
   <style>
     /* Plant Tabs */
     .plant-tab-bar {
@@ -143,6 +143,8 @@
       border-radius: 20px;
     }
     .sched-status-badge.pending      { background: #fff8e1; color: #b06000; }
+    /* บางส่วน = มีคนตรวจแล้วแต่ยังไม่ครบทีม (ส่วน H) */
+    .sched-status-badge.partial      { background: #e8f0fe; color: #1a56b0; }
     .sched-status-badge.completed    { background: #e6f4ea; color: #137333; }
     .sched-status-badge.overdue      { background: #fce8e6; color: #c5221f; }
     .sched-status-badge.unassigned   { background: var(--gray-100); color: var(--gray-600); }
@@ -541,6 +543,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=40"></script>
+<script src="js/app.js?v=41"></script>
 </body>
 </html>

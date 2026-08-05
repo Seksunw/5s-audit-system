@@ -167,54 +167,68 @@ const SBH = {
     return { success:true, data:mapped, grouped, totalMaxScore };
   },
 
-  async getSchedule() {
-    // คืนทั้ง pending + completed เพื่อให้การ์ด "งานของฉัน" แสดงงานที่ตรวจเสร็จแล้วได้ด้วย
-    const { data, error } = await _sb.from('schedules')
-      .select('*, areas(area_name, area_type), plants(plant_name)')
-      .in('status', ['pending','completed']);
-    if (error) throw error;
-    const rows = data || [];
-
-    // แนบ Audit_ID ให้งานที่ตรวจเสร็จแล้ว → ปุ่ม "ดูผล" ลิงก์ตรงหน้าผลการตรวจของหัวข้อนั้น
-    // (ไม่ใช่หน้าประวัติรวม) จับคู่จาก audit_headers ตาม plant+area เอา audit ล่าสุดของพื้นที่นั้น
-    const auditByKey = {};
-    if (rows.some(s => s.status === 'completed')) {
-      const { data:hdrs } = await _sb.from('audit_headers')
-        .select('audit_id, plant_id, area_id, audit_date')
-        .neq('status','pending')
-        .order('audit_date', { ascending:false });
-      (hdrs||[]).forEach(h => {
-        const k = h.plant_id + '|' + h.area_id;
-        if (!(k in auditByKey)) auditByKey[k] = h.audit_id;   // อันแรก = ใหม่สุด (sort desc แล้ว)
-      });
-    }
-
-    return { success:true, data:rows.map(s => ({
-      Schedule_ID:s.schedule_id, Plant_ID:s.plant_id, Area_ID:s.area_id,
-      Area_Name:(s.areas && s.areas.area_name) || s.area_id,
-      Area_Type:(s.areas && MAP.areaType[s.areas.area_type]) || '',
-      Plant_Name:(s.plants && s.plants.plant_name) || s.plant_id,
-      Auditor_ID:(s.auditor_ids||[]).join(','),
-      Audit_Date:s.audit_date, Audit_Round:s.audit_round,
-      Status: s.status === 'completed' ? 'Completed' : 'Pending',
-      Audit_ID: s.status === 'completed' ? (auditByKey[s.plant_id + '|' + s.area_id] || '') : ''
-    })) };
-  },
-
-  /** mark schedule เป็น completed (เรียกหลัง auditor ตรวจงานที่มอบหมายเสร็จ) */
   /**
-   * mark งานที่มอบหมายว่าเสร็จ — ผ่าน RPC ที่แก้ได้แค่คอลัมน์ status
+   * งานที่มอบหมาย — สถานะเป็น "ของฉัน" ไม่ใช่ของแถว
    *
-   * เดิมยิง .update() ตรงโดยพึ่ง RLS `schedules_auditor_update` ซึ่งเป็น `for update`
-   * ไม่จำกัดคอลัมน์ → auditor เลื่อน audit_date หนีเกินกำหนด หรือถอดคนอื่นออกจาก
-   * auditor_ids ได้ (BOPLA) · policy นั้นถูกลบใน patches.sql ส่วน G4 แล้ว
+   * เดิมอ่าน schedules.status ซึ่งเป็นค่าร่วมของทุกคนในแถว → พอคนแรก submit
+   * คนที่ 2 เห็นว่า "เสร็จแล้ว" แล้วตรวจไม่ได้ (ส่วน H)
+   *
+   * ตอนนี้:
+   *   Status   = ฉันมี header ที่ finalize แล้วของ schedule นี้ไหม
+   *   Audit_ID = header ของฉัน  ← เดิมจับคู่จาก plant+area เอาอันล่าสุดของพื้นที่
+   *              ทำให้ปุ่ม "ดูผล" เปิดผลของคนอื่น
+   *   Done_N / Required_N = ความก้าวหน้าของทีม (จาก view schedule_progress)
    */
-  async completeSchedule({ scheduleId }) {
-    if (!scheduleId) return { success:false, error:I18n.t('err.no_schedule_id') };
-    const { error } = await _sb.rpc('mark_schedule_done', { p_schedule_id: scheduleId });
-    if (error) return { success:false, error:error.message };
-    return { success:true };
+  async getSchedule() {
+    const me = (AppState.user && AppState.user.userId) || null;
+
+    const [{ data, error }, { data:prog }, { data:mine }] = await Promise.all([
+      _sb.from('schedules').select('*, areas(area_name, area_type), plants(plant_name)'),
+      _sb.from('schedule_progress').select('schedule_id, done_n, required_n, is_completed'),
+      me ? _sb.from('audit_headers')
+             .select('audit_id, schedule_id, locked_at, status')
+             .eq('auditor_id', me)
+             .not('schedule_id', 'is', null)
+         : Promise.resolve({ data: [] }),
+    ]);
+    if (error) throw error;
+
+    const progBySched = {};
+    (prog || []).forEach(p => { progBySched[p.schedule_id] = p; });
+
+    // header ของฉันที่ submit เสร็จแล้ว → เก็บ audit_id ไว้ให้ปุ่ม "ดูผล"
+    const myAuditBySched = {};
+    (mine || []).forEach(h => {
+      if (h.locked_at || h.status !== 'pending') myAuditBySched[h.schedule_id] = h.audit_id;
+    });
+
+    return { success:true, data:(data || []).map(s => {
+      const p    = progBySched[s.schedule_id] || {};
+      const myId = myAuditBySched[s.schedule_id] || '';
+      return {
+        Schedule_ID:s.schedule_id, Plant_ID:s.plant_id, Area_ID:s.area_id,
+        Area_Name:(s.areas && s.areas.area_name) || s.area_id,
+        Area_Type:(s.areas && MAP.areaType[s.areas.area_type]) || '',
+        Plant_Name:(s.plants && s.plants.plant_name) || s.plant_id,
+        Auditor_ID:(s.auditor_ids||[]).join(','),
+        Audit_Date:s.audit_date, Audit_Round:s.audit_round,
+        Status:   myId ? 'Completed' : 'Pending',   // ← ของฉัน
+        Audit_ID: myId,                             // ← ของฉัน
+        Done_N:     Number(p.done_n)     || 0,
+        Required_N: Number(p.required_n) || 0,
+        Team_Done:  !!p.is_completed,
+      };
+    }) };
   },
+
+  // completeSchedule() ถูกลบแล้ว (ส่วน H)
+  //
+  // เดิม: client เรียก RPC mark_schedule_done() หลัง submit เพื่อปิดงาน
+  //   → ปิดทั้งแถว ทำให้คนที่ 2 ในทีมตรวจไม่ได้
+  //   → ถ้า RPC ล้มจะพังเงียบ ๆ (มีแค่ console.warn ซึ่งถูกปิดบน production)
+  //
+  // ตอนนี้: trigger trg_sync_sched_status ทำให้เอง ฝั่ง client ไม่ต้องเรียกอะไร
+  //   → ลืมไม่ได้ ปลอมไม่ได้ ล้มเงียบไม่ได้
 
   /**
    * ข้อมูลสำหรับหน้า "ตารางตรวจ"
@@ -229,37 +243,68 @@ const SBH = {
    *    ถ้าต้องการบังคับจริง ต้องแก้ RLS + ทำ view สำหรับ KPI รวม (ดู work log 4 ส.ค.)
    */
   async getAssignmentAnalytics() {
-    const [{ data:scheds }, { data:hdrs }, { data:profs }, { data:plants }, prof] = await Promise.all([
-      _sb.from('schedules').select('*, areas(area_name, area_type), plants(plant_name)'),
-      _sb.from('audit_headers').select('auditor_id, plant_id, area_id, percent, audit_date').neq('status','pending'),
-      _sb.from('profiles').select('id, name'),
-      _sb.from('plants').select('plant_id, plant_name').eq('status','active').order('plant_id'),
-      _currentProfile(),
-    ]);
-    const isStaff = !!(prof && ['admin','manager'].includes(prof.role));
-    // auditor / area_manager → เห็นผลการตรวจของตัวเองเท่านั้น
-    const myHdrs = isStaff ? (hdrs || []) : (hdrs || []).filter(h => prof && h.auditor_id === prof.id);
+    const prof0 = await _currentProfile();
+    const isStaff = !!(prof0 && prof0.role === 'admin');
+
+    // แยก 2 query ตามข้อมูลที่ต้องใช้ (ส่วน H)
+    //   1. schedule_progress → "ใครเสร็จ / ใครค้าง"  ไม่มีคอลัมน์ percent อยู่ในนั้นเลย
+    //   2. audit_headers     → ตัวเลข %  จำกัดขอบเขตที่ query ไม่ใช่กรองใน JS
+    //
+    // เดิมดึง percent ของทุกคนมาแล้วค่อย .filter() ใน JS → % ของคนอื่นถึง browser
+    // ไปแล้วก่อนกรอง เปิด DevTools ก็เห็น · ตอนนี้ไม่ส่งมาเลย
+    let hq = _sb.from('audit_headers')
+      .select('auditor_id, schedule_id, plant_id, area_id, percent, audit_date, audit_round')
+      .neq('status','pending');
+    if (!isStaff && prof0) hq = hq.eq('auditor_id', prof0.id);
+
+    const [{ data:scheds }, { data:prog }, { data:hdrs }, { data:profs }, { data:plants }] =
+      await Promise.all([
+        _sb.from('schedules').select('*, areas(area_name, area_type), plants(plant_name)'),
+        _sb.from('schedule_progress').select('schedule_id, required_ids, done_ids, required_n, done_n, is_completed'),
+        hq,
+        _sb.from('profiles').select('id, name, status'),
+        _sb.from('plants').select('plant_id, plant_name').eq('status','active').order('plant_id'),
+      ]);
 
     const nameById = {}; (profs||[]).forEach(p => { nameById[p.id] = p.name; });
+    const progBySched = {}; (prog||[]).forEach(p => { progBySched[p.schedule_id] = p; });
     const today = new Date().toISOString().slice(0,10);
-    const schedules = (scheds||[]).map(s => ({
-      Schedule_ID: s.schedule_id,
-      Plant_ID:    s.plant_id,
-      Plant_Name:  (s.plants && s.plants.plant_name) || s.plant_id,
-      Area_ID:     s.area_id,
-      Area_Name:   (s.areas && s.areas.area_name) || s.area_id,
-      Area_Type:   (s.areas && MAP.areaType[s.areas.area_type]) || '',
-      Auditor_IDs:   s.auditor_ids || [],
-      Auditor_Names: (s.auditor_ids||[]).map(id => nameById[id] || '—'),
-      Audit_Round: s.audit_round || '',
-      Audit_Date:  s.audit_date,
-      Completed:   s.status === 'completed',
-      Overdue:     s.status !== 'completed' && s.audit_date && s.audit_date < today,
+
+    const schedules = (scheds||[]).map(s => {
+      const p        = progBySched[s.schedule_id] || {};
+      const required = p.required_ids || [];      // มอบหมาย ∩ active (คนที่ถูกระงับไม่นับ)
+      const doneSet  = new Set(p.done_ids || []);
+      return {
+        Schedule_ID: s.schedule_id,
+        Plant_ID:    s.plant_id,
+        Plant_Name:  (s.plants && s.plants.plant_name) || s.plant_id,
+        Area_ID:     s.area_id,
+        Area_Name:   (s.areas && s.areas.area_name) || s.area_id,
+        Area_Type:   (s.areas && MAP.areaType[s.areas.area_type]) || '',
+        Auditor_IDs:   s.auditor_ids || [],
+        Auditor_Names: (s.auditor_ids||[]).map(id => nameById[id] || '—'),
+        // รายคน — หน่วยนับใหม่คือ "ช่องงาน" (พื้นที่ × ผู้ตรวจ 1 คน)
+        Required_IDs: required,
+        Slots: required.map(id => ({
+          Auditor_ID: id,
+          Name:       nameById[id] || '—',
+          Done:       doneSet.has(id),
+        })),
+        Required_N: Number(p.required_n) || 0,
+        Done_N:     Number(p.done_n)     || 0,
+        Audit_Round: s.audit_round || '',
+        Audit_Date:  s.audit_date,
+        Completed:   !!p.is_completed,                                   // ทีมเสร็จครบ
+        Overdue:     !p.is_completed && s.audit_date && s.audit_date < today,
+      };
+    });
+
+    const headers = (hdrs||[]).map(h => ({
+      Auditor_ID:h.auditor_id, Schedule_ID:h.schedule_id,
+      Plant_ID:h.plant_id, Area_ID:h.area_id,
+      Percent:Number(h.percent)||0, Date:h.audit_date, Round:h.audit_round || ''
     }));
-    const headers = myHdrs.map(h => ({
-      Auditor_ID:h.auditor_id, Plant_ID:h.plant_id, Area_ID:h.area_id,
-      Percent:Number(h.percent)||0, Date:h.audit_date
-    }));
+
     return { success:true, schedules, headers, isStaff,
       plants:(plants||[]).map(p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name })) };
   },
@@ -429,51 +474,106 @@ const SBH = {
     return { success:true, header:mapHeader(h), details };
   },
 
-  async getDashboard() {
-    const [{ data:headers }, { data:areas }, { data:plants }] = await Promise.all([
-      _sb.from('audit_headers').select('*').neq('status','pending'),
-      _sb.from('areas').select('area_id,area_name,plant_id'),
-      _sb.from('plants').select('plant_id,plant_name'),
-    ]);
+  /**
+   * ข้อมูล Dashboard
+   *
+   * @param {string} round  กรองตามรอบการตรวจ ('' = ทุกรอบ)
+   *
+   * 🔑 เปลี่ยนวิธีเฉลี่ยเป็น "รายคน" (ส่วน H — ตัดสินใจ 5 ส.ค. 2026)
+   *
+   *   เดิม pooled: Σ total_score / Σ max_score
+   *     → `na` (ไม่มีในพื้นที่) ทำให้ max_score ของแต่ละคนไม่เท่ากัน
+   *       คนที่กด NA น้อยกว่าจึงมีน้ำหนักในค่าเฉลี่ยมากกว่า
+   *     ตัวอย่าง พื้นที่ A: อ้น 90% (เต็ม 100) · สมชาย 80% (เต็ม 50)
+   *       pooled     = (90+40)/150 = 86.7%   ← อ้นมีน้ำหนัก 2 เท่า
+   *       เฉลี่ยรายคน= (90+80)/2   = 85%     ← ทุกคนเท่ากัน  ✓ ใช้อันนี้
+   *
+   *   เจตนา: "คะแนนพื้นที่ = เฉลี่ยจากผลตรวจของ auditor ทุกคนที่รับมอบหมาย"
+   *          ทุกความเห็นน้ำหนักเท่ากัน
+   */
+  async getDashboard({ round } = {}) {
+    let hq = _sb.from('audit_headers').select('*').neq('status','pending');
+    if (round) hq = hq.eq('audit_round', round);
+
+    const [{ data:headers }, { data:areas }, { data:plants }, { data:allRounds }] =
+      await Promise.all([
+        hq,
+        _sb.from('areas').select('area_id,area_name,plant_id'),
+        _sb.from('plants').select('plant_id,plant_name'),
+        // รายการรอบทั้งหมดสำหรับ dropdown — ดึงแยกไม่ให้ถูก filter ตัดตัวเลือกทิ้ง
+        _sb.from('audit_headers').select('audit_round').neq('status','pending')
+           .not('audit_round','is',null),
+      ]);
+
     const H = headers || [];
     const pct = h => Number(h.percent) || 0;
-    const tot = h => Number(h.total_score) || 0;   // คะแนนจริง
-    const mx  = h => Number(h.max_score)   || 0;   // คะแนนเต็มจริง
+    const tot = h => Number(h.total_score) || 0;
+    const mx  = h => Number(h.max_score)   || 0;
     const totalAudit = H.length;
 
-    // คะแนนรวม = pooled (รวมคะแนนจริง / รวมคะแนนเต็ม) — สะท้อนน้ำหนักงานจริง
-    const poolPct = (t, m) => m > 0 ? Math.round(t * 100 / m) : 0;
-    const sumT = H.reduce((s,h)=>s+tot(h),0);
-    const sumM = H.reduce((s,h)=>s+mx(h),0);
-    const avgScore = poolPct(sumT, sumM);
+    // ค่าเฉลี่ยรายคน (mean of percent) — ทุกผลตรวจน้ำหนักเท่ากัน
+    const meanPct = arr => arr.length
+      ? arr.reduce((s,v)=>s+v, 0) / arr.length : 0;
+    const avgRaw   = meanPct(H.map(pct));
+    const avgScore = Math.round(avgRaw);
 
-    // passRate + การนับระดับ = ต่อ audit (แต่ละครั้งเท่ากัน) เพราะเป็นตัวชี้ "กี่ครั้งที่ผ่าน"
     const passRate = totalAudit ? Math.round(H.filter(h=>pct(h)>=75).length*100/totalAudit) : 0;
     const excellent = H.filter(h=>pct(h)>=90).length;
     const good = H.filter(h=>pct(h)>=75 && pct(h)<90).length;
     const needImprovement = H.filter(h=>pct(h)<75).length;
 
-    const areaName = {}; (areas||[]).forEach(a=>areaName[a.area_id]=a.area_name);
+    const areaName  = {}; (areas||[]).forEach(a=>areaName[a.area_id]=a.area_name);
+    const areaPlant = {}; (areas||[]).forEach(a=>areaPlant[a.area_id]=a.plant_id);
     const plantName = {}; (plants||[]).forEach(p=>plantName[p.plant_id]=p.plant_name);
 
-    // คะแนนรายกลุ่ม = pooled ภายในกลุ่ม (รวมคะแนนจริงของกลุ่ม / เต็มจริง)
-    // → เห็นคะแนนแต่ละพื้นที่ได้แม้จำนวนเกณฑ์ต่างกัน สำหรับประเมินและหาจุดบกพร่อง
-    const avgBy = (keyFn, nameMap, label) => {
-      const g = {}; H.forEach(h=>{ const k=keyFn(h); (g[k]=g[k]||{t:0,m:0,n:0}); g[k].t+=tot(h); g[k].m+=mx(h); g[k].n++; });
-      // avgScore = ค่าที่ปัดเศษไว้แสดง, avgScoreRaw = ค่าจริงไว้ตัดสินแถบสี (กัน .5 ข้ามแถบ)
-      // n = จำนวนครั้งที่ตรวจ — ranking จาก 1 ครั้ง กับ 10 ครั้ง เชื่อถือได้ไม่เท่ากัน
-      return Object.entries(g).map(([k,v])=>({ [label]:(nameMap[k]||k), avgScore:poolPct(v.t, v.m), avgScoreRaw:(v.m>0?v.t*100/v.m:0), n:v.n }))
-                   .sort((a,b)=>b.avgScoreRaw-a.avgScoreRaw);
+    /**
+     * @param keyFn    คีย์จัดกลุ่ม
+     * @param labelFn  ป้ายที่แสดง
+     * @param label    ชื่อ field ที่ส่งกลับ
+     *
+     * n = จำนวนผลตรวจในกลุ่ม — ranking จาก 1 ครั้ง กับ 10 ครั้งเชื่อถือได้ไม่เท่ากัน
+     * avgScoreRaw = ค่าไม่ปัดเศษ ใช้ตัดสินแถบสี (กัน .5 ข้ามแถบ) และใช้ sort
+     */
+    const avgBy = (keyFn, labelFn, label) => {
+      const g = {};
+      H.forEach(h => { const k = keyFn(h); (g[k] = g[k] || []).push(pct(h)); });
+      return Object.entries(g).map(([k, arr]) => {
+        const raw = meanPct(arr);
+        return { [label]:labelFn(k), avgScore:Math.round(raw), avgScoreRaw:raw, n:arr.length };
+      }).sort((a,b) => b.avgScoreRaw - a.avgScoreRaw);
     };
-    const plantComparison = avgBy(h=>h.plant_id, plantName, 'plantName');
-    const areaRanking = avgBy(h=>h.area_id, areaName, 'areaName');
 
-    const mg = {}; H.forEach(h=>{ const mth=String(h.audit_date||'').slice(0,7); if(mth){(mg[mth]=mg[mth]||{t:0,m:0}); mg[mth].t+=tot(h); mg[mth].m+=mx(h);} });
-    const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month,v])=>({ month, avgScore:poolPct(v.t, v.m), avgScoreRaw:(v.m>0?v.t*100/v.m:0) }));
+    const plantComparison = avgBy(h => h.plant_id, k => plantName[k] || k, 'plantName');
+
+    // จัดกลุ่มด้วย plant + area  (area_id มี prefix โรงงานอยู่แล้ว เช่น SUP-WH-F1
+    // จึงไม่ชนกันข้ามโรงงาน — แต่ "ชื่อ" ซ้ำ เช่น "Warehouse F1" มีทั้ง 3 โรงงาน
+    // ถ้าไม่ใส่ชื่อโรงงานในป้าย ranking จะมี 3 แถวชื่อเหมือนกันแยกไม่ออก)
+    const areaRanking = avgBy(
+      h => h.area_id,
+      k => {
+        const pid = areaPlant[k] || String(k).split('-')[0];
+        const pn  = plantName[pid] || pid;
+        return `${pn} · ${areaName[k] || k}`;
+      },
+      'areaName'
+    );
+
+    // แนวโน้มรายเดือน — เฉลี่ยรายคนเช่นกัน
+    const mg = {};
+    H.forEach(h => {
+      const mth = String(h.audit_date||'').slice(0,7);
+      if (mth) (mg[mth] = mg[mth] || []).push(pct(h));
+    });
+    const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month, arr]) => {
+      const raw = meanPct(arr);
+      return { month, avgScore:Math.round(raw), avgScoreRaw:raw };
+    });
+
+    const rounds = [...new Set((allRounds||[]).map(r => r.audit_round).filter(Boolean))].sort();
 
     return { success:true, data:{
-      totalAudit, avgScore, passRate, excellent, good, needImprovement,
-      plantComparison, areaRanking, monthlyTrend,
+      totalAudit, avgScore, avgScoreRaw:avgRaw, passRate, excellent, good, needImprovement,
+      plantComparison, areaRanking, monthlyTrend, rounds, round: round || '',
       highestArea: areaRanking[0] || null,
       lowestArea:  areaRanking.length ? areaRanking[areaRanking.length-1] : null,
     }};
@@ -543,21 +643,37 @@ const SBH = {
 
   // ---- Schedule (admin) ----
   async getScheduleAdmin() {
-    const [{ data:areas }, { data:scheds }, { data:auditors }, { data:plants }] = await Promise.all([
-      _sb.from('areas').select('*').eq('status','active').order('area_id'),
-      _sb.from('schedules').select('*'),
-      _sb.from('profiles').select('*').eq('status','active').order('name'),
-      _sb.from('plants').select('*').eq('status','active'),
-    ]);
+    const [{ data:areas }, { data:scheds }, { data:prog }, { data:auditors }, { data:plants }] =
+      await Promise.all([
+        _sb.from('areas').select('*').eq('status','active').order('area_id'),
+        _sb.from('schedules').select('*'),
+        _sb.from('schedule_progress').select('schedule_id, required_n, done_n, is_completed'),
+        _sb.from('profiles').select('*').eq('status','active').order('name'),
+        _sb.from('plants').select('*').eq('status','active'),
+      ]);
+
+    // ⚠️ ข้อจำกัดที่ยังไม่แก้ (D2 — งานถัดไป): 1 พื้นที่เก็บได้แค่ 1 งาน
+    //    ถ้ามอบหมายพื้นที่เดียวกันซ้อน 2 รอบ แถวหลังจะทับแถวหน้าในกระดานนี้
+    //    → ระหว่างนี้: ปิดรอบเดิมให้ครบก่อนแล้วค่อยมอบหมายรอบใหม่
+    //    (Dashboard/ตารางตรวจไม่กระทบ เพราะอ่านจาก audit_headers ที่มี audit_round)
     const byArea = {}; (scheds||[]).forEach(s => { byArea[s.area_id] = s; });
+    const progBySched = {}; (prog||[]).forEach(p => { progBySched[p.schedule_id] = p; });
+
     const areaRows = (areas||[]).map(a => {
       const s = byArea[a.area_id];
+      const p = s ? (progBySched[s.schedule_id] || {}) : {};
+      const doneN = Number(p.done_n) || 0, reqN = Number(p.required_n) || 0;
       return {
         Area_ID:a.area_id, Plant_ID:a.plant_id, Area_Name:a.area_name, Area_Type:MAP.areaType[a.area_type]||a.area_type,
         Auditor_IDs: s ? (s.auditor_ids||[]).join(',') : '',
         Audit_Date: s ? s.audit_date : null, Audit_Round: s ? s.audit_round : null,
         Schedule_ID: s ? s.schedule_id : null,
-        Sched_Status: s ? (s.status === 'completed' ? 'Completed' : 'Pending') : null,
+        // สถานะรายคน: ยังไม่มีใครตรวจ / บางส่วน / ครบ
+        Done_N: doneN, Required_N: reqN,
+        Sched_Status: !s ? null
+                    : p.is_completed        ? 'Completed'
+                    : doneN > 0             ? 'Partial'
+                    : 'Pending',
       };
     });
     return { success:true,
@@ -587,11 +703,63 @@ const SBH = {
   },
 
   // ---- Audit submit ----
-  async submitAuditHeader(p) {
+  /**
+   * เคยตรวจงานที่มอบหมายนี้ไปแล้วหรือยัง — ใช้กันตรวจซ้ำ "ก่อน" เข้าหน้ากรอก
+   * นับเฉพาะที่ submit เสร็จ (locked_at หรือ status<>pending)
+   * header ค้างที่ยังไม่ finalize ไม่นับ → ยังตรวจใหม่ได้
+   */
+  async hasAuditedSchedule({ scheduleId, auditorId }) {
+    if (!scheduleId || !auditorId) return { success:true, audited:false };
     const { data, error } = await _sb.from('audit_headers')
-      .insert({ plant_id:p.plantId, area_id:p.areaId, auditor_id:p.auditorId, audit_date:p.auditDate })
+      .select('audit_id, locked_at, status')
+      .eq('schedule_id', scheduleId).eq('auditor_id', auditorId);
+    // เช็กไม่ได้ → ปล่อยผ่าน (unique index กันตอน submit อยู่แล้ว) ไม่บล็อกการทำงาน
+    if (error) return { success:true, audited:false };
+    const done = (data || []).find(h => h.locked_at || h.status !== 'pending');
+    return { success:true, audited:!!done, auditId:done ? done.audit_id : '' };
+  },
+
+  /**
+   * สร้าง header ของผลตรวจ
+   *
+   * scheduleId → ผูกผลตรวจกับงานที่มอบหมาย (ส่วน H)
+   *   • trigger chk_header_schedule ตรวจว่าผู้ตรวจอยู่ในรายชื่อที่มอบหมายจริง
+   *     และก๊อป audit_round มาเก็บให้เอง (ห้ามส่งจาก client — ปลอมได้)
+   *   • unique (schedule_id, auditor_id) กันตรวจซ้ำงานเดียว
+   *
+   * ⚠️ ล้าง header ค้างของตัวเองก่อน (self-heal)
+   *    flow การ submit คือ: insert header → ส่ง details เป็นชุด → finalize
+   *    ถ้าเน็ตหลุดกลางทางและ rollback ไม่สำเร็จ จะเหลือ header ที่ยัง pending ค้างอยู่
+   *    unique index จะบล็อกการตรวจใหม่ → auditor ตันสนิท
+   *    จึงลบ header ที่ยังไม่ finalize (locked_at is null + pending) ของตัวเองทิ้งก่อน
+   *    RLS headers_delete อนุญาตเจ้าของลบได้เมื่อ locked_at is null
+   */
+  async submitAuditHeader(p) {
+    if (p.scheduleId) {
+      const { error: cleanErr } = await _sb.from('audit_headers')
+        .delete()
+        .eq('schedule_id', p.scheduleId)
+        .eq('auditor_id', p.auditorId)
+        .is('locked_at', null)
+        .eq('status', 'pending');
+      if (cleanErr) console.warn('[submit] ล้าง header ค้างไม่สำเร็จ:', cleanErr.message);
+    }
+
+    const { data, error } = await _sb.from('audit_headers')
+      .insert({
+        plant_id:    p.plantId,
+        area_id:     p.areaId,
+        auditor_id:  p.auditorId,
+        audit_date:  p.auditDate,
+        schedule_id: p.scheduleId || null,
+      })
       .select('audit_id').single();
-    if (error) return { success:false, error:error.message };
+
+    if (error) {
+      // 23505 = unique_violation → ตรวจงานนี้ไปแล้ว (ผลเดิม finalize แล้ว ลบทิ้งไม่ได้)
+      if (error.code === '23505') return { success:false, error:I18n.t('err.already_audited') };
+      return { success:false, error:error.message };
+    }
     return { success:true, auditId:data.audit_id };
   },
 
@@ -637,10 +805,42 @@ const SBH = {
       percent:Number(data.percent), status:MAP.auditStatus[data.status]||data.status };
   },
 
-  async deleteAudit({ auditId }) {
+  /**
+   * ลบผลตรวจ 1 ใบ
+   *
+   * ใช้ 2 ทาง:
+   *   1. rollback ตอน submit ล้มกลางทาง (header ยัง locked_at is null → เจ้าของลบได้)
+   *   2. admin ลบผลที่ล็อกแล้ว (RLS headers_delete เปิดให้ role=admin — ส่วน G2)
+   *
+   * audit_details หายเองจาก `on delete cascade`
+   * แต่ **รูปใน Storage ไม่หายตาม** → ต้องเก็บ path ก่อนลบแถว ไม่งั้นเหลือไฟล์กำพร้า
+   * (บทเรียนเดียวกับ admin_reset_data ที่ต้องย้ายการลบรูปมาทำฝั่ง client)
+   */
+  async deleteAudit({ auditId, purgePhotos } = {}) {
+    let paths = [];
+
+    if (purgePhotos) {
+      // อ่าน URL รูปก่อน — หลังลบแถวแล้วจะหาไม่ได้อีก
+      const { data:dets } = await _sb.from('audit_details')
+        .select('photo_urls').eq('audit_id', auditId);
+      const prefix = `/storage/v1/object/public/${CONFIG.STORAGE_BUCKET}/`;
+      (dets || []).forEach(d => (d.photo_urls || []).forEach(u => {
+        const i = String(u).indexOf(prefix);
+        if (i >= 0) paths.push(String(u).slice(i + prefix.length).split('?')[0]);
+      }));
+    }
+
     const { error } = await _sb.from('audit_headers').delete().eq('audit_id', auditId);
     if (error) return { success:false, error:error.message };
-    return { success:true };
+
+    // ลบรูปหลังลบแถวสำเร็จ — ถ้าลบรูปพลาดก็ไม่ย้อนกลับ (แถวหายแล้ว) แค่รายงาน
+    let photoRemoved = 0, photoFailed = 0;
+    for (let i = 0; i < paths.length; i += 100) {
+      const chunk = paths.slice(i, i + 100);
+      const { error:rmErr } = await _sb.storage.from(CONFIG.STORAGE_BUCKET).remove(chunk);
+      if (rmErr) photoFailed += chunk.length; else photoRemoved += chunk.length;
+    }
+    return { success:true, photoRemoved, photoFailed };
   },
 };
 
@@ -790,6 +990,18 @@ const TRANSLATIONS = {
     'confirm.suspend_body':   'ระงับ "{name}" ไม่ให้เข้าใช้งานหรือไม่? ผลตรวจและประวัติยังอยู่ครบ เปิดใช้งานคืนได้ทุกเมื่อ',
     'confirm.restore_title':  'เปิดใช้งานอีกครั้ง',
     'confirm.restore_body':   'ให้ "{name}" กลับมาเข้าใช้งานได้หรือไม่?',
+    'msg.deleting':           'กำลังลบ...',
+    'msg.delete_failed':      'ลบไม่สำเร็จ',
+    'msg.audit_deleted':      'ลบผลตรวจแล้ว',
+    'msg.photo_left':         'ลบรูปไม่สำเร็จ',
+    'err.already_audited':    'คุณตรวจพื้นที่นี้ในงานนี้ไปแล้ว — ถ้าต้องแก้ ให้ Admin ลบผลเดิมก่อน',
+    'dash.round':             'รอบการตรวจ',
+    'dash.all_rounds':        'ทุกรอบ',
+    'summary.del_hint':       'ลบผลตรวจใบนี้ถาวร (รวมรูปภาพ) · งานที่มอบหมายจะกลับเป็น "ค้าง" ให้ตรวจใหม่ได้',
+    'summary.del_btn':        'ลบผลตรวจนี้',
+    'confirm.del_audit_title':'ยืนยันการลบผลตรวจ',
+    'confirm.del_audit_body': 'ลบผลตรวจนี้ถาวร?\n\nพื้นที่: {area}\nวันที่: {date}\nคะแนน: {percent}%\nรายการ: {items} ข้อ · รูป {photos} รูป\n\nลบแล้วกู้คืนไม่ได้ (มีบันทึกไว้ใน audit_logs)',
+    'asg.unit_hint':          'นับเป็นรายคน — พื้นที่ที่มอบหมายให้หลายคนต้องตรวจครบทุกคนจึงถือว่าเสร็จ',
     'msg.save_failed':        'บันทึกไม่สำเร็จ',
     'msg.error_prefix':       'เกิดข้อผิดพลาด: ',
     'msg.no_criteria':        'ไม่มีรายการ Checklist กรุณาติดต่อผู้ดูแลระบบ เพื่อเพิ่มข้อมูลใน Criteria_Master',
@@ -1233,6 +1445,18 @@ const TRANSLATIONS = {
     'confirm.suspend_body':   'Suspend access for "{name}"? Audit results and history are kept — you can reactivate at any time.',
     'confirm.restore_title':  'Reactivate account',
     'confirm.restore_body':   'Allow "{name}" to sign in again?',
+    'msg.deleting':           'Deleting...',
+    'msg.delete_failed':      'Delete failed',
+    'msg.audit_deleted':      'Audit result deleted',
+    'msg.photo_left':         'photos could not be removed:',
+    'err.already_audited':    'You have already audited this area for this assignment — ask an Admin to delete the previous result first',
+    'dash.round':             'Audit round',
+    'dash.all_rounds':        'All rounds',
+    'summary.del_hint':       'Permanently delete this audit (including photos) · the assignment returns to "pending" so it can be re-audited',
+    'summary.del_btn':        'Delete this audit',
+    'confirm.del_audit_title':'Confirm deletion',
+    'confirm.del_audit_body': 'Permanently delete this audit?\n\nArea: {area}\nDate: {date}\nScore: {percent}%\nItems: {items} · photos: {photos}\n\nThis cannot be undone (a record is kept in audit_logs)',
+    'asg.unit_hint':          'Counted per person — an area assigned to several auditors is only complete when all of them have audited it',
     'msg.save_failed':        'Save failed',
     'msg.error_prefix':       'Error: ',
     // Audit submit
@@ -1502,6 +1726,10 @@ const Session = {
         AppState.user.role = fresh;
         localStorage.setItem(CONFIG.SESSION_KEY,
           JSON.stringify({ token: AppState.token, user: AppState.user }));
+        // ⚠️ ต้องล้าง _profileCache ด้วย — getAssignmentAnalytics() ใช้ _currentProfile()
+        //    ตัดสินว่าเป็น admin ไหม (isStaff) ถ้าไม่ล้าง คนที่ถูกลดสิทธิ์กลางเซสชัน
+        //    จะยังเห็น % ของทุกคนในหน้าตารางตรวจ
+        _profileCache = null;
       }
       return currentRole();
     } catch (_) { return null; }
@@ -2149,6 +2377,28 @@ async function initAudit() {
   if (isViewer()) { bounceHome('msg.viewer_no_audit'); return; }
   updateUserUI();
 
+  // ---------------------------------------------------------------
+  // กันตรวจซ้ำงานเดิม — เช็ก "ก่อน" ให้กรอก ไม่ใช่ตอนกด submit
+  //
+  // unique(schedule_id, auditor_id) จะปฏิเสธตอน submit อยู่แล้ว แต่ตอนนั้น
+  // ผู้ใช้กรอกครบ ~67 ข้อ + อัปโหลดรูปไปแล้ว (STEP 0 มาก่อน STEP 1)
+  // → เสียแรงเปล่า และเหลือรูปกำพร้าใน Storage
+  //
+  // เข้ามาได้ยังไง: getAreas() แนบ Schedule_ID ให้พื้นที่ที่ schedule ยัง pending
+  // ซึ่งยัง pending อยู่จนกว่าทีมจะตรวจครบ → คนที่ตรวจไปแล้วเลือกพื้นที่นั้นเองได้อีก
+  // ---------------------------------------------------------------
+  const _sid = getParam('scheduleId');
+  const _me  = AppState.user && AppState.user.userId;
+  if (_sid && _me) {
+    const dup = await API.get('hasAuditedSchedule', { scheduleId: _sid, auditorId: _me });
+    if (dup && dup.audited) {
+      UI.toast(I18n.t('err.already_audited'), 'error', 6000);
+      navigate(dup.auditId ? 'summary.html' : 'mytasks.html',
+               dup.auditId ? { auditId: dup.auditId } : {});
+      return;
+    }
+  }
+
   const plantId  = getParam('plantId');
   const areaId   = getParam('areaId');
   const areaName = getParam('areaName');
@@ -2650,6 +2900,9 @@ async function submitAudit() {
       areaId:     getParam('areaId'),
       auditorId:  AppState.user?.userId || 'unknown',
       auditDate:  document.getElementById('auditDate')?.value || new Date().toISOString().split('T')[0],
+      // ผูกกับงานที่มอบหมาย (ว่าง = ตรวจนอกรอบ เลือกพื้นที่เอง)
+      // audit_round ไม่ส่งจาก client — trigger ก๊อปจาก schedules ให้เอง (ปลอมไม่ได้)
+      scheduleId: getParam('scheduleId') || '',
       totalItems: AppState.criteria.length
     });
 
@@ -2716,12 +2969,8 @@ async function submitAudit() {
     UI.hideLoading();
 
     if (finalRes.success) {
-      // ถ้ามาจากงานที่มอบหมาย → mark schedule เป็น completed (ไม่ให้ล้มทั้ง flow ถ้าพลาด)
-      const scheduleId = getParam('scheduleId');
-      if (scheduleId) {
-        try { await API.get('completeSchedule', { scheduleId }); }
-        catch (e) { console.warn('[Submit] completeSchedule failed:', e.message); }
-      }
+      // ไม่ต้อง mark schedule เอง — trigger trg_sync_sched_status ทำให้แล้ว (ส่วน H)
+      // (เดิมเรียก completeSchedule() ที่นี่ ซึ่งปิดงานทั้งแถวให้ทุกคน)
       logEvent('SUBMIT_AUDIT', `ส่งผลตรวจ ${getParam('areaName') || getParam('areaId') || ''} · ${finalRes.percent}%`, 'audit_headers', finalRes.auditId);
       sessionStorage.setItem('lastAuditResult', JSON.stringify(finalRes));
       navigate('summary.html', { auditId: finalRes.auditId });
@@ -2794,6 +3043,64 @@ async function initSummary() {
     badge.className = noItems ? 'status-badge' : `status-badge status-${status}`;
     badge.textContent = noItems ? 'ไม่มีข้อประเมิน' : (pct >= 90 ? '🏆 Excellent' : pct >= 75 ? '✅ Good' : '⚠️ Need Improvement');
   }
+
+  // ---------------------------------------------------------------
+  // D1: ปุ่มลบผลตรวจ (admin เท่านั้น)
+  //
+  // จำเป็นเพราะ locked_at (ล็อกหลัง submit) + unique(schedule_id, auditor_id)
+  // ทำให้ auditor ที่ตรวจผิด "แก้ไม่ได้ และตรวจใหม่ก็ไม่ได้"
+  // admin ลบให้แล้ว trigger จะเปิดงานที่มอบหมายกลับเป็นค้างเอง → ตรวจใหม่ได้
+  // ---------------------------------------------------------------
+  await Session.refreshRole();
+  const delWrap = document.getElementById('sumAdminDel');
+  if (delWrap && isAdminRole() && result.auditId) {
+    delWrap.style.display = 'block';
+    delWrap.dataset.auditId = result.auditId;
+  }
+}
+
+/** ลบผลตรวจใบนี้ (admin) — ยืนยันด้วยรายละเอียดของจริงก่อน */
+async function deleteAuditResult() {
+  const wrap = document.getElementById('sumAdminDel');
+  const auditId = wrap && wrap.dataset.auditId;
+  if (!auditId) return;
+
+  // ดึงรายละเอียดสด ๆ มาโชว์ในกล่องยืนยัน — กันลบผิดใบ
+  UI.showLoading();
+  const res = await API.get('getAuditDetail', { auditId });
+  UI.hideLoading();
+  if (!res.success || !res.header) { UI.toast(I18n.t('msg.load_failed'), 'error'); return; }
+
+  const h = res.header;
+  const nPhotos = (res.details || []).reduce(
+    (n, d) => n + (d.Photo_URL ? String(d.Photo_URL).split(',').filter(Boolean).length : 0), 0);
+
+  const ok = await showConfirm(
+    I18n.t('confirm.del_audit_title'),
+    I18n.t('confirm.del_audit_body')
+      .replace('{area}',    h.Area_ID   || '-')
+      .replace('{date}',    h.Audit_Date || '-')
+      .replace('{percent}', String(Math.round(Number(h.Percent) || 0)))
+      .replace('{items}',   String((res.details || []).length))
+      .replace('{photos}',  String(nPhotos))
+  );
+  if (!ok) return;
+
+  UI.showLoading(I18n.t('msg.deleting'));
+  const del = await API.post('deleteAudit', { auditId, purgePhotos: true });
+  UI.hideLoading();
+
+  if (!del.success) { UI.toast(del.error || I18n.t('msg.delete_failed'), 'error'); return; }
+
+  logEvent('DELETE_AUDIT', `ลบผลตรวจ ${h.Area_ID || ''} · ${h.Audit_Date || ''}`,
+           'audit_headers', auditId);
+
+  let msg = I18n.t('msg.audit_deleted');
+  if (del.photoFailed) msg += ` (${I18n.t('msg.photo_left')} ${del.photoFailed})`;
+  UI.toast(msg, 'success');
+
+  sessionStorage.removeItem('lastAuditResult');
+  navigate('history.html');
 }
 
 // ============================================================
@@ -2879,6 +3186,15 @@ function applyHistoryFilter() {
 // ============================================================
 // DASHBOARD PAGE
 // ============================================================
+// รอบที่เลือกอยู่บน Dashboard ('' = ทุกรอบ) — คงไว้ระหว่างกดรีเฟรช
+let _dashRound = '';
+
+/** เปลี่ยนรอบแล้วโหลด ranking ใหม่ (ส่วน H) */
+function dashRoundChange(v) {
+  _dashRound = v || '';
+  initDashboard();
+}
+
 async function initDashboard() {
   if (!Session.requireLogin()) return;
   updateUserUI();
@@ -2886,13 +3202,26 @@ async function initDashboard() {
   UI.showLoading(I18n.t('msg.loading_dashboard'));
   try {
     const [res, audRes] = await Promise.all([
-      API.get('getDashboard', {}),
+      API.get('getDashboard', { round: _dashRound }),
       API.get('getAuditedAreas', {}),      // เฉพาะที่มีผลตรวจจริง — ไม่มีทางตัน
     ]);
     UI.hideLoading();
 
     if (!res.success) { UI.toast(res.error, 'error'); return; }
     const d = res.data;
+
+    // 0) dropdown เลือกรอบ — ตัวเลือกมาจากรอบที่มีผลตรวจจริงเท่านั้น
+    const rSel = document.getElementById('dashRound');
+    if (rSel) {
+      const opts = [`<option value="">${escHtml(I18n.t('dash.all_rounds'))}</option>`]
+        .concat((d.rounds || []).map(r =>
+          `<option value="${escAttr(r)}">${escHtml(r)}</option>`));
+      rSel.innerHTML = opts.join('');
+      rSel.value = _dashRound;                       // คงค่าที่เลือกไว้หลัง re-render
+      // ไม่มีรอบให้เลือกเลย (ตรวจนอกรอบทั้งหมด) → ซ่อน filter ไม่ให้เข้าใจผิด
+      const wrap = document.getElementById('dashRoundWrap');
+      if (wrap) wrap.style.display = (d.rounds || []).length ? 'flex' : 'none';
+    }
 
     // 1) Plant Ranking — แสดงทุกโรงงาน
     renderRanking('plantRanking', d.plantComparison || [], 'plantName', 100);
@@ -3782,7 +4111,9 @@ function _schedStatus(a) {
   const today = new Date(); today.setHours(0,0,0,0);
   const d = new Date(a.Audit_Date); d.setHours(0,0,0,0);
   if (a.Sched_Status === 'Completed') return 'completed';
+  // บางคนตรวจแล้วแต่ยังไม่ครบทีม (ส่วน H) — เกินกำหนดสำคัญกว่า จึงเช็กก่อน
   if (d < today) return 'overdue';
+  if (a.Sched_Status === 'Partial') return 'partial';
   return 'pending';
 }
 
@@ -3816,6 +4147,7 @@ function schedRenderGrid() {
 
   const statusCfg = {
     pending:    { label:'รอตรวจ',    icon:'bi-clock' },
+    partial:    { label:'บางส่วน',   icon:'bi-hourglass-split' },
     completed:  { label:'ตรวจแล้ว', icon:'bi-check-circle-fill' },
     overdue:    { label:'เกินกำหนด',icon:'bi-exclamation-circle' },
     unassigned: { label:'ยังไม่มี', icon:'bi-dash-circle' },
@@ -3859,9 +4191,12 @@ function schedRenderGrid() {
           }).join('') + (audIds.length>3 ? `<span style="font-size:0.66rem;color:var(--gray-600)">+${audIds.length-3}</span>` : '')
         : `<span style="font-size:0.7rem;color:var(--gray-500);display:flex;align-items:center;gap:3px;"><i class="bi bi-person-x"></i>ยังไม่มอบหมาย</span>`;
       const dateStr = area.Audit_Date ? new Date(area.Audit_Date).toLocaleDateString('th-TH',{day:'numeric',month:'short'}) : '—';
+      // ความก้าวหน้ารายคน — โชว์เมื่อมอบหมายหลายคนและยังไม่ครบ (ส่วน H)
+      const prog = (area.Required_N > 0 && area.Done_N < area.Required_N && area.Done_N > 0)
+        ? ` · ตรวจแล้ว ${area.Done_N}/${area.Required_N}` : '';
       body = `
         <div class="card-auditor-chips">${chips}</div>
-        <div class="card-date-row"><i class="bi bi-calendar3"></i>${dateStr}${area.Audit_Round ? ' · ' + escHtml(area.Audit_Round) : ''}</div>
+        <div class="card-date-row"><i class="bi bi-calendar3"></i>${dateStr}${area.Audit_Round ? ' · ' + escHtml(area.Audit_Round) : ''}${prog}</div>
         <button class="btn-assign-dashed" onclick="event.stopPropagation();openSchedModal('${escAttr(area.Area_ID)}')">
           <i class="bi bi-pencil-square"></i> แก้ไขเดี่ยว
         </button>`;
@@ -4375,66 +4710,68 @@ function renderAssign() {
   const rows = data.schedules.filter(s =>
     (!roundF || s.Audit_Round === roundF) && (!plantF || s.Plant_ID === plantF));
 
-  // KPI
-  const total   = rows.length;
-  const done    = rows.filter(s => s.Completed).length;
-  const overdue = rows.filter(s => s.Overdue).length;
+  // ---------------------------------------------------------------
+  // KPI — หน่วยนับคือ "ช่องงาน" (พื้นที่ × ผู้ตรวจ 1 คน) ไม่ใช่ "แถว"
+  //
+  // เดิมนับแถว: พื้นที่ A มอบหมาย 2 คน คนแรกเสร็จ → 1/1 = 100%
+  // ตอนนี้:                                        → 1/2 = 50%   (ส่วน H)
+  // ---------------------------------------------------------------
+  const total   = rows.reduce((n, s) => n + (s.Required_N || 0), 0);
+  const done    = rows.reduce((n, s) => n + (s.Done_N     || 0), 0);
+  const overdue = rows.reduce((n, s) => n + (s.Overdue
+                    ? (s.Required_N || 0) - (s.Done_N || 0) : 0), 0);
   const prog    = total ? Math.round(done * 100 / total) : 0;
   setEl('asgTotal', total); setEl('asgDone', done);
   setEl('asgPending', total - done); setEl('asgOverdue', overdue);
   setEl('asgProgPct', prog + '%');
   const fill = document.getElementById('asgProgFill'); if (fill) fill.style.width = prog + '%';
 
-  // คะแนนที่ผู้ตรวจ "ให้" — ต่อคู่ (ผู้ตรวจ + พื้นที่) เอาครั้งล่าสุด
+  // ---------------------------------------------------------------
+  // คะแนนที่ผู้ตรวจ "ให้" — จับคู่ด้วย (ผู้ตรวจ | schedule) ตรง ๆ
   //
-  // ⚠️ ขอบเขตต้องตรงกับ rows ที่แสดงบนการ์ด ไม่งั้นตัวเลขขัดกันเอง
-  //    (เคยมีบั๊ก: การ์ดโชว์ "1 พื้นที่ ได้ 100%" แต่ pill โชว์ 94%
-  //     เพราะ pill เฉลี่ยรวม audit จากรอบอื่นที่ไม่ได้แสดง)
+  // เดิมจับคู่ด้วย (ผู้ตรวจ | พื้นที่) แล้วเดาว่าอันล่าสุดคือของรอบที่แสดง
+  // เพราะ audit_headers ไม่มี schedule_id/audit_round → เป็นที่มาของบั๊ก
+  // "การ์ดโชว์ 100% แต่ pill โชว์ 94%"
+  // ตอนนี้ผูกตรงแล้ว ไม่ต้องเดา ไม่ต้องมี inScope
   //
-  // audit_headers ไม่มีคอลัมน์ audit_round → กรองตามรอบตรง ๆ ไม่ได้
-  // จึงจับคู่ผ่าน (ผู้ตรวจ|พื้นที่) ที่ปรากฏใน rows แทน
-  const inScope = new Set();
-  rows.forEach(s => (s.Auditor_IDs || []).forEach(aid => {
-    if (aid) inScope.add(aid + '|' + s.Area_ID);
-  }));
-
+  // ⚠️ data.headers ถูกจำกัดขอบเขตที่ query แล้ว:
+  //    admin = ทุกคน · auditor = ของตัวเองเท่านั้น
+  //    → เพื่อนร่วมทีมจะขึ้น "เสร็จ" แต่ไม่มี % (ตามนโยบาย 4 ส.ค.)
+  // ---------------------------------------------------------------
+  const schedIds = new Set(rows.map(s => s.Schedule_ID));
   const scoreLU = {};
   data.headers.forEach(h => {
-    const k = h.Auditor_ID + '|' + h.Area_ID;
-    if (!inScope.has(k)) return;                       // นอกขอบเขตที่แสดง → ไม่นับ
-    if (!scoreLU[k] || (h.Date || '') > (scoreLU[k].date || '')) scoreLU[k] = { pct:h.Percent, date:h.Date };
+    if (!h.Schedule_ID || !schedIds.has(h.Schedule_ID)) return;   // ตรวจนอกรอบ/นอกขอบเขต
+    scoreLU[h.Auditor_ID + '|' + h.Schedule_ID] = h.Percent;
   });
-
-  // เฉลี่ยจาก "ค่าที่แสดงจริง" (ครั้งล่าสุดของแต่ละพื้นที่)
-  // → เลขบน pill สอดคล้องกับ badge ข้างในเสมอ
-  const scoresByAud = {};
-  Object.entries(scoreLU).forEach(([k, v]) => {
-    // key = 'auditorUUID|areaId' — UUID ไม่มี '|' จึงใช้ indexOf (ปลอดภัยแม้ area_id มี '|')
-    const aid = k.slice(0, k.indexOf('|'));
-    (scoresByAud[aid] = scoresByAud[aid] || []).push(v.pct);
-  });
-
-  // group schedules ตามผู้ตรวจ (schedule อาจมีหลายคน)
-  const byAud = {};
-  rows.forEach(s => (s.Auditor_IDs || []).forEach((aid, i) => {
-    if (!aid) return;
-    (byAud[aid] = byAud[aid] || { id:aid, name:s.Auditor_Names[i] || '—', scheds:[] }).scheds.push(s);
-  }));
-
-  const auditors = Object.values(byAud).map(a => {
-    const scores = scoresByAud[a.id] || [];
-    const avg = scores.length ? Math.round(scores.reduce((x,y)=>x+y,0)/scores.length) : null;
-    return { ...a, total:a.scheds.length, done:a.scheds.filter(s=>s.Completed).length,
-             prog:a.scheds.length ? Math.round(a.scheds.filter(s=>s.Completed).length*100/a.scheds.length) : 0, avg };
-  }).sort((x,y) => (y.avg ?? -1) - (x.avg ?? -1));
 
   const cont = document.getElementById('asgAuditors');
   const hint = document.getElementById('asgHint');
   if (!cont) return;
 
-  // auditor เห็นเฉพาะงาน/ผลตรวจของตัวเอง → เปลี่ยนหัวข้อให้ตรงบริบท
-  // และซ่อนคำอธิบาย "ความเข้มงวด" ที่มีความหมายเฉพาะเวลาเทียบผู้ตรวจหลายคน
   const isStaff = !!(data && data.isStaff);
+  const myId    = (AppState.user && AppState.user.userId) || '';
+
+  // group ตาม "ผู้ตรวจที่ต้องตรวจจริง" (Slots — ตัดคนที่ถูกระงับออกแล้ว)
+  // auditor เห็นการ์ดของตัวเองใบเดียว · สถานะเพื่อนร่วมทีมอยู่ในรายละเอียดข้างใน
+  const byAud = {};
+  rows.forEach(s => (s.Slots || []).forEach(sl => {
+    if (!isStaff && sl.Auditor_ID !== myId) return;
+    (byAud[sl.Auditor_ID] = byAud[sl.Auditor_ID]
+      || { id:sl.Auditor_ID, name:sl.Name, scheds:[] }).scheds.push(s);
+  }));
+
+  const auditors = Object.values(byAud).map(a => {
+    const scores = a.scheds
+      .map(s => scoreLU[a.id + '|' + s.Schedule_ID])
+      .filter(v => typeof v === 'number');
+    const avg  = scores.length ? Math.round(scores.reduce((x,y)=>x+y,0)/scores.length) : null;
+    const done = a.scheds.filter(s =>
+      (s.Slots || []).some(sl => sl.Auditor_ID === a.id && sl.Done)).length;
+    return { ...a, total:a.scheds.length, done, avg,
+             prog:a.scheds.length ? Math.round(done * 100 / a.scheds.length) : 0 };
+  }).sort((x,y) => (y.avg ?? -1) - (x.avg ?? -1));
+
   setEl('asgAudTitle', isStaff ? 'รายผู้ตรวจ' : 'งานของฉัน');
 
   if (!auditors.length) {
@@ -4447,15 +4784,24 @@ function renderAssign() {
   const cls = p => p==null ? 'muted' : (p>=90 ? 'ok' : p>=75 ? 'warn' : 'danger');
   cont.innerHTML = auditors.map((a, idx) => {
     const detail = a.scheds.map(s => {
+      const mySlot = (s.Slots || []).find(sl => sl.Auditor_ID === a.id) || {};
       let badge;
-      if (s.Completed) {
-        const sc = scoreLU[a.id + '|' + s.Area_ID];
-        badge = `<span class="asg-badge ok">เสร็จ${sc ? ' · ' + sc.pct + '%' : ''}</span>`;
+      if (mySlot.Done) {
+        const pct = scoreLU[a.id + '|' + s.Schedule_ID];
+        badge = `<span class="asg-badge ok">เสร็จ${typeof pct === 'number' ? ' · ' + pct + '%' : ''}</span>`;
       } else {
         badge = `<span class="asg-badge ${s.Overdue ? 'danger' : 'warn'}">ค้าง${s.Overdue ? ' · เกินกำหนด' : ''}</span>`;
       }
       const loc = [s.Area_Name, s.Plant_Name, s.Audit_Round].filter(Boolean).join(' · ');
-      return `<div class="asg-drow"><span class="asg-da">${escHtml(loc)}</span>${badge}</div>`;
+
+      // พื้นที่ที่มอบหมายหลายคน → แสดงสถานะทีม (ไม่มี % ของคนอื่น)
+      let team = '';
+      if ((s.Required_N || 0) > 1) {
+        const others = (s.Slots || []).filter(sl => sl.Auditor_ID !== a.id)
+          .map(sl => `${sl.Done ? '✅' : '⏳'} ${escHtml(sl.Name)}`).join(' · ');
+        team = `<div class="asg-team">ทีม ${s.Done_N}/${s.Required_N} · ${others}</div>`;
+      }
+      return `<div class="asg-drow"><span class="asg-da">${escHtml(loc)}</span>${badge}</div>${team}`;
     }).join('');
     return `
       <div class="asg-aud">

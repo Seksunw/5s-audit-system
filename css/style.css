@@ -680,6 +680,10 @@ a:hover{color:var(--primary-dark)}
 .asg-detail.show{display:block}
 .asg-drow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid rgba(16,24,40,.06);font-size:.78rem}
 .asg-drow:last-child{border-bottom:none}
+/* สถานะทีม — แสดงเมื่อพื้นที่นั้นมอบหมายมากกว่า 1 คน (ไม่มี % ของคนอื่น) */
+.asg-team{font-size:.7rem;color:var(--gray-600);padding:0 4px 8px;line-height:1.5;
+          border-bottom:1px solid rgba(16,24,40,.06);margin-top:-4px}
+.asg-team:last-child{border-bottom:none}
 .asg-da{font-weight:600}
 .asg-badge{font-size:.66rem;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap}
 .asg-badge.ok{background:var(--green-bg);color:var(--excellent)}
