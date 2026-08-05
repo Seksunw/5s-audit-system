@@ -377,8 +377,18 @@ const SBH = {
 
   // ---- History / detail ----
   async getHistory({ plantId, month, year } = {}) {
+    // ขอบเขตการเห็นประวัติ (นโยบาย 6 ส.ค. 2026):
+    //   admin / viewer → เห็นทุกคน · auditor (และ role เก่า) → เห็นเฉพาะของตัวเอง
+    //
+    // ⚠️ เป็นการกรองระดับ UI ไม่ใช่ security control — RLS headers_select ยังเปิด
+    //    ให้ทุกคนที่ล็อกอินอ่านได้ (จำเป็นสำหรับ Dashboard รวมบริษัท)
+    //    เหมือนหน้าตารางตรวจ (getAssignmentAnalytics) ที่ทำไว้ 4 ส.ค.
+    const prof = await _currentProfile();
+    const canSeeAll = !!(prof && (prof.role === 'admin' || prof.role === 'viewer'));
+
     // ตัด audit ที่ยังไม่สมบูรณ์/N-A ทั้งหมด (status=pending) ให้สอดคล้องกับ dashboard
     let q = _sb.from('audit_headers').select('*, profiles(name)').neq('status','pending');
+    if (!canSeeAll && prof) q = q.eq('auditor_id', prof.id);
     if (plantId) q = q.eq('plant_id', plantId);
     const range = _monthRange(month, year);
     if (range) q = q.gte('audit_date', range[0]).lt('audit_date', range[1]);
@@ -3130,6 +3140,7 @@ async function deleteAuditResult() {
 // ============================================================
 async function initHistory() {
   if (!Session.requireLogin()) return;
+  await Session.refreshRole();   // role สดก่อนตัดสินขอบเขตการเห็นประวัติ
   updateUserUI();
 
   // areasRes ถูกลบออก — ไม่ได้ใช้ใน history filter (ประหยัด 1 API call)
