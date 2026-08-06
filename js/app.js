@@ -831,10 +831,9 @@ const SBH = {
 
     let locked = false;
     if (!data.locked_at) {
-      const { error: lockErr } = await _sb.from('audit_headers')
-        .update({ locked_at: new Date().toISOString() }).eq('audit_id', auditId);
+      const { data: lockRes, error: lockErr } = await _sb.rpc('lock_audit', { p_audit_id: auditId });
       if (lockErr) console.warn('[finalize] ล็อกผลตรวจไม่สำเร็จ:', lockErr.message);
-      else locked = true;
+      else locked = !!(lockRes && lockRes.success);
     } else {
       locked = true;
     }
@@ -2882,7 +2881,9 @@ function compressImage(file, maxSize = 1024, quality = 0.8) {
 // ============================================================
 // SUBMIT AUDIT
 // ============================================================
+let _auditSubmitting = false;
 async function submitAudit() {
+  if (_auditSubmitting) return;   // กันกดซ้ำ (double-submit → ผลตรวจซ้ำ)
   // Guard: ป้องกัน submit เมื่อไม่มี criteria
   if (!AppState.criteria || AppState.criteria.length === 0) {
     UI.toast(I18n.t('msg.no_criteria'), 'error', 5000);
@@ -2909,6 +2910,7 @@ async function submitAudit() {
   const ok = await showConfirm(I18n.t('audit.confirm_title'), I18n.t('audit.confirm_msg'));
   if (!ok) return;
 
+  _auditSubmitting = true;
   try {
     // ============================================================
     // STEP 0: Upload รูปภาพทั้งหมดไปยัง imgBB ก่อน
@@ -2916,6 +2918,7 @@ async function submitAudit() {
       .reduce((sum, a) => sum + (a.photos?.length || 0), 0);
 
     console.log('[Submit] 📸 จำนวนรูปทั้งหมด:', totalPhotos);
+    let photoFail = 0;
 
     if (totalPhotos > 0) {
       UI.showLoading(`${I18n.t('msg.uploading')} (0/${totalPhotos})`);
@@ -2931,6 +2934,7 @@ async function submitAudit() {
               photo.uploaded = true;
               console.log(`[Submit] ✅ รูป ${criteriaId} → ${url}`);
             } else {
+              photoFail++;
               console.warn(`[Submit] ⚠️ Upload รูป ${criteriaId} ล้มเหลว`);
             }
             uploaded++;
@@ -2940,6 +2944,16 @@ async function submitAudit() {
       }
     } else {
       console.log('[Submit] ℹ️ ไม่มีรูปภาพ — ข้ามขั้นตอน Upload');
+    }
+
+    if (photoFail > 0) {
+      UI.hideLoading();
+      const _en = I18n.getLang() === 'en';
+      const cont = await showConfirm(
+        _en ? 'Some photos failed to upload' : 'อัปโหลดรูปบางส่วนไม่สำเร็จ',
+        _en ? (photoFail + ' photo(s) could not be uploaded (network issue). Continue without them?')
+            : ('มี ' + photoFail + ' รูปที่อัปโหลดไม่สำเร็จ (อาจเน็ตหลุด) — ดำเนินการต่อโดยไม่มีรูปเหล่านั้น?'));
+      if (!cont) return;
     }
 
     // STEP 1: สร้าง Audit Header → รับ auditId กลับมา
@@ -3034,6 +3048,8 @@ async function submitAudit() {
     UI.hideLoading();
     console.error('submitAudit error:', err);
     UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
+  } finally {
+    _auditSubmitting = false;
   }
 }
 
@@ -3379,7 +3395,7 @@ function impRenderFeed() {
     const photos = (it.Photos || [])
       .map(safeUrl).filter(Boolean)
       .map(u => `<img src="${escAttr(u)}" alt="${escAttr(I18n.t('img.alt_photo'))}"
-                   loading="lazy" onclick="impZoom('${escAttr(u)}')">`).join('');
+                   loading="lazy" data-full="${escAttr(u)}" onclick="impZoom(this)">`).join('');
 
     const hasBody = !!(it.Remark || photos);
     // แถวหัว (แตะเพื่อกาง) + ตัวกาง (comment + รูปย่อ)
@@ -3414,9 +3430,9 @@ function impToggle(idx) {
 
 /** ซูมรูปเต็มจอ (lightbox) — เรียกจากการแตะรูปในแถวที่กางอยู่
  *  event.stopPropagation กันไม่ให้ทะลุไปหุบ accordion */
-function impZoom(url) {
+function impZoom(el) {
   if (event) event.stopPropagation();
-  const safe = safeUrl(url);
+  const safe = safeUrl(el && el.getAttribute ? el.getAttribute('data-full') : el);
   if (!safe) return;
   const box = document.getElementById('impLightbox');
   const img = document.getElementById('impLightboxImg');

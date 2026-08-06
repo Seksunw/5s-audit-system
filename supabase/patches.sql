@@ -702,3 +702,32 @@ drop function if exists public.mark_schedule_done(uuid);
 -- grant execute on function public.mark_schedule_done(uuid) to authenticated;
 --
 -- ⚠️ ต้อง git revert ฝั่ง client ด้วย ไม่งั้น submitAuditHeader จะส่งคอลัมน์ที่ไม่มี
+
+
+-- =====================================================================
+-- G5) แก้ B2 — ล็อกผลตรวจให้ทำงานจริง + กันปลอมคะแนน   (2026-08-06)
+-- ปัญหา: headers_update ไม่มี with_check → เจ้าของตั้ง locked_at ไม่ผ่าน RLS
+--   → ผลตรวจไม่เคยล็อก + เจ้าของ update header ตัวเองได้ (ไม่มี recalc ตอน update) = ปลอมคะแนน
+-- แก้: (1) ล็อกผ่าน RPC security definer  (2) headers_update เหลือ admin เท่านั้น
+--   recalc_audit_header เป็น security definer (owner=postgres) → ยัง update คะแนนได้ (bypass RLS)
+-- idempotent
+-- =====================================================================
+create or replace function public.lock_audit(p_audit_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_owner uuid; v_locked timestamptz;
+begin
+  select auditor_id, locked_at into v_owner, v_locked
+    from public.audit_headers where audit_id = p_audit_id;
+  if v_owner is null then raise exception 'audit not found'; end if;
+  if v_owner <> auth.uid() and coalesce(public.auth_role()::text,'') <> 'admin'
+    then raise exception 'permission denied'; end if;
+  if v_locked is not null then
+    return jsonb_build_object('success',true,'already_locked',true,'locked_at',v_locked); end if;
+  update public.audit_headers set locked_at = now() where audit_id = p_audit_id;
+  return jsonb_build_object('success',true,'locked_at',now());
+end $$;
+grant execute on function public.lock_audit(uuid) to authenticated;
+
+drop policy if exists headers_update on public.audit_headers;
+create policy headers_update on public.audit_headers
+  for update using (coalesce(public.auth_role()::text,'') = 'admin');

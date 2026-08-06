@@ -25,3 +25,7 @@ docs/SECURITY_ASSESSMENT.md
 .env
 .env.*
 *.token
+
+# go-live readiness report — ไม่ขึ้น public (แผนที่ช่องโหว่)
+*READINESS*
+*GO_LIVE*
