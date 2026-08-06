@@ -731,3 +731,17 @@ grant execute on function public.lock_audit(uuid) to authenticated;
 drop policy if exists headers_update on public.audit_headers;
 create policy headers_update on public.audit_headers
   for update using (coalesce(public.auth_role()::text,'') = 'admin');
+
+
+-- =====================================================================
+-- G6) Hardening: ปิด PUBLIC execute บน RPC ที่มี security definer  (2026-08-06)
+-- ปัญหา: Supabase advisor เตือนว่า admin_reset_data/lock_audit ถูก grant EXECUTE
+--   ให้ PUBLIC โดย default ตอนสร้างฟังก์ชัน (คนละเรื่องกับ grant ... to authenticated
+--   ที่ตั้งใจเขียนไว้) → anon (ยังไม่ล็อกอิน) ยิง RPC ตรงมาได้ แม้จะโดน internal
+--   check ปฏิเสธอยู่แล้ว (auth_role()='admin' / เจ้าของ header เท่านั้น) ก็ตาม
+-- แก้: revoke จาก public/anon เท่านั้น — ไม่แตะ grant ...to authenticated ที่มีอยู่แล้ว
+--   จึงไม่กระทบผู้ใช้ที่ล็อกอินอยู่เลย
+-- idempotent
+-- =====================================================================
+revoke execute on function public.admin_reset_data() from public, anon;
+revoke execute on function public.lock_audit(uuid)   from public, anon;
