@@ -5214,7 +5214,7 @@ function buildReportHTML(dash, impItems, opts) {
   @page { size: A4; margin: 12mm 0; }
   :root{ --ink:#1a2233; --gray-600:#6b7688; --gray-500:#8a94a6; --gray-400:#a7b0bf; --gray-300:#d4dae4;
     --gray-200:#e6eaf1; --gray-100:#f3f6fa; --hairline:#e7ebf2; --danger:#e5484d; --red-bg:#fdeceb;
-    --warning:#f0a020; --amber-bg:#fdf3df; --ok:#2fa36b; --brand:#0b6b5e; --brand-soft:#e6f2f0; }
+    --warning:#f0a020; --amber-bg:#fdf3df; --ok:#2fa36b; --brand:#0b5ea3; --brand-soft:#e6f0f8; }
   *{ box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact }
   html,body{ background:#fff; color:var(--ink); font-family:'Sarabun',sans-serif; font-size:12px }
   .page{ padding:0 15mm; }

@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.8'; // v5.8: bust HTML cache สำหรับปุ่ม Export PDF (2026-08-06)
+const CACHE_NAME = '5s-audit-v5.9'; // v5.9: ปรับสี --brand ใน buildReportHTML จากเขียวเป็นฟ้า (2026-08-06)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
