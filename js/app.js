@@ -432,7 +432,7 @@ const SBH = {
     const [{ data:dets, error:dErr }, { data:areas }, { data:plants }, { data:profs }] =
       await Promise.all([
         _sb.from('audit_details')
-          .select('audit_id, score, na, remark, photo_urls, criteria(question, category)')
+          .select('audit_id, score, na, remark, photo_urls, criteria(question, category, sub_category)')
           .in('audit_id', auditIds).eq('na', false).lte('score', 1),
         _sb.from('areas').select('area_id, area_name, status'),
         _sb.from('plants').select('plant_id, plant_name'),
@@ -459,6 +459,7 @@ const SBH = {
         Auditor:    nameById[h.auditor_id] || '-',
         Score:      Number(d.score),
         Category:   d.criteria && d.criteria.category,
+        Sub_Category: (d.criteria && d.criteria.sub_category) || '',
         Question:   (d.criteria && d.criteria.question) || '-',
         Remark:     d.remark || '',
         Photos:     (d.photo_urls || []).filter(Boolean),
@@ -515,7 +516,7 @@ const SBH = {
     let hq = _sb.from('audit_headers').select('*').neq('status','pending');
     if (round) hq = hq.eq('audit_round', round);
 
-    const [{ data:headers }, { data:areas }, { data:plants }, { data:allRounds }] =
+    const [{ data:headers }, { data:areas }, { data:plants }, { data:allRounds }, { data:profs }] =
       await Promise.all([
         hq,
         _sb.from('areas').select('area_id,area_name,plant_id'),
@@ -523,6 +524,7 @@ const SBH = {
         // รายการรอบทั้งหมดสำหรับ dropdown — ดึงแยกไม่ให้ถูก filter ตัดตัวเลือกทิ้ง
         _sb.from('audit_headers').select('audit_round').neq('status','pending')
            .not('audit_round','is',null),
+        _sb.from('profiles').select('id,name'),   // ชื่อผู้ตรวจ สำหรับ auditor roster ในรายงาน PDF
       ]);
 
     const H = headers || [];
@@ -591,9 +593,26 @@ const SBH = {
 
     const rounds = [...new Set((allRounds||[]).map(r => r.audit_round).filter(Boolean))].sort();
 
+    // รายชื่อผู้ตรวจประจำรอบ (auditor roster) — ใครตรวจพื้นที่ไหนบ้าง สำหรับหน้าสรุปในรายงาน PDF
+    const nameById  = {}; (profs || []).forEach(p => { nameById[p.id] = p.name; });
+    const rosterMap = {};
+    H.forEach(h => {
+      const aid = h.auditor_id; if (!aid) return;
+      const r = rosterMap[aid] || (rosterMap[aid] = { name: nameById[aid] || aid, areas: [], _seen: new Set() });
+      const akey = h.area_id;
+      if (akey && !r._seen.has(akey)) {
+        r._seen.add(akey);
+        const pid = areaPlant[akey] || String(akey).split('-')[0];
+        r.areas.push({ area: areaName[akey] || akey, plant: plantName[pid] || pid });
+      }
+    });
+    const auditorRoster = Object.values(rosterMap)
+      .map(r => ({ name: r.name, areas: r.areas, plants: [...new Set(r.areas.map(a => a.plant))] }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
+
     return { success:true, data:{
       totalAudit, avgScore, avgScoreRaw:avgRaw, passRate, excellent, good, needImprovement,
-      plantComparison, areaRanking, monthlyTrend, rounds, round: round || '',
+      plantComparison, areaRanking, monthlyTrend, rounds, round: round || '', auditorRoster,
       highestArea: areaRanking[0] || null,
       lowestArea:  areaRanking.length ? areaRanking[areaRanking.length-1] : null,
     }};
@@ -3244,6 +3263,7 @@ async function initDashboard() {
 
     if (!res.success) { UI.toast(res.error, 'error'); return; }
     const d = res.data;
+    _lastDash = d;   // เก็บไว้ให้ปุ่ม Export PDF ใช้
 
     // 0) dropdown เลือกรอบ — ตัวเลือกมาจากรอบที่มีผลตรวจจริงเท่านั้น
     const rSel = document.getElementById('dashRound');
@@ -3287,6 +3307,7 @@ async function initDashboard() {
 let _impItems      = [];   // ข้อที่ตกทั้งหมดในรอบปัจจุบัน (จาก getImprovementItems)
 let _impAreaList   = [];   // พื้นที่ที่มีข้อตก (ไว้ทำ dropdown)
 let _impAreaFilter = '';   // area_id ที่กรองอยู่ ('' = ทุกพื้นที่)
+let _lastDash      = null; // ข้อมูล getDashboard ล่าสุด — ใช้ตอน Export PDF ไม่ต้องยิงซ้ำ
 
 /** ใส่ตัวเลือกพื้นที่ใน dropdown แบบปลอดภัย (textContent กัน XSS) */
 function impFillAreaFilter() {
@@ -4916,3 +4937,391 @@ document.addEventListener('DOMContentLoaded', () => {
     case 'logs':               initLogs();      break;
   }
 });
+
+
+
+// ============================================================
+// EXPORT DASHBOARD → PDF  (Print CSS / window.print via hidden iframe)
+//   • ใช้ข้อมูลชุดเดียวกับ dashboard (getDashboard + getImprovementItems)
+//   • หน้า 1 = สรุปภาพรวม (KPI + Plant/Area Ranking + รายชื่อผู้ตรวจ)
+//   • หน้าถัดไป = ใบแจ้งพื้นที่ต้องปรับปรุง 1 พื้นที่/ใบ เรียง Plant → Area
+//   • เจ้าของพื้นที่ = เว้นว่างให้เซ็นเอง · ใส่รูปถ่ายจาก Supabase
+//   • รองรับ TH/EN ตามภาษาปัจจุบัน (I18n.getLang())
+// ============================================================
+
+/** ข้อความรายงานแยกภาษา (ไม่แตะ TRANSLATIONS หลักของแอป) */
+const REPORT_STR = {
+  th: {
+    sys:'ระบบตรวจประเมิน 5ส', title:'รายงานสรุปผลการตรวจประเมิน 5ส',
+    reportNo:'เลขที่รายงาน', issue:'วันที่ออกรายงาน', prep:'ผู้จัดทำรายงาน',
+    roundLbl:'รอบการตรวจ', plants:'โรงงาน', areasUnit:'พื้นที่ (ที่มีผลตรวจ)',
+    kpiAvg:'คะแนนรวมเฉลี่ย', kpiPass:'พื้นที่ผ่านเกณฑ์', kpiImp:'ข้อที่ต้องปรับปรุง',
+    passNote:'เกณฑ์ผ่าน ≥ 75%', ofAreas:'ของพื้นที่', failN:'ตก 0 คะแนน', weakN:'1 คะแนน',
+    rank:'ระดับ', score:'คะแนน', progress:'ความคืบหน้า', plant:'โรงงาน',
+    plantRank:'อันดับโรงงาน (Plant Ranking)', areaRank:'อันดับพื้นที่ (Area Ranking)',
+    areaRankHi:'สูงสุด / ต่ำสุด', auditors:'รายชื่อผู้ตรวจประจำรอบ (Auditors)',
+    auditor:'ผู้ตรวจ', areasAssigned:'พื้นที่ที่รับผิดชอบตรวจ',
+    excellent:'ดีเยี่ยม', good:'ดี', watch:'เฝ้าระวัง', needAction:'ต้องปรับปรุง',
+    summaryFoot:'สรุปภาพรวม', page:'หน้า',
+    caTitle:'ใบแจ้งพื้นที่ต้องปรับปรุง (Corrective Action)', roundShort:'รอบตรวจ', areaSeq:'ลำดับพื้นที่',
+    owner:'เจ้าของพื้นที่', auditDate:'วันที่ตรวจ', due:'กำหนดแก้ไข', within:'ภายใน',
+    areaScore:'คะแนนพื้นที่', found:'พบข้อที่ตก', itemsUnit:'ข้อ', urgent:'ต้องปรับปรุงเร่งด่วน',
+    item:'ข้อ', scoreWord:'คะแนน', remarkLbl:'หมายเหตุผู้ตรวจ',
+    planTitle:'แผนการแก้ไขโดยเจ้าของพื้นที่', colAction:'แนวทางแก้ไข', colResp:'ผู้รับผิดชอบ',
+    colDue:'กำหนดเสร็จ', colStatus:'สถานะ',
+    signAuditor:'ผู้ตรวจประเมิน', signOwner:'เจ้าของพื้นที่ (รับทราบ)', signMgr:'ผู้จัดการโรงงาน (อนุมัติ)',
+    dateBlank:'วันที่ ......../......../........', caFoot:'ใบแจ้งปรับปรุง', photo:'รูป',
+    noImp:'ไม่มีข้อที่ต้องปรับปรุงในรอบนี้ 🎉', allRounds:'ทุกรอบ',
+    months:['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'],
+  },
+  en: {
+    sys:'5S Audit & Assessment System', title:'5S Audit Summary Report',
+    reportNo:'Report No.', issue:'Issue date', prep:'Prepared by',
+    roundLbl:'Audit round', plants:'plants', areasUnit:'areas audited',
+    kpiAvg:'Overall Average Score', kpiPass:'Areas Passed', kpiImp:'Items to Improve',
+    passNote:'Pass ≥ 75%', ofAreas:'of all areas', failN:'Score 0', weakN:'Score 1',
+    rank:'Rating', score:'Score', progress:'Progress', plant:'Plant',
+    plantRank:'Plant Ranking', areaRank:'Area Ranking', areaRankHi:'Top / Bottom',
+    auditors:'Auditors for This Round', auditor:'Auditor', areasAssigned:'Areas Assigned',
+    excellent:'Excellent', good:'Good', watch:'Watch', needAction:'Needs Action',
+    summaryFoot:'Executive Summary', page:'Page',
+    caTitle:'Corrective Action Sheet', roundShort:'Round', areaSeq:'Area',
+    owner:'Area Owner', auditDate:'Audit Date', due:'Due Date', within:'By',
+    areaScore:'Area score', found:'items below standard', itemsUnit:'', urgent:'Urgent action required',
+    item:'Item', scoreWord:'Score', remarkLbl:'Auditor note',
+    planTitle:'Corrective Action Plan (by Area Owner)', colAction:'Corrective Action', colResp:'Responsible',
+    colDue:'Due', colStatus:'Status',
+    signAuditor:'Auditor', signOwner:'Area Owner (Acknowledged)', signMgr:'Plant Manager (Approved)',
+    dateBlank:'Date ......../......../........', caFoot:'Corrective Action', photo:'photo',
+    noImp:'No items to improve in this round 🎉', allRounds:'All rounds',
+    months:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+  },
+};
+
+/** สร้าง HTML รายงานทั้งฉบับ (pure function → ทดสอบแยกได้) */
+function buildReportHTML(dash, impItems, opts) {
+  opts = opts || {};
+  const lang = opts.lang === 'en' ? 'en' : 'th';
+  const S = REPORT_STR[lang];
+  const d = dash || {};
+  const items = impItems || [];
+
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const safeImg = u => {
+    const s = String(u || '');
+    return /^https?:\/\//i.test(s) ? s : '';
+  };
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    const dt = new Date(iso + (iso.length <= 10 ? 'T00:00:00' : ''));
+    if (isNaN(dt)) return esc(iso);
+    const y = lang === 'th' ? dt.getFullYear() + 543 : dt.getFullYear();
+    return `${dt.getDate()} ${S.months[dt.getMonth()]} ${y}`;
+  };
+  const addDays = (iso, n) => {
+    if (!iso) return '';
+    const dt = new Date(iso + (iso.length <= 10 ? 'T00:00:00' : ''));
+    if (isNaN(dt)) return '';
+    dt.setDate(dt.getDate() + n);
+    return dt.toISOString().slice(0,10);
+  };
+  const today = opts.todayStr || new Date().toISOString().slice(0,10);
+  const roundName = d.round || '';
+  const reportNo = opts.reportNo ||
+    ('5S-' + (roundName ? roundName.replace(/[^\w]+/g,'-') : today.replace(/-/g,'')));
+
+  // ---- band (ระดับ) ----
+  const bandOf = raw => raw >= 90 ? {t:S.excellent,c:'ok',bar:'var(--ok)'}
+                     : raw >= 75 ? {t:S.good,c:'ok',bar:'var(--ok)'}
+                     : raw >= 60 ? {t:S.watch,c:'warn',bar:'var(--warning)'}
+                                 : {t:S.needAction,c:'bad',bar:'var(--danger)'};
+  const scoreOf = x => (x && (x.avgScoreRaw != null ? x.avgScoreRaw : x.avgScore)) || 0;
+
+  // ---- KPI ----
+  const areaRanking = (d.areaRanking || []);
+  const areasTotal  = areaRanking.length;
+  const areasPassed = areaRanking.filter(a => scoreOf(a) >= 75).length;
+  const n0 = items.filter(it => Number(it.Score) === 0).length;
+  const n1 = items.length - n0;
+  const avg = (d.avgScore != null ? d.avgScore : Math.round(scoreOf({avgScoreRaw:d.avgScoreRaw})));
+  const avgBand = bandOf(d.avgScoreRaw != null ? d.avgScoreRaw : avg);
+
+  // ---- Plant Ranking rows ----
+  const plantRows = (d.plantComparison || []).map((p, i) => {
+    const raw = scoreOf(p), b = bandOf(raw), medal = (i < 3) ? `m${i+1}` : '';
+    return `<tr><td><span class="rank-badge ${medal}">${i+1}</span></td>
+      <td>${esc(p.plantName)}</td>
+      <td><div class="bar"><i style="width:${Math.max(0,Math.min(100,raw))}%;background:${b.bar}"></i></div></td>
+      <td class="pct">${Math.round(raw)}%</td>
+      <td><span class="band ${b.c}">${esc(b.t)}</span></td></tr>`;
+  }).join('');
+
+  // ---- Area Ranking: top 4 / bottom 4 (ถ้า > 8 พื้นที่) ----
+  const arSorted = areaRanking.slice();
+  let arShow;
+  if (arSorted.length <= 6) arShow = arSorted.map(a => ({a, mark:'▲'}));
+  else arShow = arSorted.slice(0,3).map(a=>({a,mark:'▲'}))
+        .concat([{gap:true}])
+        .concat(arSorted.slice(-3).map(a=>({a,mark:'▼'})));
+  const areaRows = arShow.map(row => {
+    if (row.gap) return `<tr><td colspan="5" style="text-align:center;color:var(--gray-400);font-size:.7rem;padding:4px">⋯</td></tr>`;
+    const a = row.a, raw = scoreOf(a), b = bandOf(raw);
+    return `<tr><td style="width:34px"><span class="rank-badge ${b.c==='bad'?'m3':b.c==='ok'&&raw>=90?'m1':''}">${row.mark}</span></td>
+      <td>${esc(a.areaName)}</td>
+      <td><div class="bar"><i style="width:${Math.max(0,Math.min(100,raw))}%;background:${b.bar}"></i></div></td>
+      <td class="pct" style="width:58px">${Math.round(raw)}%</td>
+      <td style="width:92px"><span class="band ${b.c}">${esc(b.t)}</span></td></tr>`;
+  }).join('');
+
+  // ---- Auditor roster ----
+  const initials = nm => {
+    const parts = String(nm||'').trim().split(/\s+/);
+    if (lang === 'en') return parts.map(p=>p[0]||'').join('').slice(0,2).toUpperCase();
+    return (parts[0]||'').slice(0,2);
+  };
+  const rosterRows = (d.auditorRoster || []).map(r => {
+    const areasTxt = (r.areas||[]).map(x => esc(x.area)).join(' · ');
+    const plantsTxt = (r.plants||[]).join(', ');
+    return `<tr>
+      <td><span class="aud-avatar">${esc(initials(r.name))}</span><span class="aud-name">${esc(r.name)}</span></td>
+      <td class="aud-areas">${areasTxt || '—'}</td>
+      <td class="aud-plant">${esc(plantsTxt)}</td></tr>`;
+  }).join('');
+
+  // ---- Group improvement items by area (Plant → Area) ----
+  const groups = {};
+  items.forEach(it => {
+    const k = it.Area_ID || (it.Plant_Name + '|' + it.Area_Name);
+    (groups[k] = groups[k] || { plant:it.Plant_Name, area:it.Area_Name,
+      auditor:it.Auditor, round:it.Audit_Round, date:it.Audit_Date, list:[] }).list.push(it);
+  });
+  const groupArr = Object.values(groups).sort((x,y) =>
+    (x.plant||'').localeCompare(y.plant||'', 'th') || (x.area||'').localeCompare(y.area||'', 'th'));
+
+  // area score lookup จาก areaRanking (ชื่อรูปแบบ "Plant · Area")
+  const areaScoreByName = {};
+  areaRanking.forEach(a => { areaScoreByName[a.areaName] = Math.round(scoreOf(a)); });
+
+  const sheets = groupArr.map((g, gi) => {
+    const gN0 = g.list.filter(it => Number(it.Score) === 0).length;
+    const gN1 = g.list.length - gN0;
+    const areaPct = areaScoreByName[`${g.plant} · ${g.area}`];
+    const scoreCls = (areaPct != null && areaPct >= 75) ? 'warn' : '';
+    const dueIso = addDays(g.date, 14);
+
+    const failCards = g.list
+      .sort((a,b)=> Number(a.Score)-Number(b.Score))
+      .map((it, i) => {
+        const s = Number(it.Score), cls = s === 0 ? 's0' : 's1';
+        const cat = [it.Category, it.Sub_Category ? `${S.item} ${it.Sub_Category}` : '']
+          .filter(Boolean).join(' · ');
+        const photos = (it.Photos||[]).map(safeImg).filter(Boolean)
+          .map(u => `<img class="ph-img" src="${esc(u)}" alt="${esc(S.photo)}">`).join('');
+        return `<div class="fail ${cls}">
+          <div class="fail-top"><div class="idx">${i+1}</div>
+            <span class="sbadge ${cls}">${esc(S.scoreWord)} ${s}</span>
+            <div>${cat ? `<div class="fail-cat">${esc(cat)}</div>` : ''}
+              <div class="fail-q">${esc(it.Question)}</div></div></div>
+          ${it.Remark ? `<div class="fail-remark"><b>${esc(S.remarkLbl)}:</b> ${esc(it.Remark)}</div>` : ''}
+          ${photos ? `<div class="fail-photos">${photos}</div>` : ''}
+          <div class="action"><div class="at">${esc(S.planTitle)}</div>
+            <table><thead><tr><th>${esc(S.colAction)}</th><th style="width:130px">${esc(S.colResp)}</th>
+              <th style="width:96px">${esc(S.colDue)}</th><th style="width:78px">${esc(S.colStatus)}</th></tr></thead>
+              <tbody><tr class="blankrow"><td></td><td></td><td></td><td></td></tr></tbody></table></div>
+        </div>`;
+      }).join('');
+
+    return `<div class="page sheet">
+      <div class="rp-head">
+        <div class="rp-logo"><div class="mark">5S</div>
+          <div><div class="co">Suntory Wellness (Thailand)</div><div class="sub">${esc(S.caTitle)}</div></div></div>
+        <div class="rp-meta">${esc(S.roundShort)} <b>${esc(g.round||roundName||'—')}</b><br>${esc(S.areaSeq)} <b>${gi+1} / ${groupArr.length}</b></div>
+      </div>
+      <div class="sheet-band">
+        <div class="sheet-kicker">${esc(g.plant||'')}</div>
+        <div class="sheet-h2">${esc(g.area||'')}</div>
+        <div class="sheet-grid">
+          <div><span class="k">${esc(S.owner)}</span><span class="v">............................</span></div>
+          <div><span class="k">${esc(S.auditor)}</span><span class="v">${esc(g.auditor||'—')}</span></div>
+          <div><span class="k">${esc(S.auditDate)}</span><span class="v">${fmtDate(g.date)}</span></div>
+          <div><span class="k">${esc(S.due)}</span><span class="v" style="color:var(--danger)">${esc(S.within)} ${fmtDate(dueIso)}</span></div>
+        </div>
+        <div class="sheet-scorebar">
+          ${areaPct != null ? `<div class="sc ${scoreCls}">${areaPct}%</div>` : ''}
+          <div class="lbl">${esc(S.areaScore)}${(areaPct!=null&&areaPct<60)?` · <b>${esc(S.urgent)}</b>`:''} · ${esc(S.found)} <b>${g.list.length}</b> ${esc(S.itemsUnit)} (${esc(S.failN)} ${gN0} · ${esc(S.weakN)} ${gN1})</div>
+        </div>
+      </div>
+      ${failCards}
+      <div class="rp-sign">
+        <div class="box"><div class="line"></div><div class="cap">${esc(S.signAuditor)}</div><div class="date">${esc(g.auditor||'')}</div></div>
+        <div class="box"><div class="line"></div><div class="cap">${esc(S.signOwner)}</div><div class="date">&nbsp;</div></div>
+        <div class="box"><div class="line"></div><div class="cap">${esc(S.signMgr)}</div><div class="date">${esc(S.dateBlank)}</div></div>
+      </div>
+      <div class="rp-foot"><span>${esc(S.caFoot)} · ${esc(g.area||'')} (${esc(g.plant||'')})</span><span>${esc(S.page)} ${gi+2} / ${groupArr.length+1}</span></div>
+    </div>`;
+  }).join('');
+
+  const summaryPage = `<div class="page">
+    <div class="rp-head">
+      <div class="rp-logo"><div class="mark">5S</div>
+        <div><div class="co">Suntory Wellness (Thailand)</div><div class="sub">${esc(S.sys)}</div></div></div>
+      <div class="rp-meta">${esc(S.reportNo)} <b>${esc(reportNo)}</b><br>${esc(S.issue)} <b>${fmtDate(today)}</b><br>${esc(S.prep)} <b>${esc(opts.preparedBy||'—')}</b></div>
+    </div>
+    <div class="rp-title"><h2>${esc(S.title)}</h2>
+      <div class="rng">${esc(S.roundLbl)}: ${esc(roundName || S.allRounds)} · ${(d.plantComparison||[]).length} ${esc(S.plants)} · ${areasTotal} ${esc(S.areasUnit)}</div></div>
+    <div class="rp-score">
+      <div class="rp-kpi"><div class="lab">${esc(S.kpiAvg)}</div><div class="big ${avgBand.c==='ok'?'ok':(avgBand.c==='bad'?'':'warn')}">${avg}%</div><div class="note">${esc(S.passNote)} · ${esc(avgBand.t)}</div></div>
+      <div class="rp-kpi"><div class="lab">${esc(S.kpiPass)}</div><div class="big">${areasPassed} / ${areasTotal}</div><div class="note">${areasTotal?Math.round(areasPassed*100/areasTotal):0}% ${esc(S.ofAreas)}</div></div>
+      <div class="rp-kpi"><div class="lab">${esc(S.kpiImp)}</div><div class="big warn">${items.length}</div><div class="note">${esc(S.failN)} ${n0} · ${esc(S.weakN)} ${n1}</div></div>
+    </div>
+    <div class="rp-sec"><div class="rp-sec-t">${esc(S.plantRank)}</div>
+      <table><thead><tr><th style="width:36px">#</th><th>${esc(S.plant)}</th><th>${esc(S.progress)}</th><th style="width:58px">${esc(S.score)}</th><th style="width:92px">${esc(S.rank)}</th></tr></thead>
+      <tbody>${plantRows || `<tr><td colspan="5" style="color:var(--gray-400)">—</td></tr>`}</tbody></table></div>
+    <div class="rp-sec"><div class="rp-sec-t">${esc(S.areaRank)} — ${esc(S.areaRankHi)}</div>
+      <table><tbody>${areaRows || `<tr><td colspan="5" style="color:var(--gray-400)">—</td></tr>`}</tbody></table></div>
+    <div class="rp-sec"><div class="rp-sec-t">${esc(S.auditors)}</div>
+      <table><thead><tr><th style="width:200px">${esc(S.auditor)}</th><th>${esc(S.areasAssigned)}</th><th style="width:150px">${esc(S.plant)}</th></tr></thead>
+      <tbody>${rosterRows || `<tr><td colspan="3" style="color:var(--gray-400)">—</td></tr>`}</tbody></table></div>
+    <div class="rp-foot"><span>5S Audit System · Suntory Wellness (Thailand)</span><span>${esc(S.page)} 1 / ${groupArr.length+1} — ${esc(S.summaryFoot)}</span></div>
+  </div>`;
+
+  const noImpNote = items.length ? '' :
+    `<div class="page sheet"><div class="rp-head"><div class="rp-logo"><div class="mark">5S</div>
+      <div><div class="co">Suntory Wellness (Thailand)</div><div class="sub">${esc(S.caTitle)}</div></div></div></div>
+      <div style="text-align:center;padding:120px 20px;color:var(--gray-500);font-size:1rem">${esc(S.noImp)}</div></div>`;
+
+  return `<!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8">
+<title>${esc(S.title)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 12mm 0; }
+  :root{ --ink:#1a2233; --gray-600:#6b7688; --gray-500:#8a94a6; --gray-400:#a7b0bf; --gray-300:#d4dae4;
+    --gray-200:#e6eaf1; --gray-100:#f3f6fa; --hairline:#e7ebf2; --danger:#e5484d; --red-bg:#fdeceb;
+    --warning:#f0a020; --amber-bg:#fdf3df; --ok:#2fa36b; --brand:#0b6b5e; --brand-soft:#e6f2f0; }
+  *{ box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact }
+  html,body{ background:#fff; color:var(--ink); font-family:'Sarabun',sans-serif; font-size:12px }
+  .page{ padding:0 15mm; }
+  .sheet{ page-break-before:always; }
+  .rp-sec{ page-break-inside:avoid }
+  .rp-head{ display:flex; justify-content:space-between; align-items:flex-start;
+    border-bottom:2.5px solid var(--brand); padding-bottom:12px; margin-bottom:13px }
+  .rp-logo{ display:flex; align-items:center; gap:11px }
+  .rp-logo .mark{ width:44px;height:44px;border-radius:10px;background:var(--brand);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem }
+  .rp-logo .co{ font-weight:800;font-size:1rem;line-height:1.2 }
+  .rp-logo .sub{ font-size:.72rem;color:var(--gray-600) }
+  .rp-meta{ text-align:right; font-size:.74rem; color:var(--gray-600); line-height:1.7 }
+  .rp-meta b{ color:var(--ink) }
+  .rp-title{ text-align:center; margin:2px 0 12px }
+  .rp-title h2{ font-size:1.3rem; font-weight:800 }
+  .rp-title .rng{ font-size:.82rem; color:var(--gray-600); margin-top:3px }
+  .rp-score{ display:flex; gap:14px; margin-bottom:14px }
+  .rp-kpi{ flex:1; border:1px solid var(--hairline); border-radius:12px; padding:10px 15px; background:var(--gray-100) }
+  .rp-kpi .lab{ font-size:.66rem; color:var(--gray-600); font-weight:700; text-transform:uppercase; letter-spacing:.04em }
+  .rp-kpi .big{ font-size:1.8rem; font-weight:800; line-height:1.1; margin-top:4px }
+  .rp-kpi .big.ok{ color:var(--ok) } .rp-kpi .big.warn{ color:var(--warning) }
+  .rp-kpi .note{ font-size:.69rem; color:var(--gray-500); margin-top:2px }
+  .rp-sec{ margin-bottom:13px }
+  .rp-sec-t{ font-size:.9rem; font-weight:800; color:var(--brand); margin-bottom:7px; display:flex; align-items:center; gap:7px }
+  .rp-sec-t::before{ content:''; width:4px; height:16px; background:var(--brand); border-radius:3px; display:inline-block }
+  table{ width:100%; border-collapse:collapse; font-size:.78rem }
+  th{ text-align:left; font-size:.66rem; text-transform:uppercase; letter-spacing:.03em;
+    color:var(--gray-600); font-weight:700; padding:6px 9px; border-bottom:1.5px solid var(--gray-300) }
+  td{ padding:6px 9px; border-bottom:1px solid var(--hairline); vertical-align:middle }
+  .rank-badge{ display:inline-flex; width:22px;height:22px;border-radius:6px;align-items:center;
+    justify-content:center; font-weight:800; font-size:.7rem; background:var(--gray-100); color:var(--gray-600) }
+  .rank-badge.m1{ background:#fdf3d7;color:#8a6200 } .rank-badge.m2{ background:#eceff3;color:#5b6470 }
+  .rank-badge.m3{ background:#f7e6dc;color:#8a4b26 }
+  .bar{ height:8px;border-radius:5px;background:var(--gray-200);overflow:hidden;width:130px }
+  .bar > i{ display:block;height:100%;border-radius:5px }
+  .pct{ font-weight:800 } .band{ font-size:.63rem;font-weight:700;padding:2px 8px;border-radius:20px }
+  .band.ok{ background:#e4f5ec;color:var(--ok) } .band.warn{ background:var(--amber-bg);color:#b5760a }
+  .band.bad{ background:var(--red-bg);color:var(--danger) }
+  .aud-avatar{ display:inline-flex; min-width:26px;height:26px;padding:0 4px;border-radius:50%;background:var(--brand-soft);
+    color:var(--brand); align-items:center;justify-content:center;font-weight:800;font-size:.66rem;margin-right:8px;vertical-align:middle }
+  .aud-name{ font-weight:700; vertical-align:middle }
+  .aud-areas{ color:#485366; line-height:1.5 } .aud-plant{ font-size:.68rem;font-weight:700;color:var(--gray-600) }
+  .rp-foot{ display:flex; justify-content:space-between; border-top:1px solid var(--hairline);
+    padding-top:10px; margin-top:22px; font-size:.68rem; color:var(--gray-500) }
+  .sheet-band{ background:var(--brand-soft); border:1px solid #bfe0da; border-radius:12px; padding:14px 16px; margin-bottom:16px }
+  .sheet-kicker{ font-size:.68rem; font-weight:800; color:var(--brand); letter-spacing:.06em; text-transform:uppercase }
+  .sheet-h2{ font-size:1.16rem; font-weight:800; margin-top:3px }
+  .sheet-grid{ display:grid; grid-template-columns:1fr 1fr; gap:6px 26px; margin-top:12px; font-size:.8rem }
+  .sheet-grid .k{ color:var(--gray-600); width:110px; display:inline-block }
+  .sheet-grid .v{ font-weight:700 }
+  .sheet-scorebar{ display:flex; align-items:center; gap:10px; margin-top:12px; padding-top:12px; border-top:1px dashed #bfe0da }
+  .sheet-scorebar .sc{ font-size:1.5rem; font-weight:800; color:var(--danger) } .sheet-scorebar .sc.warn{ color:var(--warning) }
+  .sheet-scorebar .lbl{ font-size:.74rem; color:var(--gray-600); line-height:1.4 }
+  .fail{ border:1px solid var(--hairline); border-radius:11px; padding:13px 15px; margin-bottom:12px; page-break-inside:avoid }
+  .fail.s0{ border-left:4px solid var(--danger) } .fail.s1{ border-left:4px solid var(--warning) }
+  .fail-top{ display:flex; align-items:flex-start; gap:9px; margin-bottom:7px }
+  .idx{ width:24px;height:24px;flex-shrink:0;border-radius:7px;background:var(--ink);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.74rem }
+  .sbadge{ font-size:.62rem;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0 }
+  .sbadge.s0{ background:var(--red-bg);color:var(--danger) } .sbadge.s1{ background:var(--amber-bg);color:#b5760a }
+  .fail-cat{ font-size:.65rem;color:var(--gray-500);font-weight:600 }
+  .fail-q{ font-size:.84rem;font-weight:600;line-height:1.4 }
+  .fail-remark{ font-size:.76rem;color:#485366;background:var(--gray-100);border-radius:8px; padding:8px 10px;margin-top:8px;line-height:1.5 }
+  .fail-photos{ display:flex; gap:8px; margin-top:9px; flex-wrap:wrap }
+  .ph-img{ width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--hairline) }
+  .action{ margin-top:10px }
+  .action .at{ font-size:.66rem;font-weight:800;color:var(--gray-600);text-transform:uppercase; letter-spacing:.03em;margin-bottom:5px }
+  .action table td, .action table th{ border:1px solid var(--gray-300); padding:9px 9px }
+  .action th{ background:var(--gray-100) } .blankrow td{ height:30px }
+  .rp-sign{ display:flex; gap:36px; margin-top:24px; page-break-inside:avoid }
+  .rp-sign .box{ flex:1; text-align:center }
+  .rp-sign .line{ border-top:1.4px solid var(--gray-400); margin:0 6px 6px; padding-top:8px }
+  .rp-sign .cap{ font-size:.72rem; color:var(--gray-600) } .rp-sign .date{ font-size:.66rem; color:var(--gray-400); margin-top:3px }
+</style></head><body>
+${summaryPage}
+${sheets}
+${noImpNote}
+</body></html>`;
+}
+
+/** ปุ่ม Export — สร้างรายงานแล้วสั่งพิมพ์ผ่าน iframe ซ่อน (ผู้ใช้เลือก Save as PDF) */
+async function exportDashboardPDF() {
+  try {
+    if (typeof UI !== 'undefined' && UI.showLoading) UI.showLoading(I18n.getLang()==='en'?'Preparing report…':'กำลังสร้างรายงาน…');
+    let dash = (typeof _lastDash !== 'undefined' && _lastDash) ? _lastDash : null;
+    let items = (typeof _impItems !== 'undefined' && _impItems) ? _impItems : [];
+    if (!dash) {
+      const [r, ir] = await Promise.all([
+        API.get('getDashboard', { round: _dashRound }),
+        API.get('getImprovementItems', { round: _dashRound }),
+      ]);
+      dash = r.success ? r.data : {};
+      items = (ir.success && ir.items) ? ir.items : [];
+    }
+    const html = buildReportHTML(dash, items, {
+      lang: I18n.getLang(),
+      preparedBy: (typeof AppState !== 'undefined' && AppState.user && AppState.user.name) || '',
+    });
+
+    const ifr = document.createElement('iframe');
+    ifr.setAttribute('aria-hidden', 'true');
+    ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(ifr);
+    const doc = ifr.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+
+    await new Promise(res => { if (doc.readyState === 'complete') res(); else ifr.onload = res; });
+    try { if (doc.fonts && doc.fonts.ready) await doc.fonts.ready; } catch(e){}
+    const imgs = Array.prototype.slice.call(doc.images || []);
+    await Promise.all(imgs.map(im => im.complete ? Promise.resolve()
+      : new Promise(r => { im.onload = im.onerror = r; setTimeout(r, 8000); })));
+    await new Promise(r => setTimeout(r, 250));
+
+    if (typeof UI !== 'undefined' && UI.hideLoading) UI.hideLoading();
+    ifr.contentWindow.focus();
+    ifr.contentWindow.print();
+    setTimeout(() => { try { ifr.remove(); } catch(e){} }, 60000);
+  } catch (err) {
+    if (typeof UI !== 'undefined' && UI.hideLoading) UI.hideLoading();
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast(I18n.getLang()==='en'?'Export failed':'สร้างรายงานไม่สำเร็จ', 'error');
+    console.error('[exportDashboardPDF]', err);
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { buildReportHTML, REPORT_STR };
