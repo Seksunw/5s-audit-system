@@ -61,7 +61,9 @@
 ## Supabase / Database
 
 - 8 ตาราง: `profiles` (1:1 auth.users), `plants`, `areas`, `criteria`, `audit_headers`, `audit_details`, `schedules`, `audit_logs`
-- **Enums:** `user_role`(admin/manager/auditor/area_manager), `audit_status`(excellent/good/need_improvement/pending/failed), `area_type`, `record_status`, `schedule_status`
+- **Roles (นโยบาย 5 ส.ค. 2026 — ใช้จริง 3 ตัว):** `admin` (จัดการทุกอย่าง แก้/ลบผลตรวจได้ตลอด) · `auditor` (ตรวจ + ดู Dashboard ทั้งบริษัท แต่ประวัติเห็นเฉพาะของตัวเอง · แก้ผลตัวเองไม่ได้หลัง submit) · `viewer` (ดูได้ทุกอย่างรวมประวัติทุกคน แต่ตรวจ/อัปโหลด/แก้ไม่ได้) · `manager`+`area_manager` **เลิกใช้** (ซ่อนจาก dropdown · Postgres ลบค่า enum ไม่ได้ → คนที่ยังเป็น role เก่าได้สิทธิ์เท่า auditor · `is_staff()` = admin-only แล้ว)
+- **Enums อื่น:** `audit_status`(excellent/good/need_improvement/pending/failed), `area_type`, `record_status`, `schedule_status`
+- **ล็อกผลตรวจ:** หลัง finalize `audit_headers.locked_at` ถูกตั้งผ่าน RPC `lock_audit` (security definer) · `headers_update` policy = admin เท่านั้น · auditor แก้/ลบ/ปลอมคะแนน header ตัวเองไม่ได้ (patches.sql ส่วน G2+G5) · trigger `trg_chk_locked` กันแก้ audit_details ที่ล็อกแล้ว
 - **เกณฑ์ผ่าน:** ≥90 excellent · ≥75 good · <75 need_improvement
 - **RLS:** ผู้ล็อกอินทุกคน "อ่าน" ภาพรวมทั้งบริษัทได้ (plants/areas/criteria/profiles/audit_*) · "เขียน" จำกัดเจ้าของ/admin — ระวังตอน query ว่า auditor เห็นได้แค่ไหน
 - **SQL rule:** แก้ DB เพิ่ม → **ต่อท้าย `patches.sql` ไฟล์เดียว เขียนให้ idempotent (รันซ้ำได้)** · **อย่ารัน `schema.sql` บน DB ที่ใช้อยู่** (มันสำหรับ DB ใหม่เปล่าเท่านั้น)

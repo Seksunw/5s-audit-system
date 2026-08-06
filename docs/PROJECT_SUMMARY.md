@@ -1,8 +1,8 @@
 # PROJECT_SUMMARY.md — ระบบตรวจ 5ส โรงงาน (5S Audit System)
 
-> **อ้างอิงหลักสำหรับการพัฒนา** — อัปเดต: 2026-08-01 (สถาปัตยกรรม Supabase)
+> **อ้างอิงหลักสำหรับการพัฒนา** — อัปเดต: 2026-08-06 (3 roles · ล็อกผลตรวจ · ผู้ตรวจหลายคนต่อพื้นที่)
 > ในการวิเคราะห์ครั้งต่อไป ให้อ่านไฟล์นี้ก่อนเสมอ แล้วอ่าน source code เฉพาะส่วนที่เปลี่ยน
-> ประวัติการพัฒนารายวันดูที่ `work-logs/WORK_LOG_YYYY-MM-DD.md`
+> ประวัติการพัฒนารายวันดูที่ `work-logs/WORK_LOG_YYYY-MM-DD.md` (ล่าสุด 2026-08-06 มี 7 ส่วน)
 
 ---
 
@@ -161,11 +161,18 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 ### Enums
 | Enum | ค่า |
 |------|-----|
-| `user_role` | admin, manager, auditor, area_manager |
+| `user_role` | admin, manager, auditor, area_manager, **viewer** — *ใช้จริง 3 ตัว: admin/auditor/viewer · manager+area_manager เลิกใช้ (ซ่อนจาก dropdown, Postgres ลบค่าออกไม่ได้ → คนที่เป็น role เก่าได้สิทธิ์เท่า auditor)* |
 | `record_status` | active, inactive |
 | `area_type` | office, production, warehouse, cafeteria, outdoor, maintenance |
 | `audit_status` | excellent, good, need_improvement, pending, failed |
 | `schedule_status` | pending, completed |
+
+**3 roles ที่ใช้จริง (นโยบาย 5 ส.ค. 2026):**
+| role | สิทธิ์ |
+|------|--------|
+| 👑 admin | จัดการทุกอย่าง · แก้/ลบผลตรวจได้ตลอด · เห็นทุกคน |
+| 📋 auditor | ตรวจ 5ส · ดูผลตรวจ**ทั้งบริษัทบน Dashboard** แต่**ประวัติเห็นเฉพาะของตัวเอง** · แก้ผลตัวเองไม่ได้หลัง submit |
+| 👁️ viewer | ผู้บริหาร — ดูได้ทุกอย่าง (รวมประวัติทุกคน) แต่**ตรวจไม่ได้ อัปโหลดรูปไม่ได้ แก้ไม่ได้** |
 
 ### ตาราง (8)
 **`profiles`** (ผูก 1:1 กับ `auth.users`) — id(uuid, FK auth.users), employee_id, name, department,
