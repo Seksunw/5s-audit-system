@@ -20,3 +20,8 @@ docs/SECURITY_ASSESSMENT.md
 *SECURITY_ASSESSMENT*
 *PENTEST*
 *.pentest.md
+
+# secrets — Supabase MCP token ฯลฯ (repo public ห้ามหลุด)
+.env
+.env.*
+*.token
