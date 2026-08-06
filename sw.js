@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.7'; // v2.2: JS always fresh from network
+const CACHE_NAME = '5s-audit-v5.8'; // v5.8: bust HTML cache สำหรับปุ่ม Export PDF (2026-08-06)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
