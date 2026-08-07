@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.9'; // v5.9: ปรับสี --brand ใน buildReportHTML จากเขียวเป็นฟ้า (2026-08-06)
+const CACHE_NAME = '5s-audit-v5.10'; // v5.10: เอา capture='environment' ออกจาก input แนบรูป — ให้เลือกจากอัลบั้มได้ ไม่บังคับกล้อง (2026-08-07)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

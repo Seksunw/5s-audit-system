@@ -2767,7 +2767,7 @@ function triggerPhoto(criteriaId) {
   const input = document.createElement('input');
   input.type   = 'file';
   input.accept = 'image/*';
-  input.capture= 'environment';   // เปิดกล้องหลังมือถือ
+  // ไม่ตั้ง capture — ปล่อยให้เบราว์เซอร์โชว์ตัวเลือกทั้งถ่ายรูป/เลือกจากอัลบั้ม
   input.multiple = true;
 
   input.onchange = async (e) => {
