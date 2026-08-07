@@ -11,7 +11,7 @@
   <title>Dashboard | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=50">
+  <link rel="stylesheet" href="css/style.css?v=51">
 
   <style>
     /* ---------- Ranking (อ่านง่ายบนมือถือ) ---------- */
@@ -215,6 +215,12 @@
 
     <div class="imp-filters">
       <label>
+        <span data-i18n="imp.pick_plant">เลือกโรงงาน (ไม่บังคับ)</span>
+        <select id="impPlant" onchange="impPlantChange(this.value)">
+          <option value="" data-i18n="imp.all_plants">— ทุกโรงงาน —</option>
+        </select>
+      </label>
+      <label>
         <span data-i18n="imp.pick_area">เลือกพื้นที่ (ไม่บังคับ)</span>
         <select id="impArea" onchange="impAreaChange(this.value)">
           <option value="" data-i18n="imp.all_areas">— ทุกพื้นที่ —</option>
@@ -245,6 +251,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=50"></script>
+<script src="js/app.js?v=51"></script>
 </body>
 </html>

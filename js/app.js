@@ -481,7 +481,7 @@ const SBH = {
     items.forEach(it => {
       if (it.Area_ID && !seen.has(it.Area_ID)) {
         seen.add(it.Area_ID);
-        areaList.push({ Area_ID:it.Area_ID, Area_Name:it.Area_Name, Plant_Name:it.Plant_Name });
+        areaList.push({ Area_ID:it.Area_ID, Area_Name:it.Area_Name, Plant_ID:it.Plant_ID, Plant_Name:it.Plant_Name });
       }
     });
     areaList.sort((x, y) => (x.Plant_Name||'').localeCompare(y.Plant_Name||'', 'th')
@@ -1120,6 +1120,7 @@ const TRANSLATIONS = {
     'rank.times':                'ครั้ง',
     // Dashboard — พื้นที่ต้องปรับปรุง
     'imp.hint':                  'ข้อที่ตก (0–1) ของทุกพื้นที่ในรอบที่เลือก · แตะแต่ละข้อเพื่อดูหมายเหตุและรูป',
+    'imp.all_plants':            '— ทุกโรงงาน —',
     'imp.all_areas':             '— ทุกพื้นที่ —',
     'imp.cnt_fail':              'ข้อไม่ผ่าน',
     'imp.cnt_weak':              'ข้อต้องเฝ้าระวัง',
@@ -1590,6 +1591,7 @@ const TRANSLATIONS = {
     'rank.times':                'audit(s)',
     // Dashboard — areas needing improvement
     'imp.hint':                  'Failed items (0–1) across all areas in the selected round · tap an item for notes and photos',
+    'imp.all_plants':            '— All plants —',
     'imp.all_areas':             '— All areas —',
     'imp.cnt_fail':              'failed',
     'imp.cnt_weak':              'to watch',
@@ -3244,7 +3246,8 @@ let _dashRound = '';
  *  รอบเป็น dropdown เดียวคุมทั้งหน้า → ไม่มีทางเลือกรอบไม่ตรงกันเอง */
 function dashRoundChange(v) {
   _dashRound = v || '';
-  _impAreaFilter = '';        // เปลี่ยนรอบ → รีเซ็ตตัวกรองพื้นที่
+  _impPlantFilter = '';       // เปลี่ยนรอบ → รีเซ็ตตัวกรองโรงงาน/พื้นที่
+  _impAreaFilter = '';
   initDashboard();
 }
 
@@ -3286,6 +3289,16 @@ async function initDashboard() {
     // 3) พื้นที่ต้องปรับปรุง — ข้อที่ตก (0-1) ของทุกพื้นที่ในรอบนี้ เห็นเลยไม่ต้องหา
     _impItems = (impRes.success && impRes.items) ? impRes.items : [];
     _impAreaList = (impRes.success && impRes.areas) ? impRes.areas : [];
+    const seenPlant = new Set();
+    _impPlantList = [];
+    _impAreaList.forEach(a => {
+      if (a.Plant_ID && !seenPlant.has(a.Plant_ID)) {
+        seenPlant.add(a.Plant_ID);
+        _impPlantList.push({ Plant_ID:a.Plant_ID, Plant_Name:a.Plant_Name });
+      }
+    });
+    _impPlantList.sort((x, y) => (x.Plant_Name||'').localeCompare(y.Plant_Name||'', 'th'));
+    impFillPlantFilter();
     impFillAreaFilter();
     impRenderFeed();
 
@@ -3303,12 +3316,33 @@ async function initDashboard() {
 //   • area dropdown: ตัวกรองเสริม ('' = ทุกพื้นที่)
 //   • แต่ละข้อ: แตะแถวเพื่อกางดู comment + รูปย่อ · แตะรูปซูมเต็มจอ
 // ============================================================
-let _impItems      = [];   // ข้อที่ตกทั้งหมดในรอบปัจจุบัน (จาก getImprovementItems)
-let _impAreaList   = [];   // พื้นที่ที่มีข้อตก (ไว้ทำ dropdown)
-let _impAreaFilter = '';   // area_id ที่กรองอยู่ ('' = ทุกพื้นที่)
-let _lastDash      = null; // ข้อมูล getDashboard ล่าสุด — ใช้ตอน Export PDF ไม่ต้องยิงซ้ำ
+let _impItems       = [];   // ข้อที่ตกทั้งหมดในรอบปัจจุบัน (จาก getImprovementItems)
+let _impAreaList    = [];   // พื้นที่ที่มีข้อตก (ไว้ทำ dropdown)
+let _impPlantList   = [];   // โรงงานที่มีข้อตก (ไว้ทำ dropdown)
+let _impAreaFilter  = '';   // area_id ที่กรองอยู่ ('' = ทุกพื้นที่)
+let _impPlantFilter = '';   // plant_id ที่กรองอยู่ ('' = ทุกโรงงาน)
+let _lastDash       = null; // ข้อมูล getDashboard ล่าสุด — ใช้ตอน Export PDF ไม่ต้องยิงซ้ำ
 
-/** ใส่ตัวเลือกพื้นที่ใน dropdown แบบปลอดภัย (textContent กัน XSS) */
+/** ใส่ตัวเลือกโรงงานใน dropdown แบบปลอดภัย (textContent กัน XSS) */
+function impFillPlantFilter() {
+  const sel = document.getElementById('impPlant');
+  if (!sel) return;
+  sel.textContent = '';
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = I18n.t('imp.all_plants');
+  sel.appendChild(ph);
+  _impPlantList.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.Plant_ID;
+    o.textContent = p.Plant_Name;
+    sel.appendChild(o);
+  });
+  sel.value = _impPlantFilter;
+  sel.disabled = _impPlantList.length === 0;
+}
+
+/** ใส่ตัวเลือกพื้นที่ใน dropdown แบบปลอดภัย (textContent กัน XSS) — กรองตามโรงงานที่เลือกไว้ด้วย (cascade) */
 function impFillAreaFilter() {
   const sel = document.getElementById('impArea');
   if (!sel) return;
@@ -3317,14 +3351,25 @@ function impFillAreaFilter() {
   ph.value = '';
   ph.textContent = I18n.t('imp.all_areas');
   sel.appendChild(ph);
-  _impAreaList.forEach(a => {
+  const list = _impPlantFilter
+    ? _impAreaList.filter(a => a.Plant_ID === _impPlantFilter)
+    : _impAreaList;
+  list.forEach(a => {
     const o = document.createElement('option');
     o.value = a.Area_ID;
     o.textContent = `${a.Plant_Name} · ${a.Area_Name}`;
     sel.appendChild(o);
   });
   sel.value = _impAreaFilter;
-  sel.disabled = _impAreaList.length === 0;
+  sel.disabled = list.length === 0;
+}
+
+/** เปลี่ยนตัวกรองโรงงาน — รีเซ็ตตัวกรองพื้นที่ (อาจไม่ใช่ของโรงงานใหม่) แล้วสร้าง dropdown พื้นที่ใหม่ */
+function impPlantChange(plantId) {
+  _impPlantFilter = plantId || '';
+  _impAreaFilter = '';
+  impFillAreaFilter();
+  impRenderFeed();
 }
 
 /** เปลี่ยนตัวกรองพื้นที่ — กรองในเครื่อง ไม่ยิง API ซ้ำ */
@@ -3338,9 +3383,10 @@ function impRenderFeed() {
   const box = document.getElementById('impResult');
   if (!box) return;
 
-  const items = _impAreaFilter
-    ? _impItems.filter(it => it.Area_ID === _impAreaFilter)
-    : _impItems;
+  const items = _impItems.filter(it =>
+    (!_impPlantFilter || it.Plant_ID === _impPlantFilter) &&
+    (!_impAreaFilter  || it.Area_ID  === _impAreaFilter)
+  );
 
   if (!_impItems.length) {
     box.innerHTML = `

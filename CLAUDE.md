@@ -1,9 +1,19 @@
 # CLAUDE.md — 5S Audit System
 
 คู่มือประจำโปรเจกต์สำหรับ Claude Code — **อ่านไฟล์นี้ก่อนเริ่มงานทุกครั้ง**
-เอกสารเชิงลึก: `docs/PROJECT_SUMMARY.md` · ประวัติรายวัน: `work-logs/WORK_LOG_YYYY-MM-DD.md`
+เอกสารเชิงลึก: `docs/PROJECT_SUMMARY.md` · ประวัติรายวัน: `work-logs/WORK_LOG_YYYY-MM-DD.md` · **save point ปัจจุบัน: `spec.md`**
 
 ---
+
+## เริ่ม session ใหม่ — ทำก่อนเสมอ
+
+**`read spec.md`** — ไฟล์นี้เก็บ architecture, decisions ที่ทำไปแล้ว (พร้อมเหตุผล), backlog, current state (save point), และ data contract ระหว่าง component ทั้งหมด อ่านก่อนเริ่มงานทุกครั้งเพื่อรู้ว่าตอนนี้อยู่ตรงไหน ค้างอะไรอยู่
+
+## After completing any task หรือ commit + push หรืออื่นๆ
+
+1. Update `spec.md` — section "Current state" (ทำอะไรเสร็จ ค้างอะไร ต่อทำอะไรต่อ) และ "Done" ถ้ามีการตัดสินใจใหม่ (พร้อมเหตุผลว่าทำไมเลือกทางนี้)
+2. Update section "Data contract" ใน `spec.md` ถ้ามีการเปลี่ยน interface ระหว่าง component (DB schema, mapping function, router contract, RPC/trigger ใหม่)
+3. **ห้ามบอกว่า "เสร็จแล้ว" โดยไม่ได้ update `spec.md` ก่อน**
 
 ## ภาพรวม
 
