@@ -745,3 +745,27 @@ create policy headers_update on public.audit_headers
 -- =====================================================================
 revoke execute on function public.admin_reset_data() from public, anon;
 revoke execute on function public.lock_audit(uuid)   from public, anon;
+
+
+-- =====================================================================
+-- G7) Plant CAF/MTN: เพิ่มพื้นที่ Office + เปลี่ยนชื่อเฉพาะ CAF  (2026-08-07)
+-- โครงเดิม: CAF (โรงอาหาร) / MTN (ช่าง/ยูทิลิตี้) มีแค่ area เดียวต่อ plant
+--   ใช้เป็น "พื้นที่ส่วนกลาง" เข้าผ่านการ์ดพิเศษในหน้า plant.html (แยกจาก plant ปกติ)
+-- เปลี่ยนเป็น: ให้ CAF/MTN โชว์เป็น plant ปกติ (แก้ js/app.js คู่กัน) แล้วเพิ่ม area
+--   "Office" (type office) เข้าไปแต่ละ plant — ผูกเกณฑ์ชุดเดียวกับ Office F1/F2/F3
+--   อัตโนมัติผ่าน criteria.area_types (ไม่ต้อง insert เกณฑ์เพิ่ม)
+-- เปลี่ยนชื่อ plant_name แค่ CAF → 'P&C' ตามที่ขอ — MTN เก็บชื่อเดิม
+--   'Maintenance & Utility' ไว้โดยตั้งใจ (ไม่ใช่ตกหล่น) ทั้งสอง plant ได้ area
+--   Office ใหม่เหมือนกัน แต่ MTN ไม่ได้ขอเปลี่ยนชื่อ
+-- idempotent
+-- =====================================================================
+update public.plants set plant_name = 'P&C'
+  where plant_id = 'CAF' and plant_name <> 'P&C';
+
+insert into public.areas (area_id, plant_id, area_name, area_type, status)
+values ('CAF-OF', 'CAF', 'Office', 'office', 'active')
+on conflict (area_id) do nothing;
+
+insert into public.areas (area_id, plant_id, area_name, area_type, status)
+values ('MTN-OF', 'MTN', 'Office', 'office', 'active')
+on conflict (area_id) do nothing;

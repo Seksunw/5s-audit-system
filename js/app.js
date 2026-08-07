@@ -19,6 +19,10 @@ const CONFIG = {
   CACHE_TTL: 5 * 60 * 1000,
 };
 
+// plant ที่ area หลักเป็น cafeteria/maintenance เอง (P&C, ช่าง/ยูทิลิตี้)
+// ใช้ยกเว้นในการกรอง cafeteria/maintenance ออกของ getAreas() — เพิ่ม plant สไตล์นี้ในอนาคตแก้ที่เดียวพอ
+const FACILITY_PLANT_IDS = ['CAF', 'MTN'];
+
 // ============================================================
 // ปิด console.log บน production
 //
@@ -113,10 +117,11 @@ const SBH = {
 
   /**
    * @param {string}  plantId   กรองตามโรงงาน
-   * @param {string}  areaType  โหมดพื้นที่ส่วนกลาง (cafeteria / maintenance) ข้ามทุก plant
+   * @param {string}  areaType  โหมดพื้นที่ส่วนกลาง (cafeteria / maintenance) ข้ามทุก plant — ไม่มี UI เรียกแล้ว (เหลือไว้เผื่อใช้ในอนาคต)
    * @param {boolean} all       true = ไม่ตัด cafeteria/maintenance ออก
    *                            ใช้ในหน้า "ดูผล" เช่น dashboard ที่ต้องเห็นทุกพื้นที่
-   *                            (หน้า plant.html ไม่ส่ง → คงพฤติกรรมเดิมที่แยกการ์ดโรงอาหาร/ช่าง)
+   *                            (หน้า plant.html ไม่ส่ง → ตัด cafeteria/maintenance ออกเฉพาะ plant ที่ไม่ใช่ CAF/MTN
+   *                             เพราะ CAF/MTN ตอนนี้คือ plant ปกติที่ area หลักเป็น cafeteria/maintenance เอง)
    */
   async getAreas({ plantId, areaType, all } = {}) {
     let q = _sb.from('areas').select('*').eq('status','active');
@@ -124,8 +129,9 @@ const SBH = {
     if (areaType) {
       // โหมดพื้นที่ส่วนกลาง: ดึงตามชนิดพื้นที่ข้ามทุก plant (โรงอาหาร / ช่าง-ยูทิลิตี้)
       q = q.eq('area_type', String(areaType).toLowerCase());
-    } else if (plantId && !all) {
-      // โหมดเลือก plant: ตัด cafeteria + maintenance ออก (แยกไปเป็นการ์ดต่างหากที่หน้า plant)
+    } else if (plantId && !all && !FACILITY_PLANT_IDS.includes(plantId)) {
+      // โหมดเลือก plant: ตัด cafeteria + maintenance ออก (พื้นที่พวกนี้ปิดใช้แล้วในโรงงานผลิตปกติ
+      // รวมศูนย์ไว้ที่ plant CAF/MTN แทน) — ไม่ตัดถ้าเป็น CAF/MTN เอง เพราะเป็น area หลักของ plant นั้น
       q = q.not('area_type', 'in', '(cafeteria,maintenance)');
     }
     const { data, error } = await q.order('area_id');
@@ -2220,11 +2226,10 @@ async function initPlant() {
     const container = document.getElementById('plantGrid');
     if (!container) return;
 
-    const icons = { SUP: '🏭', POC: '🧴', NIF: '🌿' };
-    const colors = { SUP: '#1a73e8', POC: '#34a853', NIF: '#ea4335' };
+    const icons = { SUP: '🏭', POC: '🧴', NIF: '🌿', CAF: '🍽️', MTN: '🔧' };
+    const colors = { SUP: '#1a73e8', POC: '#34a853', NIF: '#ea4335', CAF: '#f9971e', MTN: '#5f6c7b' };
 
     const plantCards = res.data
-      .filter(p => !['CAF','MTN'].includes(p.Plant_ID))   // เข้าผ่านการ์ดโรงอาหาร/ช่างแทน
       .map(p => `
       <div class="plant-card card-clickable"
            data-plant-id="${escAttr(p.Plant_ID)}"
@@ -2241,28 +2246,7 @@ async function initPlant() {
       </div>
     `).join('');
 
-    // การ์ดพื้นที่ส่วนกลาง (รวมทุก plant) — โรงอาหาร + ช่าง/ยูทิลิตี้
-    const allTxt = I18n.getLang() === 'en' ? 'All plants' : 'รวมทุกโรงงาน';
-    const facilityCards = `
-      <div class="plant-card card-clickable" onclick="openFacility('cafeteria')">
-        <div class="plant-icon" style="background:#f9971e20;color:#f9971e">🍽️</div>
-        <div>
-          <div class="plant-name">${escHtml(I18n.t('area.type.Cafeteria'))}</div>
-          <div class="plant-meta text-muted">${escHtml(allTxt)}</div>
-        </div>
-        <i class="bi bi-chevron-right text-muted ms-auto"></i>
-      </div>
-      <div class="plant-card card-clickable" onclick="openFacility('maintenance')">
-        <div class="plant-icon" style="background:#5f6c7b20;color:#5f6c7b">🔧</div>
-        <div>
-          <div class="plant-name">${escHtml(I18n.t('area.type.Maintenance'))}</div>
-          <div class="plant-meta text-muted">${escHtml(allTxt)}</div>
-        </div>
-        <i class="bi bi-chevron-right text-muted ms-auto"></i>
-      </div>
-    `;
-
-    container.innerHTML = plantCards + facilityCards;
+    container.innerHTML = plantCards;
   } catch(err) {
     UI.hideLoading();
     UI.toast(I18n.t('msg.load_error'), 'error');
@@ -2276,14 +2260,6 @@ function selectPlantFromEl(el) {
 function selectPlant(plantId, plantName) {
   AppState.currentPlant = { Plant_ID: plantId, Plant_Name: plantName };
   navigate('area.html', { plantId, plantName });
-}
-
-/** เปิดพื้นที่ส่วนกลางตามชนิด (โรงอาหาร / ช่าง-ยูทิลิตี้) ข้ามทุก plant */
-function openFacility(type) {
-  const title = type === 'cafeteria'
-    ? I18n.t('area.type.Cafeteria')
-    : I18n.t('area.type.Maintenance');
-  navigate('area.html', { areaType: type, title });
 }
 
 // ============================================================
