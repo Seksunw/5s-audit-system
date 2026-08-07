@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.10'; // v5.10: เอา capture='environment' ออกจาก input แนบรูป — ให้เลือกจากอัลบั้มได้ ไม่บังคับกล้อง (2026-08-07)
+const CACHE_NAME = '5s-audit-v5.11'; // v5.11: PDF ใบแจ้งพื้นที่ — รวมชื่อผู้ตรวจที่หัวใบ + merge การ์ดหัวข้อซ้ำจากหลายคนตรวจ (2026-08-07)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

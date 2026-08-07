@@ -432,7 +432,7 @@ const SBH = {
     const [{ data:dets, error:dErr }, { data:areas }, { data:plants }, { data:profs }] =
       await Promise.all([
         _sb.from('audit_details')
-          .select('audit_id, score, na, remark, photo_urls, criteria(question, category, sub_category)')
+          .select('audit_id, criteria_id, score, na, remark, photo_urls, criteria(question, category, sub_category)')
           .in('audit_id', auditIds).eq('na', false).lte('score', 1),
         _sb.from('areas').select('area_id, area_name, status'),
         _sb.from('plants').select('plant_id, plant_name'),
@@ -450,6 +450,7 @@ const SBH = {
       const pid  = (a && a.plant_id) || h.plant_id || '';
       return {
         Audit_ID:   d.audit_id,
+        Criteria_ID:d.criteria_id,
         Area_ID:    h.area_id,
         Area_Name:  (a && a.area_name) || h.area_id || '-',
         Plant_ID:   h.plant_id,
@@ -4982,7 +4983,7 @@ const REPORT_STR = {
     caTitle:'ใบแจ้งพื้นที่ต้องปรับปรุง (Corrective Action)', roundShort:'รอบตรวจ', areaSeq:'ลำดับพื้นที่',
     owner:'เจ้าของพื้นที่', auditDate:'วันที่ตรวจ', due:'กำหนดแก้ไข', within:'ภายใน',
     areaScore:'คะแนนพื้นที่', found:'พบข้อที่ตก', itemsUnit:'ข้อ', urgent:'ต้องปรับปรุงเร่งด่วน',
-    item:'ข้อ', scoreWord:'คะแนน', remarkLbl:'หมายเหตุผู้ตรวจ',
+    item:'ข้อ', scoreWord:'คะแนน', remarkLbl:'หมายเหตุผู้ตรวจ', dupTag:'ตรวจซ้ำ {n} ครั้ง',
     planTitle:'แผนการแก้ไขโดยเจ้าของพื้นที่', colAction:'แนวทางแก้ไข', colResp:'ผู้รับผิดชอบ',
     colDue:'กำหนดเสร็จ', colStatus:'สถานะ',
     signAuditor:'ผู้ตรวจประเมิน', signOwner:'เจ้าของพื้นที่ (รับทราบ)', signMgr:'ผู้จัดการโรงงาน (อนุมัติ)',
@@ -5004,7 +5005,7 @@ const REPORT_STR = {
     caTitle:'Corrective Action Sheet', roundShort:'Round', areaSeq:'Area',
     owner:'Area Owner', auditDate:'Audit Date', due:'Due Date', within:'By',
     areaScore:'Area score', found:'items below standard', itemsUnit:'', urgent:'Urgent action required',
-    item:'Item', scoreWord:'Score', remarkLbl:'Auditor note',
+    item:'Item', scoreWord:'Score', remarkLbl:'Auditor note', dupTag:'Checked {n} times',
     planTitle:'Corrective Action Plan (by Area Owner)', colAction:'Corrective Action', colResp:'Responsible',
     colDue:'Due', colStatus:'Status',
     signAuditor:'Auditor', signOwner:'Area Owner (Acknowledged)', signMgr:'Plant Manager (Approved)',
@@ -5054,12 +5055,26 @@ function buildReportHTML(dash, impItems, opts) {
                                  : {t:S.needAction,c:'bad',bar:'var(--danger)'};
   const scoreOf = x => (x && (x.avgScoreRaw != null ? x.avgScoreRaw : x.avgScore)) || 0;
 
+  // ---- รวมข้อที่ตกเป็น "หัวข้อ" เดียวกัน — criteria เดียวกันอาจถูกหลาย audit/auditor เจอซ้ำ
+  //      (พื้นที่เดียวถูกตรวจมากกว่า 1 รอบ) → นับเป็น 1 เรื่องที่ต้องแก้ ไม่ใช่หลายเรื่อง
+  //      badge ใช้คะแนนต่ำสุดที่เจอ (ยิ่งมีคนให้ 0 ยิ่งเร่งด่วน) · เก็บทุกแหล่งไว้ใน _sources
+  const groupByTopic = (list, keyFn) => {
+    const map = {};
+    list.forEach(it => {
+      const k = keyFn(it), s = Number(it.Score);
+      if (!map[k]) map[k] = { ...it, Score:s, _sources:[it] };
+      else { map[k]._sources.push(it); if (s < map[k].Score) map[k].Score = s; }
+    });
+    return Object.values(map).sort((a,b) => a.Score - b.Score);
+  };
+
   // ---- KPI ----
   const areaRanking = (d.areaRanking || []);
   const areasTotal  = areaRanking.length;
   const areasPassed = areaRanking.filter(a => scoreOf(a) >= 75).length;
-  const n0 = items.filter(it => Number(it.Score) === 0).length;
-  const n1 = items.length - n0;
+  const topicsAll = groupByTopic(items, it => `${it.Area_ID||''}|${it.Criteria_ID || it.Question}`);
+  const n0 = topicsAll.filter(t => t.Score === 0).length;
+  const n1 = topicsAll.length - n0;
   const avg = (d.avgScore != null ? d.avgScore : Math.round(scoreOf({avgScoreRaw:d.avgScoreRaw})));
   const avgBand = bandOf(d.avgScoreRaw != null ? d.avgScoreRaw : avg);
 
@@ -5106,11 +5121,14 @@ function buildReportHTML(dash, impItems, opts) {
   }).join('');
 
   // ---- Group improvement items by area (Plant → Area) ----
+  //      พื้นที่เดียวอาจถูกตรวจหลายรอบ/หลายคนในรอบเดียวกัน → เก็บชื่อผู้ตรวจทุกคนไม่ซ้ำ (ไม่ใช่คนแรกที่เจอ)
   const groups = {};
   items.forEach(it => {
     const k = it.Area_ID || (it.Plant_Name + '|' + it.Area_Name);
-    (groups[k] = groups[k] || { plant:it.Plant_Name, area:it.Area_Name,
-      auditor:it.Auditor, round:it.Audit_Round, date:it.Audit_Date, list:[] }).list.push(it);
+    const grp = (groups[k] = groups[k] || { plant:it.Plant_Name, area:it.Area_Name,
+      auditors:[], round:it.Audit_Round, date:it.Audit_Date, list:[] });
+    if (it.Auditor && !grp.auditors.includes(it.Auditor)) grp.auditors.push(it.Auditor);
+    grp.list.push(it);
   });
   const groupArr = Object.values(groups).sort((x,y) =>
     (x.plant||'').localeCompare(y.plant||'', 'th') || (x.area||'').localeCompare(y.area||'', 'th'));
@@ -5120,27 +5138,54 @@ function buildReportHTML(dash, impItems, opts) {
   areaRanking.forEach(a => { areaScoreByName[a.areaName] = Math.round(scoreOf(a)); });
 
   const sheets = groupArr.map((g, gi) => {
-    const gN0 = g.list.filter(it => Number(it.Score) === 0).length;
-    const gN1 = g.list.length - gN0;
+    const topicsInArea = groupByTopic(g.list, it => it.Criteria_ID || it.Question);
+    const gN0 = topicsInArea.filter(t => t.Score === 0).length;
+    const gN1 = topicsInArea.length - gN0;
     const areaPct = areaScoreByName[`${g.plant} · ${g.area}`];
     const scoreCls = (areaPct != null && areaPct >= 75) ? 'warn' : '';
     const dueIso = addDays(g.date, 14);
 
-    const failCards = g.list
-      .sort((a,b)=> Number(a.Score)-Number(b.Score))
-      .map((it, i) => {
-        const s = Number(it.Score), cls = s === 0 ? 's0' : 's1';
-        const cat = [it.Category, it.Sub_Category ? `${S.item} ${it.Sub_Category}` : '']
+    const renderPhotos = it => (it.Photos||[]).map(safeImg).filter(Boolean)
+      .map(u => `<img class="ph-img" src="${esc(u)}" alt="${esc(S.photo)}">`).join('');
+
+    const failCards = topicsInArea.map((topic, i) => {
+        const s = topic.Score, cls = s === 0 ? 's0' : 's1';
+        const cat = [topic.Category, topic.Sub_Category ? `${S.item} ${topic.Sub_Category}` : '']
           .filter(Boolean).join(' · ');
-        const photos = (it.Photos||[]).map(safeImg).filter(Boolean)
-          .map(u => `<img class="ph-img" src="${esc(u)}" alt="${esc(S.photo)}">`).join('');
-        return `<div class="fail ${cls}">
+        const sources = topic._sources;
+        const merged = sources.length > 1;
+
+        const body = !merged
+          ? (() => {
+              const it = sources[0];
+              const photos = renderPhotos(it);
+              return `${it.Remark ? `<div class="fail-remark"><b>${esc(S.remarkLbl)}:</b> ${esc(it.Remark)}</div>` : ''}
+                ${photos ? `<div class="fail-photos">${photos}</div>` : ''}
+                <span class="who-chip"><span class="dot">${esc(initials(it.Auditor))}</span>${esc(it.Auditor||'—')} · ${fmtDate(it.Audit_Date)}</span>`;
+            })()
+          : sources.map(it => {
+              const sc = Number(it.Score), scCls = sc === 0 ? 's0' : 's1';
+              const photos = renderPhotos(it);
+              return `<div class="src">
+                <div class="src-head">
+                  <span class="src-avatar">${esc(initials(it.Auditor))}</span>
+                  <span class="src-name">${esc(it.Auditor||'—')}</span>
+                  <span class="src-date">· ${fmtDate(it.Audit_Date)}</span>
+                  <span class="src-score ${scCls}">${esc(S.scoreWord)} ${sc}</span>
+                </div>
+                ${it.Remark ? `<div class="src-remark">${esc(it.Remark)}</div>` : ''}
+                ${photos ? `<div class="src-photos">${photos}</div>` : ''}
+              </div>`;
+            }).join('');
+
+        return `<div class="fail ${cls}${merged ? ' merged' : ''}">
           <div class="fail-top"><div class="idx">${i+1}</div>
             <span class="sbadge ${cls}">${esc(S.scoreWord)} ${s}</span>
             <div>${cat ? `<div class="fail-cat">${esc(cat)}</div>` : ''}
-              <div class="fail-q">${esc(it.Question)}</div></div></div>
-          ${it.Remark ? `<div class="fail-remark"><b>${esc(S.remarkLbl)}:</b> ${esc(it.Remark)}</div>` : ''}
-          ${photos ? `<div class="fail-photos">${photos}</div>` : ''}
+              <div class="fail-q">${esc(topic.Question)}</div></div>
+            ${merged ? `<span class="dup-tag">${esc(S.dupTag.replace('{n}', sources.length))}</span>` : ''}
+          </div>
+          ${body}
           <div class="action"><div class="at">${esc(S.planTitle)}</div>
             <table><thead><tr><th>${esc(S.colAction)}</th><th style="width:130px">${esc(S.colResp)}</th>
               <th style="width:96px">${esc(S.colDue)}</th><th style="width:78px">${esc(S.colStatus)}</th></tr></thead>
@@ -5159,18 +5204,18 @@ function buildReportHTML(dash, impItems, opts) {
         <div class="sheet-h2">${esc(g.area||'')}</div>
         <div class="sheet-grid">
           <div><span class="k">${esc(S.owner)}</span><span class="v">............................</span></div>
-          <div><span class="k">${esc(S.auditor)}</span><span class="v">${esc(g.auditor||'—')}</span></div>
+          <div><span class="k">${esc(S.auditor)}</span><span class="v">${esc(g.auditors.join(', ')||'—')}</span></div>
           <div><span class="k">${esc(S.auditDate)}</span><span class="v">${fmtDate(g.date)}</span></div>
           <div><span class="k">${esc(S.due)}</span><span class="v" style="color:var(--danger)">${esc(S.within)} ${fmtDate(dueIso)}</span></div>
         </div>
         <div class="sheet-scorebar">
           ${areaPct != null ? `<div class="sc ${scoreCls}">${areaPct}%</div>` : ''}
-          <div class="lbl">${esc(S.areaScore)}${(areaPct!=null&&areaPct<60)?` · <b>${esc(S.urgent)}</b>`:''} · ${esc(S.found)} <b>${g.list.length}</b> ${esc(S.itemsUnit)} (${esc(S.failN)} ${gN0} · ${esc(S.weakN)} ${gN1})</div>
+          <div class="lbl">${esc(S.areaScore)}${(areaPct!=null&&areaPct<60)?` · <b>${esc(S.urgent)}</b>`:''} · ${esc(S.found)} <b>${topicsInArea.length}</b> ${esc(S.itemsUnit)} (${esc(S.failN)} ${gN0} · ${esc(S.weakN)} ${gN1})</div>
         </div>
       </div>
       ${failCards}
       <div class="rp-sign">
-        <div class="box"><div class="line"></div><div class="cap">${esc(S.signAuditor)}</div><div class="date">${esc(g.auditor||'')}</div></div>
+        <div class="box"><div class="line"></div><div class="cap">${esc(S.signAuditor)}</div><div class="date">${esc(g.auditors.join(', ')||'')}</div></div>
         <div class="box"><div class="line"></div><div class="cap">${esc(S.signOwner)}</div><div class="date">&nbsp;</div></div>
         <div class="box"><div class="line"></div><div class="cap">${esc(S.signMgr)}</div><div class="date">${esc(S.dateBlank)}</div></div>
       </div>
@@ -5189,7 +5234,7 @@ function buildReportHTML(dash, impItems, opts) {
     <div class="rp-score">
       <div class="rp-kpi"><div class="lab">${esc(S.kpiAvg)}</div><div class="big ${avgBand.c==='ok'?'ok':(avgBand.c==='bad'?'':'warn')}">${avg}%</div><div class="note">${esc(S.passNote)} · ${esc(avgBand.t)}</div></div>
       <div class="rp-kpi"><div class="lab">${esc(S.kpiPass)}</div><div class="big">${areasPassed} / ${areasTotal}</div><div class="note">${areasTotal?Math.round(areasPassed*100/areasTotal):0}% ${esc(S.ofAreas)}</div></div>
-      <div class="rp-kpi"><div class="lab">${esc(S.kpiImp)}</div><div class="big warn">${items.length}</div><div class="note">${esc(S.failN)} ${n0} · ${esc(S.weakN)} ${n1}</div></div>
+      <div class="rp-kpi"><div class="lab">${esc(S.kpiImp)}</div><div class="big warn">${topicsAll.length}</div><div class="note">${esc(S.failN)} ${n0} · ${esc(S.weakN)} ${n1}</div></div>
     </div>
     <div class="rp-sec"><div class="rp-sec-t">${esc(S.plantRank)}</div>
       <table><thead><tr><th style="width:36px">#</th><th>${esc(S.plant)}</th><th>${esc(S.progress)}</th><th style="width:58px">${esc(S.score)}</th><th style="width:92px">${esc(S.rank)}</th></tr></thead>
@@ -5281,6 +5326,23 @@ function buildReportHTML(dash, impItems, opts) {
   .fail-remark{ font-size:.76rem;color:#485366;background:var(--gray-100);border-radius:8px; padding:8px 10px;margin-top:8px;line-height:1.5 }
   .fail-photos{ display:flex; gap:8px; margin-top:9px; flex-wrap:wrap }
   .ph-img{ width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--hairline) }
+  .who-chip{ display:inline-flex; align-items:center; gap:5px; font-size:.66rem; font-weight:700;
+    color:var(--brand); background:var(--brand-soft); padding:3px 9px 3px 5px; border-radius:20px; margin-top:9px }
+  .who-chip .dot{ width:15px;height:15px;border-radius:50%;background:var(--brand);color:#fff;
+    display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:800 }
+  .dup-tag{ display:inline-flex; align-items:center; font-size:.62rem; font-weight:800; color:var(--gray-600);
+    background:var(--gray-100); padding:3px 9px; border-radius:20px; margin-left:auto; flex-shrink:0; white-space:nowrap }
+  .src{ margin-top:9px } .src + .src{ padding-top:9px; border-top:1px dashed var(--gray-300) }
+  .src-head{ display:flex; align-items:center; gap:6px; margin-bottom:5px }
+  .src-avatar{ width:19px;height:19px;border-radius:50%;background:var(--brand);color:#fff;
+    display:inline-flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;flex-shrink:0 }
+  .src-name{ font-size:.74rem; font-weight:700 }
+  .src-date{ font-size:.68rem; color:var(--gray-500) }
+  .src-score{ margin-left:auto; font-size:.62rem; font-weight:800; padding:2px 8px; border-radius:20px }
+  .src-score.s0{ background:var(--red-bg); color:var(--danger) }
+  .src-score.s1{ background:var(--amber-bg); color:#b5760a }
+  .src-remark{ font-size:.74rem; color:#485366; background:var(--gray-100); border-radius:7px; padding:7px 9px; margin-bottom:7px; line-height:1.5 }
+  .src-photos{ display:flex; gap:7px; flex-wrap:wrap }
   .action{ margin-top:10px }
   .action .at{ font-size:.66rem;font-weight:800;color:var(--gray-600);text-transform:uppercase; letter-spacing:.03em;margin-bottom:5px }
   .action table td, .action table th{ border:1px solid var(--gray-300); padding:9px 9px }
