@@ -5136,19 +5136,11 @@ function buildReportHTML(dash, impItems, opts) {
               const it = sources[0];
               const photos = renderPhotos(it);
               return `${it.Remark ? `<div class="fail-remark"><b>${esc(S.remarkLbl)}:</b> ${esc(it.Remark)}</div>` : ''}
-                ${photos ? `<div class="fail-photos">${photos}</div>` : ''}
-                <span class="who-chip"><span class="dot">${esc(initials(it.Auditor))}</span>${esc(it.Auditor||'—')} · ${fmtDate(it.Audit_Date)}</span>`;
+                ${photos ? `<div class="fail-photos">${photos}</div>` : ''}`;
             })()
           : sources.map(it => {
-              const sc = Number(it.Score), scCls = sc === 0 ? 's0' : 's1';
               const photos = renderPhotos(it);
               return `<div class="src">
-                <div class="src-head">
-                  <span class="src-avatar">${esc(initials(it.Auditor))}</span>
-                  <span class="src-name">${esc(it.Auditor||'—')}</span>
-                  <span class="src-date">· ${fmtDate(it.Audit_Date)}</span>
-                  <span class="src-score ${scCls}">${esc(S.scoreWord)} ${sc}</span>
-                </div>
                 ${it.Remark ? `<div class="src-remark">${esc(it.Remark)}</div>` : ''}
                 ${photos ? `<div class="src-photos">${photos}</div>` : ''}
               </div>`;
@@ -5302,21 +5294,9 @@ function buildReportHTML(dash, impItems, opts) {
   .fail-remark{ font-size:.76rem;color:#485366;background:var(--gray-100);border-radius:8px; padding:8px 10px;margin-top:8px;line-height:1.5 }
   .fail-photos{ display:flex; gap:8px; margin-top:9px; flex-wrap:wrap }
   .ph-img{ width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--hairline) }
-  .who-chip{ display:inline-flex; align-items:center; gap:5px; font-size:.66rem; font-weight:700;
-    color:var(--brand); background:var(--brand-soft); padding:3px 9px 3px 5px; border-radius:20px; margin-top:9px }
-  .who-chip .dot{ width:15px;height:15px;border-radius:50%;background:var(--brand);color:#fff;
-    display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:800 }
   .dup-tag{ display:inline-flex; align-items:center; font-size:.62rem; font-weight:800; color:var(--gray-600);
     background:var(--gray-100); padding:3px 9px; border-radius:20px; margin-left:auto; flex-shrink:0; white-space:nowrap }
   .src{ margin-top:9px } .src + .src{ padding-top:9px; border-top:1px dashed var(--gray-300) }
-  .src-head{ display:flex; align-items:center; gap:6px; margin-bottom:5px }
-  .src-avatar{ width:19px;height:19px;border-radius:50%;background:var(--brand);color:#fff;
-    display:inline-flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;flex-shrink:0 }
-  .src-name{ font-size:.74rem; font-weight:700 }
-  .src-date{ font-size:.68rem; color:var(--gray-500) }
-  .src-score{ margin-left:auto; font-size:.62rem; font-weight:800; padding:2px 8px; border-radius:20px }
-  .src-score.s0{ background:var(--red-bg); color:var(--danger) }
-  .src-score.s1{ background:var(--amber-bg); color:#b5760a }
   .src-remark{ font-size:.74rem; color:#485366; background:var(--gray-100); border-radius:7px; padding:7px 9px; margin-bottom:7px; line-height:1.5 }
   .src-photos{ display:flex; gap:7px; flex-wrap:wrap }
   .action{ margin-top:10px }
