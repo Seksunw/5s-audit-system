@@ -28,7 +28,7 @@
 - **ไม่มี build/compile** — แก้ไฟล์แล้วเปิดหน้าได้เลย
 - **Deploy = push `main`** → GitHub Pages เสิร์ฟไฟล์จาก root ของ branch โดยตรง (มี `.nojekyll` = ข้าม Jekyll เสิร์ฟไฟล์ดิบ) เผยแพร่อัตโนมัติภายในไม่กี่นาที
 - ⚠️ **repo เป็น PUBLIC** — ทุกไฟล์ที่ push ขึ้นไปคนทั่วไปเห็นได้ (รวม worklogs, docs, โค้ด) · **ห้ามใส่ secret/ข้อมูลลับใด ๆ ในไฟล์ที่ track**
-- ⚠️ **หลังแก้ CSS/JS ต้อง bump cache-bust `?v=NN` ในทุก HTML + เลข cache ใน `sw.js`** ไม่งั้น SW เสิร์ฟไฟล์เก่า (อาการ: การ์ด/พื้นที่หายชั่วคราวหลังอัปเดต) — ปัจจุบันอยู่ที่ `v=43`
+- ⚠️ **หลังแก้ CSS/JS ต้อง bump cache-bust `?v=NN` ในทุก HTML + เลข cache ใน `sw.js`** ไม่งั้น SW เสิร์ฟไฟล์เก่า (อาการ: การ์ด/พื้นที่หายชั่วคราวหลังอัปเดต) — ปัจจุบันอยู่ที่ `v=50`
 - **เขียน worklog ใหม่ทุกครั้งที่ทำงานเสร็จ** ที่ `work-logs/WORK_LOG_YYYY-MM-DD.md` (สไตล์: หัวข้อหลัก + สรุป + รายละเอียด + commit hash)
 - **commit/push เมื่อผู้ใช้สั่งเท่านั้น** · commit message เป็นแนว conventional (`feat:`, `fix:`, `docs:`)
 
@@ -71,12 +71,16 @@
 
 ## Gotchas / Known issues
 
-- `TRANSLATIONS` ใน app.js **เคยมี key `en:` ซ้ำ 2 ครั้ง** — เช็คก่อนแก้ i18n
+- `TRANSLATIONS` ใน app.js **มี key `en:` ซ้ำ 2 ครั้งจริง** (บล็อกแรกตาย โดนบล็อกหลังทับ — บล็อกหลังมี key ครบกว่าอยู่แล้วเลยไม่กระทบผู้ใช้ตอนนี้ แต่ห้ามไปแก้บล็อกแรกคาดว่าจะมีผล) — เช็คก่อนแก้ i18n
 - `profiles` ตอนนี้ผู้ใช้ภายในอ่านได้ทั้งตาราง (รวม email/role) — ยังไม่จำกัดเป็น view
-- **ก่อน production:** เอา Quick Login / บัญชีทดสอบใน `index.html` ออก · ปุ่มรีเซ็ตข้อมูล (`admin_reset_data`) เพิ่งแก้บั๊กให้ใช้ได้ (2026-08-05) ใช้ด้วยความระวัง
+- **ก่อน production:** เอา Quick Login / บัญชีทดสอบใน `index.html` ออก (เช็คแล้วไม่มีแล้ว) · Leaked Password Protection ยังปิดอยู่ (เปิดเองใน Supabase Dashboard) · มีรูปกำพร้าใน Storage จากการทดสอบ ~48 ไฟล์ ยังไม่เคลียร์
+- ⚠️ **`patches.sql` ไม่ใช่แหล่งความจริงของ DB จริงเสมอไป** — เจอเคส `admin_reset_data()` ที่ไฟล์เขียนถูกแล้ว (คอมเมนต์บอก "แก้แล้ว") แต่เวอร์ชันจริงบน Supabase ยังเป็นโค้ดเก่าค้างอยู่ (deployment gap, 2026-08-07) ถ้าฟังก์ชันไหนมีคอมเมนต์ "แก้แล้ว" แต่พฤติกรรมยังผิด ให้เช็ค `pg_get_functiondef` เทียบไฟล์ก่อนสงสัยที่อื่น
+- ⚠️ **ทุกทางที่นำไปสู่หน้า `audit.html` ต้องส่ง `scheduleId` ต่อด้วยเสมอถ้าพื้นที่นั้นมีงานมอบหมายอยู่** — เจอบั๊กจริง (2026-08-07): `selectArea()` (ทางเข้าปกติ Plant→Area) ไม่เคยส่ง `scheduleId` ทั้งที่การ์ดโชว์ badge รอบตรวจอยู่แล้ว ต่างจาก `startAssignedAudit()` (จากหน้า "งานที่ได้รับมอบหมาย") ที่ส่งถูก ผลคือผลตรวจถูกต้องแต่ `audit_headers.schedule_id = null` ไม่นับเข้า progress งานมอบหมาย ถ้าเพิ่มทางเข้าหน้าตรวจใหม่ ต้องเช็คจุดนี้ด้วยทุกครั้ง
+- `FACILITY_PLANT_IDS = ['CAF','MTN']` ใน app.js — 2 plant นี้ไม่เหมือน plant อื่น (SUP/POC/NIF): area หลักของมันคือ cafeteria/maintenance เอง (ไม่ใช่ production/warehouse) `getAreas()` เลยยกเว้นไม่ซ่อน area type พวกนี้ให้ 2 plant นี้โดยเฉพาะ — เพิ่ม plant ลักษณะนี้ในอนาคตต้องอัปเดต constant นี้ด้วย
 
 ## ฟีเจอร์ล่าสุด
 
+- **2026-08-07:** เริ่มใช้งานจริงวันแรก — แก้บั๊กงานมอบหมายค้าง (`selectArea()` ไม่ส่ง `scheduleId`, ดูหัวข้อ Gotchas) + backfill ข้อมูลจริง 7 รายการ · PDF ใบแจ้งพื้นที่รองรับตรวจหลายคนต่อพื้นที่ (`groupByTopic()` รวมหัวข้อซ้ำ + รวมชื่อผู้ตรวจที่หัวใบ ไม่โชว์ชื่อ/คะแนนต่อคอมเมนต์) · plant CAF/MTN โชว์เป็น plant ปกติ + เพิ่มพื้นที่ Office (`CAF-OF`/`MTN-OF`, inherit เกณฑ์ office อัตโนมัติ) · Dashboard Ranking แสดง % ทศนิยม 1 ตำแหน่ง · แนบรูปเลือกจากอัลบั้มได้ (เอา `capture=environment` ออก)
 - **2026-08-06:** ปุ่ม **Export PDF** ในหน้า dashboard — `buildReportHTML()` + `exportDashboardPDF()` ประกอบรายงาน (สรุป + ใบแจ้งพื้นที่ต้องปรับปรุงรายพื้นที่ TH/EN) แล้วพิมพ์ผ่าน hidden iframe (Print CSS); `getDashboard` คืน `auditorRoster`, `getImprovementItems` ดึง `sub_category`
 - **2026-08-04:** dashboard เขียนใหม่ เหลือ Plant/Area Ranking + การ์ดพื้นที่ต้องปรับปรุง
 - **2026-07-30:** ย้ายทั้งระบบจาก Google Apps Script → Supabase
