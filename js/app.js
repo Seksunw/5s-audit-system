@@ -3453,11 +3453,11 @@ function renderRanking(containerId, items, nameField, limit = 10) {
         <div class="rk-name">${escHtml(item[nameField] || '-')}</div>
         ${meta ? `<div class="rk-meta">${escHtml(meta)}</div>` : ''}
         <div class="rk-track">
-          <div class="rk-fill" style="width:${Math.max(Math.min(item.avgScore, 100), 2)}%;background:${color}"></div>
+          <div class="rk-fill" style="width:${Math.max(Math.min(band, 100), 2)}%;background:${color}"></div>
         </div>
       </div>
       <div class="rk-val">
-        <div class="rk-pct" style="color:${color}">${item.avgScore}%</div>
+        <div class="rk-pct" style="color:${color}">${band.toFixed(1)}%</div>
         <div class="rk-band" style="color:${color}">${escHtml(label)}</div>
       </div>
     </div>`;

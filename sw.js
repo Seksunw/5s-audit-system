@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.12'; // v5.12: CAF/MTN โชว์เป็น plant ปกติ + เพิ่มพื้นที่ Office (2026-08-07)
+const CACHE_NAME = '5s-audit-v5.13'; // v5.13: Dashboard Ranking แสดง % ทศนิยม 1 ตำแหน่งจากค่าดิบ (2026-08-07)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
