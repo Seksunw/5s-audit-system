@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.14'; // v5.14: ใบแจ้งพื้นที่ PDF เอาชื่อ/คะแนนผู้ตรวจต่อคอมเมนต์ออก เหลือแค่คอมเมนต์+รูป (2026-08-07)
+const CACHE_NAME = '5s-audit-v5.15'; // v5.15: ผูก schedule_id ตอนตรวจผ่านหน้า Plant→Area ปกติ กันงานมอบหมายค้าง (2026-08-07)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

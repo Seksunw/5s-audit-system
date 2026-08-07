@@ -2340,6 +2340,7 @@ async function initArea() {
            data-area-type="${escAttr(a.Area_Type)}"
            data-plant-id="${escAttr(a.Plant_ID)}"
            data-plant-name="${escAttr(plantNameMap[a.Plant_ID] || a.Plant_ID)}"
+           data-schedule-id="${escAttr(a.Schedule_ID || '')}"
            onclick="selectAreaFromEl(this)">
         <div class="area-icon">
           <i class="bi ${areaIcons[a.Area_Type] || 'bi-grid'}"></i>
@@ -2379,10 +2380,14 @@ async function initArea() {
 }
 
 function selectAreaFromEl(el) {
-  selectArea(el.dataset.areaId, el.dataset.areaName, el.dataset.areaType, el.dataset.plantId, el.dataset.plantName);
+  selectArea(el.dataset.areaId, el.dataset.areaName, el.dataset.areaType, el.dataset.plantId, el.dataset.plantName, el.dataset.scheduleId);
 }
 
-function selectArea(areaId, areaName, areaType, plantId, plantName) {
+// scheduleId: ถ้าพื้นที่นี้มีงานที่มอบหมายรออยู่ (badge รอบตรวจที่โชว์ในการ์ด) ต้องส่งต่อ
+// ไปด้วย ไม่งั้น audit_headers.schedule_id จะเป็น null แม้ auditor จะตรวจตรงตามที่ได้รับ
+// มอบหมายจริง → งานค้างใน "งานที่ได้รับมอบหมาย" ตลอดไปเพราะนับความคืบหน้าไม่ได้
+// (พบจริง 7 ส.ค. 2569 — ผลตรวจขึ้นประวัติปกติ แต่ assigned task ไม่ขยับ)
+function selectArea(areaId, areaName, areaType, plantId, plantName, scheduleId) {
   plantId   = plantId   || getParam('plantId');
   plantName = plantName || getParam('plantName') || '';
   navigate('audit.html', {
@@ -2390,7 +2395,8 @@ function selectArea(areaId, areaName, areaType, plantId, plantName) {
     plantName,
     areaId,
     areaName,
-    areaType
+    areaType,
+    scheduleId: scheduleId || ''
   });
 }
 
