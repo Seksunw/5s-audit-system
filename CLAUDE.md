@@ -70,7 +70,7 @@
 2. **คะแนนเฉลี่ยเป็นแบบ "เฉลี่ยรายคน" (mean of percent)** ไม่ใช่ pooled (Σscore/Σmax) — ทุกผลตรวจน้ำหนักเท่ากัน · **ห้ามเปลี่ยนกลับ** (ดูคอมเมนต์ "ส่วน H" ใน `getDashboard`)
 3. **ไม่คำนวณคะแนน/สถานะที่ client** — trigger `recalc_audit_header` คำนวณให้ที่ DB ทุกครั้งที่ `audit_details` เปลี่ยน (`finalizeAudit` แค่ "อ่านผลกลับ")
 4. **ทุกหน้า HTML มี CSP `<meta>`** ระบุ domain Supabase — ถ้าเพิ่ม CDN/domain ใหม่ต้องอัปเดต CSP ให้ครบทุกหน้า ไม่งั้นถูกบล็อก
-5. **i18n:** UI ใช้ `data-i18n` + `I18n.t(key)` · ภาษาปัจจุบัน = `I18n.getLang()` ('th'/'en') · ข้อความที่ JS render ทีหลังต้องแปลเอง (`I18n.apply()` ครั้งเดียวไม่ครอบ)
+5. **i18n:** UI ใช้ `data-i18n` (text) / `data-i18n-ph` (placeholder) / `data-i18n-title` (title tooltip) / `data-i18n-aria` (aria-label) / `data-i18n-html` (มี HTML tag ในข้อความ เช่น `<b>`) + `I18n.t(key)` · ภาษาปัจจุบัน = `I18n.getLang()` ('th'/'en') · ข้อความที่ JS render ทีหลังต้องแปลเอง (`I18n.apply()` ครั้งเดียวไม่ครอบ) · **ทุก key ต้องมีทั้ง `th`/`en` เสมอ** (เช็ค parity ด้วย `grep`/`comm` ก่อน commit ถ้าเพิ่ม key เยอะ — เจอ key ชื่อซ้ำของเดิมโดยไม่รู้ตัวมาแล้ว 2026-08-09 ตอนเติม i18n ทีละหลายสิบ key)
 6. **map snake_case (DB) ↔ PascalCase (UI):** ใช้ `mapPlant/mapArea/mapProfile/mapHeader/mapCriteria` — อย่าปน field ดิบกับที่ map แล้ว
 7. คอมเมนต์ภาษาไทยได้ (ตามสไตล์ repo เดิม)
 
@@ -93,6 +93,7 @@
 - ⚠️ **`patches.sql` ไม่ใช่แหล่งความจริงของ DB จริงเสมอไป** — เจอเคส `admin_reset_data()` ที่ไฟล์เขียนถูกแล้ว (คอมเมนต์บอก "แก้แล้ว") แต่เวอร์ชันจริงบน Supabase ยังเป็นโค้ดเก่าค้างอยู่ (deployment gap, 2026-08-07) ถ้าฟังก์ชันไหนมีคอมเมนต์ "แก้แล้ว" แต่พฤติกรรมยังผิด ให้เช็ค `pg_get_functiondef` เทียบไฟล์ก่อนสงสัยที่อื่น
 - ⚠️ **ทุกทางที่นำไปสู่หน้า `audit.html` ต้องส่ง `scheduleId` ต่อด้วยเสมอถ้าพื้นที่นั้นมีงานมอบหมายอยู่** — เจอบั๊กจริง (2026-08-07): `selectArea()` (ทางเข้าปกติ Plant→Area) ไม่เคยส่ง `scheduleId` ทั้งที่การ์ดโชว์ badge รอบตรวจอยู่แล้ว ต่างจาก `startAssignedAudit()` (จากหน้า "งานที่ได้รับมอบหมาย") ที่ส่งถูก ผลคือผลตรวจถูกต้องแต่ `audit_headers.schedule_id = null` ไม่นับเข้า progress งานมอบหมาย ถ้าเพิ่มทางเข้าหน้าตรวจใหม่ ต้องเช็คจุดนี้ด้วยทุกครั้ง
 - `FACILITY_PLANT_IDS = ['CAF','MTN']` ใน app.js — 2 plant นี้ไม่เหมือน plant อื่น (SUP/POC/NIF): area หลักของมันคือ cafeteria/maintenance เอง (ไม่ใช่ production/warehouse) `getAreas()` เลยยกเว้นไม่ซ่อน area type พวกนี้ให้ 2 plant นี้โดยเฉพาะ — เพิ่ม plant ลักษณะนี้ในอนาคตต้องอัปเดต constant นี้ด้วย
+- ⚠️ **`areas.plant_id` กับ `audit_headers.plant_id` ไม่จำเป็นต้องตรงกันเสมอไป** — ระบบไม่มีแนวคิด "ทีมที่รับผิดชอบตรวจ" แยกจาก "โรงงานเจ้าของพื้นที่" ทางกายภาพ ตอนนี้ (2026-08-08) พื้นที่ "รอบอาคาร" ของ NIF/POC/SUP (`NIF-OD`/`POC-OD`/`SUP-OD`) ยังผูก `areas.plant_id` เป็นโรงงานเดิม แต่ `audit_headers.plant_id` ของผลตรวจ Round 1 ถูกแก้มือเป็น `CAF` (P&C) แล้วเพราะเป็นพื้นที่รับผิดชอบของทีม P&C จริง — จงใจให้ไม่ตรงกันชั่วคราว (Dashboard: Plant Ranking อ่านจาก `audit_headers.plant_id` → นับเข้า P&C ถูก, แต่ Area Ranking/`getAreas()` อ่านจาก `areas.plant_id` → ยังโชว์ว่าเป็นของ NIF/POC/SUP) ถ้าจะปรับให้ตรงกันถาวรต้องแก้ `areas.plant_id` + rename `area_name` กันชื่อ "รอบอาคาร" ชนกัน 3 พื้นที่ + backfill `schedules.plant_id` ด้วย — ยังไม่ทำ รอทำตอนรอบตรวจถัดไป
 
 ## ฟีเจอร์ล่าสุด
 

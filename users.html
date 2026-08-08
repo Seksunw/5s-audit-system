@@ -11,7 +11,7 @@
   <title>จัดการผู้ใช้งาน | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=52">
+  <link rel="stylesheet" href="css/style.css?v=53">
   <style>
     .user-card {
       background:#fff; border-radius:12px; padding:14px 16px;
@@ -104,14 +104,14 @@
   <div id="dangerZone" class="card" style="display:none;margin-top:28px;border:1.5px solid var(--danger)">
     <div class="card-body">
       <div style="font-weight:800;color:var(--danger);margin-bottom:6px">
-        <i class="bi bi-exclamation-octagon"></i> เขตอันตราย
+        <i class="bi bi-exclamation-octagon"></i> <span data-i18n="users.danger_zone">เขตอันตราย</span>
       </div>
-      <div style="font-size:0.82rem;color:var(--gray-600);margin-bottom:12px;line-height:1.6">
+      <div style="font-size:0.82rem;color:var(--gray-600);margin-bottom:12px;line-height:1.6" data-i18n-html="users.reset_desc">
         รีเซ็ตข้อมูลเพื่อเริ่มใช้งานจริง — ลบ <b>ประวัติการตรวจ + คะแนน</b>, <b>การมอบหมาย</b> และ <b>รูปภาพ</b> ทั้งหมด<br>
         เก็บไว้: ผู้ใช้ · บันทึกกิจกรรม · ข้อมูลตั้งต้น &nbsp;·&nbsp; <span style="color:#137333">สำรองอัตโนมัติ กู้คืนได้</span>
       </div>
       <button class="btn btn-block" style="background:var(--danger);color:#fff" onclick="openResetModal()">
-        <i class="bi bi-trash3"></i> รีเซ็ตข้อมูลระบบ
+        <i class="bi bi-trash3"></i> <span data-i18n="users.reset_btn">รีเซ็ตข้อมูลระบบ</span>
       </button>
     </div>
   </div>
@@ -124,26 +124,26 @@
     <div class="modal-handle"></div>
     <div style="text-align:center;margin-bottom:14px">
       <i class="bi bi-exclamation-octagon" style="font-size:2rem;color:var(--danger)"></i>
-      <div style="font-size:1.1rem;font-weight:800;margin-top:6px">รีเซ็ตข้อมูลระบบ</div>
+      <div style="font-size:1.1rem;font-weight:800;margin-top:6px" data-i18n="users.reset_btn">รีเซ็ตข้อมูลระบบ</div>
     </div>
-    <div style="background:#fde8e6;border-radius:10px;padding:12px 14px;font-size:0.82rem;color:#8a1c12;margin-bottom:16px;line-height:1.6">
+    <div style="background:#fde8e6;border-radius:10px;padding:12px 14px;font-size:0.82rem;color:#8a1c12;margin-bottom:16px;line-height:1.6" data-i18n-html="users.reset_modal_desc">
       <b>ลบถาวร:</b> ประวัติการตรวจ + คะแนน · การมอบหมาย · รูปภาพ<br>
       <b>เก็บไว้:</b> ผู้ใช้ · บันทึกกิจกรรม · ข้อมูลตั้งต้น<br>
       <span style="color:#137333">✓ สำรองอัตโนมัติที่ตาราง *_backup (กู้คืนได้)</span>
     </div>
     <div class="form-group">
-      <label class="form-label">พิมพ์ <b>RESET</b> เพื่อยืนยัน</label>
+      <label class="form-label" data-i18n-html="users.reset_confirm_label">พิมพ์ <b>RESET</b> เพื่อยืนยัน</label>
       <input type="text" id="resetPhrase" class="form-control" placeholder="RESET" autocomplete="off" spellcheck="false">
     </div>
     <div class="form-group">
-      <label class="form-label">รหัสผ่านของคุณ (admin)</label>
-      <input type="password" id="resetPassword" class="form-control" placeholder="รหัสผ่าน" autocomplete="current-password">
+      <label class="form-label" data-i18n="users.reset_pw_label">รหัสผ่านของคุณ (admin)</label>
+      <input type="password" id="resetPassword" class="form-control" data-i18n-ph="users.reset_pw_ph" placeholder="รหัสผ่าน" autocomplete="current-password">
     </div>
     <div id="resetError" style="color:var(--danger);font-size:0.85rem;margin-bottom:12px;min-height:16px"></div>
     <div style="display:flex;gap:10px">
-      <button class="btn btn-outline btn-block" onclick="closeResetModal()">ยกเลิก</button>
+      <button class="btn btn-outline btn-block" onclick="closeResetModal()" data-i18n="users.cancel">ยกเลิก</button>
       <button class="btn btn-block" id="resetConfirmBtn" style="background:var(--danger);color:#fff" onclick="confirmReset()">
-        <i class="bi bi-trash3"></i> ลบถาวร
+        <i class="bi bi-trash3"></i> <span data-i18n="users.delete_permanent">ลบถาวร</span>
       </button>
     </div>
   </div>
@@ -207,23 +207,23 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">พื้นที่ที่อนุญาตให้ตรวจ</label>
+        <label class="form-label" data-i18n="users.allowed_areas_label">พื้นที่ที่อนุญาตให้ตรวจ</label>
         <div class="area-picker" id="assignedAreasPicker">
-          <button type="button" class="area-picker-toggle" id="assignedAreasSummary" onclick="toggleAssignedAreasDropdown()">ทุกพื้นที่</button>
+          <button type="button" class="area-picker-toggle" id="assignedAreasSummary" onclick="toggleAssignedAreasDropdown()" data-i18n="users.all_areas_btn">ทุกพื้นที่</button>
           <div class="area-picker-menu" id="assignedAreasMenu">
             <div class="area-picker-search">
               <i class="bi bi-search"></i>
-              <input type="search" id="assignedAreasSearch" placeholder="ค้นหา Plant / พื้นที่" oninput="renderAssignedAreaOptions(this.value)">
+              <input type="search" id="assignedAreasSearch" data-i18n-ph="users.search_areas_ph" placeholder="ค้นหา Plant / พื้นที่" oninput="renderAssignedAreaOptions(this.value)">
             </div>
             <div class="area-picker-actions">
-              <button type="button" onclick="clearAssignedAreas()">ทุกพื้นที่</button>
-              <button type="button" onclick="selectAllAssignedAreas()">เลือกทั้งหมด</button>
+              <button type="button" onclick="clearAssignedAreas()" data-i18n="users.all_areas_btn">ทุกพื้นที่</button>
+              <button type="button" onclick="selectAllAssignedAreas()" data-i18n="users.select_all_areas">เลือกทั้งหมด</button>
             </div>
             <div class="area-picker-list" id="assignedAreasList"></div>
           </div>
           <input type="hidden" id="fAssignedAreas">
         </div>
-        <div style="font-size:0.75rem;color:var(--gray-600);margin-top:6px">
+        <div style="font-size:0.75rem;color:var(--gray-600);margin-top:6px" data-i18n="users.areas_hint">
           ไม่เลือกพื้นที่ = ตรวจได้ทุกพื้นที่ตามสิทธิ์ / เลือกได้หลายพื้นที่
         </div>
       </div>
@@ -263,7 +263,7 @@
            และลบคนออกทำให้ผลตรวจเก่าไม่มีเจ้าของ — ดู supabase/delete_user.sql -->
       <button type="button" id="suspendUserBtn" class="btn btn-block"
               style="display:none;margin-top:10px" onclick="toggleUserStatus()">
-        <i class="bi bi-slash-circle"></i> <span id="suspendUserLabel">ระงับการใช้งาน</span>
+        <i class="bi bi-slash-circle"></i> <span id="suspendUserLabel" data-i18n="users.suspend">ระงับการใช้งาน</span>
       </button>
       <p id="suspendUserHint" style="display:none;font-size:0.72rem;color:var(--gray-600);
                                      line-height:1.5;margin:8px 0 0;text-align:center"
@@ -276,6 +276,6 @@
 
 <!-- โหลด app.js เพียงไฟล์เดียว — Logic อยู่ใน app.js ทั้งหมด -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=52"></script>
+<script src="js/app.js?v=53"></script>
 </body>
 </html>

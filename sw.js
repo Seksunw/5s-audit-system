@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.17'; // v5.17: PDF export ให้ตรงกับ dashboard — ทศนิยม 1 ตำแหน่งใน ranking/area score + เคารพตัวกรองโรงงาน/พื้นที่ (2026-08-08)
+const CACHE_NAME = '5s-audit-v5.18'; // v5.18: เติม i18n ให้ครบทุกหน้า (criteria/schedule/logs/assign/home/plant/users/index/mytasks) ทั้ง static HTML + JS-rendered content (2026-08-09)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

@@ -11,7 +11,7 @@
   <title>มอบหมายการตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=52">
+  <link rel="stylesheet" href="css/style.css?v=53">
   <style>
     /* Plant Tabs */
     .plant-tab-bar {
@@ -340,7 +340,7 @@
 <div id="loadingOverlay" class="loading-overlay">
   <div class="loading-spinner">
     <div class="spinner"></div>
-    <span class="loading-msg">กำลังโหลด...</span>
+    <span class="loading-msg" data-i18n="loading">กำลังโหลด...</span>
   </div>
 </div>
 <div id="toastContainer" class="toast-container"></div>
@@ -349,7 +349,7 @@
 <nav class="top-nav">
   <button class="btn-icon" onclick="navigate('home.html')"><i class="bi bi-arrow-left"></i></button>
   <div class="brand" style="margin-left:8px">
-    <i class="bi bi-diagram-3 me-1"></i>มอบหมายการตรวจ
+    <i class="bi bi-diagram-3 me-1"></i><span data-i18n="sched.title">มอบหมายการตรวจ</span>
   </div>
   <span style="background:var(--warning);color:#fff;font-size:0.65rem;font-weight:700;
                padding:3px 8px;border-radius:20px;">
@@ -359,63 +359,63 @@
 
 <!-- Plant Filter Tabs -->
 <div class="plant-tab-bar" id="plantTabBar">
-  <button class="plant-tab-btn active" onclick="schedFilterPlant('all', this)">ทั้งหมด</button>
+  <button class="plant-tab-btn active" onclick="schedFilterPlant('all', this)" data-i18n="common.all">ทั้งหมด</button>
 </div>
 
 <!-- Stats -->
 <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px 16px;background:var(--gray-100);">
   <div class="stat-card blue text-center" style="padding:10px 6px;">
     <div class="stat-number" id="statAssigned" style="font-size:1.4rem">-</div>
-    <div class="stat-label" style="font-size:0.65rem">มอบหมาย</div>
+    <div class="stat-label" style="font-size:0.65rem" data-i18n="sched.stat_assigned">มอบหมาย</div>
   </div>
   <div class="stat-card yellow text-center" style="padding:10px 6px;">
     <div class="stat-number" id="statPending" style="font-size:1.4rem">-</div>
-    <div class="stat-label" style="font-size:0.65rem">รอมอบหมาย</div>
+    <div class="stat-label" style="font-size:0.65rem" data-i18n="sched.stat_pending">รอมอบหมาย</div>
   </div>
   <div class="stat-card" style="padding:10px 6px;text-align:center;background:#fce8e6;">
     <div class="stat-number" id="statOverdue" style="font-size:1.4rem;color:var(--danger)">-</div>
-    <div class="stat-label" style="font-size:0.65rem;color:var(--danger)">เกินกำหนด</div>
+    <div class="stat-label" style="font-size:0.65rem;color:var(--danger)" data-i18n="common.overdue">เกินกำหนด</div>
   </div>
   <div class="stat-card green text-center" style="padding:10px 6px;">
     <div class="stat-number" id="statTotal" style="font-size:1.4rem">-</div>
-    <div class="stat-label" style="font-size:0.65rem">พื้นที่ทั้งหมด</div>
+    <div class="stat-label" style="font-size:0.65rem" data-i18n="sched.stat_total">พื้นที่ทั้งหมด</div>
   </div>
 </div>
 
 <!-- Legend -->
 <div class="legend-row">
-  <div class="legend-item"><div class="legend-dot" style="background:var(--warning)"></div>รอตรวจ</div>
-  <div class="legend-item"><div class="legend-dot" style="background:var(--secondary)"></div>ตรวจแล้ว</div>
-  <div class="legend-item"><div class="legend-dot" style="background:var(--danger)"></div>เกินกำหนด</div>
-  <div class="legend-item"><div class="legend-dot" style="background:var(--gray-400)"></div>ยังไม่มีตาราง</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--warning)"></div><span data-i18n="sched.legend_pending">รอตรวจ</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--secondary)"></div><span data-i18n="sched.legend_done">ตรวจแล้ว</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--danger)"></div><span data-i18n="common.overdue">เกินกำหนด</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--gray-400)"></div><span data-i18n="sched.legend_none">ยังไม่มีตาราง</span></div>
 </div>
 
 <!-- Controls: mode + planning + filter -->
 <div class="sched-controls">
   <div class="sched-mode">
-    <button class="smode active" id="smodeArea" onclick="schedSetMode('area')">ตามพื้นที่</button>
-    <button class="smode" id="smodeAud" onclick="schedSetMode('aud')">ตามคน</button>
+    <button class="smode active" id="smodeArea" onclick="schedSetMode('area')" data-i18n="sched.mode_area">ตามพื้นที่</button>
+    <button class="smode" id="smodeAud" onclick="schedSetMode('aud')" data-i18n="sched.mode_aud">ตามคน</button>
   </div>
   <div class="sched-plan">
-    <span class="plan-lb">กำลังวางแผน</span>
-    <label>รอบ
+    <span class="plan-lb" data-i18n="sched.planning">กำลังวางแผน</span>
+    <label><span data-i18n="sched.round_label">รอบ</span>
       <select id="planRound">
-        <option value="Round 1">รอบที่ 1</option>
-        <option value="Round 2" selected>รอบที่ 2</option>
-        <option value="Round 3">รอบที่ 3</option>
-        <option value="Round 4">รอบที่ 4</option>
+        <option value="Round 1" data-i18n="sched.round_opt1">รอบที่ 1</option>
+        <option value="Round 2" selected data-i18n="sched.round_opt2">รอบที่ 2</option>
+        <option value="Round 3" data-i18n="sched.round_opt3">รอบที่ 3</option>
+        <option value="Round 4" data-i18n="sched.round_opt4">รอบที่ 4</option>
       </select>
     </label>
-    <label>วันครบกำหนด <input type="date" id="planDate"></label>
+    <label><span data-i18n="sched.due_date">วันครบกำหนด</span> <input type="date" id="planDate"></label>
   </div>
   <div class="sched-filter">
-    <button class="sfchip active" onclick="schedSetFilter('all',this)">ทั้งหมด</button>
-    <button class="sfchip" onclick="schedSetFilter('unassigned',this)">ยังไม่มอบ</button>
-    <button class="sfchip" onclick="schedSetFilter('overdue',this)">เกินกำหนด</button>
-    <input class="sfsearch" id="schedSearch" placeholder="🔍 ค้นหาพื้นที่..." oninput="schedSearchInput(this.value)">
+    <button class="sfchip active" onclick="schedSetFilter('all',this)" data-i18n="common.all">ทั้งหมด</button>
+    <button class="sfchip" onclick="schedSetFilter('unassigned',this)" data-i18n="sched.filter_unassigned">ยังไม่มอบ</button>
+    <button class="sfchip" onclick="schedSetFilter('overdue',this)" data-i18n="common.overdue">เกินกำหนด</button>
+    <input class="sfsearch" id="schedSearch" data-i18n-ph="sched.search_ph" placeholder="🔍 ค้นหาพื้นที่..." oninput="schedSearchInput(this.value)">
   </div>
   <div class="sched-audpick" id="schedAudPick" style="display:none">
-    <span class="plan-lb">เลือกผู้ตรวจ</span>
+    <span class="plan-lb" data-i18n="sched.pick_auditor">เลือกผู้ตรวจ</span>
     <div class="audpick-row" id="audpickRow"></div>
   </div>
 </div>
@@ -432,19 +432,19 @@
 
 <!-- Bulk action bar -->
 <div class="sched-bulk" id="schedBulk">
-  <div><b id="bulkCount">0</b> พื้นที่ที่เลือก</div>
+  <div><b id="bulkCount">0</b> <span data-i18n="sched.bulk_selected_suffix">พื้นที่ที่เลือก</span></div>
   <div class="sched-bulk-act">
-    <button class="bulk-clear" onclick="schedClearSel()">ล้าง</button>
-    <button class="bulk-go" id="bulkGo" onclick="schedBulkGo()">มอบหมาย →</button>
+    <button class="bulk-clear" onclick="schedClearSel()" data-i18n="sched.clear">ล้าง</button>
+    <button class="bulk-go" id="bulkGo" onclick="schedBulkGo()" data-i18n="sched.assign_arrow">มอบหมาย →</button>
   </div>
 </div>
 
 <!-- Bottom Nav -->
 <nav class="bottom-nav">
-  <button class="bottom-nav-item active" onclick="navigate('home.html')"><i class="bi bi-house"></i><span>หน้าหลัก</span></button>
-  <button class="bottom-nav-item" onclick="navigate('plant.html')"><i class="bi bi-clipboard-check"></i><span>ตรวจ</span></button>
-  <button class="bottom-nav-item" onclick="navigate('history.html')"><i class="bi bi-clock-history"></i><span>ประวัติ</span></button>
-  <button class="bottom-nav-item" onclick="navigate('users.html')"><i class="bi bi-people"></i><span>ผู้ใช้</span></button>
+  <button class="bottom-nav-item active" onclick="navigate('home.html')"><i class="bi bi-house"></i><span data-i18n="nav.home">หน้าหลัก</span></button>
+  <button class="bottom-nav-item" onclick="navigate('plant.html')"><i class="bi bi-clipboard-check"></i><span data-i18n="nav.audit">ตรวจ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('history.html')"><i class="bi bi-clock-history"></i><span data-i18n="nav.history">ประวัติ</span></button>
+  <button class="bottom-nav-item" onclick="navigate('users.html')"><i class="bi bi-people"></i><span data-i18n="nav.users">ผู้ใช้</span></button>
 </nav>
 
 <!-- Modal: Assign -->
@@ -452,7 +452,7 @@
   <div class="modal-sheet">
     <div class="modal-handle"></div>
     <div class="modal-header-bar">
-      <div style="font-size:1rem;font-weight:700" id="modalTitle">มอบหมายการตรวจ</div>
+      <div style="font-size:1rem;font-weight:700" id="modalTitle" data-i18n="sched.title">มอบหมายการตรวจ</div>
       <button class="btn-icon" onclick="closeAssignModal()"><i class="bi bi-x-lg"></i></button>
     </div>
     <div style="padding:20px;">
@@ -462,27 +462,27 @@
       <!-- Auditor Selection -->
       <div style="font-size:0.78rem;font-weight:700;color:var(--gray-600);
                   text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">
-        เลือกผู้ตรวจ <span style="font-size:0.7rem;font-weight:400;text-transform:none;">(เลือกได้หลายคน)</span>
+        <span data-i18n="sched.pick_auditor">เลือกผู้ตรวจ</span> <span style="font-size:0.7rem;font-weight:400;text-transform:none;" data-i18n="sched.select_multi_hint">(เลือกได้หลายคน)</span>
       </div>
       <div class="auditor-select-grid" id="auditorSelectGrid"></div>
 
       <!-- Schedule -->
       <div style="font-size:0.78rem;font-weight:700;color:var(--gray-600);
-                  text-transform:uppercase;letter-spacing:0.04em;margin:16px 0 10px;">
+                  text-transform:uppercase;letter-spacing:0.04em;margin:16px 0 10px;" data-i18n="sched.set_schedule">
         กำหนดตาราง
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px;">
         <div class="form-group" style="margin:0">
-          <label class="form-label" style="font-size:0.75rem">วันที่ตรวจ</label>
+          <label class="form-label" style="font-size:0.75rem" data-i18n="sched.audit_date">วันที่ตรวจ</label>
           <input type="date" id="schedDate" class="form-control" style="font-size:0.85rem;">
         </div>
         <div class="form-group" style="margin:0">
-          <label class="form-label" style="font-size:0.75rem">รอบที่</label>
+          <label class="form-label" style="font-size:0.75rem" data-i18n="sched.round_field">รอบที่</label>
           <select id="schedRound" class="form-control" style="font-size:0.85rem;-webkit-appearance:auto;">
-            <option value="Round 1">รอบที่ 1</option>
-            <option value="Round 2" selected>รอบที่ 2</option>
-            <option value="Round 3">รอบที่ 3</option>
-            <option value="Round 4">รอบที่ 4</option>
+            <option value="Round 1" data-i18n="sched.round_opt1">รอบที่ 1</option>
+            <option value="Round 2" selected data-i18n="sched.round_opt2">รอบที่ 2</option>
+            <option value="Round 3" data-i18n="sched.round_opt3">รอบที่ 3</option>
+            <option value="Round 4" data-i18n="sched.round_opt4">รอบที่ 4</option>
           </select>
         </div>
       </div>
@@ -491,13 +491,13 @@
       <div id="deleteSchedRow" style="display:none;text-align:right;margin-bottom:4px;">
         <button onclick="deleteSchedule()" style="background:none;border:none;color:var(--danger);
                 font-size:0.75rem;cursor:pointer;font-family:inherit;padding:4px;">
-          <i class="bi bi-trash3"></i> ยกเลิกตารางตรวจนี้
+          <i class="bi bi-trash3"></i> <span data-i18n="sched.cancel_schedule">ยกเลิกตารางตรวจนี้</span>
         </button>
       </div>
 
       <!-- Save button -->
       <button class="btn btn-primary btn-block mt-3" id="saveSchedBtn" onclick="saveSchedule()">
-        <i class="bi bi-check-lg"></i> บันทึกการมอบหมาย
+        <i class="bi bi-check-lg"></i> <span data-i18n="sched.save_assignment">บันทึกการมอบหมาย</span>
       </button>
     </div>
   </div>
@@ -508,41 +508,41 @@
   <div class="modal-sheet">
     <div class="modal-handle"></div>
     <div class="modal-header-bar">
-      <div style="font-size:1rem;font-weight:700" id="bulkTitle">มอบหมายหลายพื้นที่</div>
+      <div style="font-size:1rem;font-weight:700" id="bulkTitle" data-i18n="sched.bulk_modal_title">มอบหมายหลายพื้นที่</div>
       <button class="btn-icon" onclick="schedCloseBulk()"><i class="bi bi-x-lg"></i></button>
     </div>
     <div style="padding:20px;">
       <div id="bulkAreaList" class="bulk-area-list"></div>
       <div style="font-size:0.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.04em;margin:14px 0 10px;">
-        เลือกผู้ตรวจ <span style="font-size:0.7rem;font-weight:400;text-transform:none;">(หลายคนได้ · ตั้งค่าให้ทุกพื้นที่ที่เลือก)</span>
+        <span data-i18n="sched.pick_auditor">เลือกผู้ตรวจ</span> <span style="font-size:0.7rem;font-weight:400;text-transform:none;" data-i18n="sched.select_bulk_hint">(หลายคนได้ · ตั้งค่าให้ทุกพื้นที่ที่เลือก)</span>
       </div>
       <div class="auditor-select-grid" id="bulkAuditorGrid"></div>
-      <div style="font-size:0.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.04em;margin:16px 0 10px;">
+      <div style="font-size:0.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:0.04em;margin:16px 0 10px;" data-i18n="sched.set_schedule">
         กำหนดตาราง
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div class="form-group" style="margin:0">
-          <label class="form-label" style="font-size:0.75rem">วันที่ตรวจ</label>
+          <label class="form-label" style="font-size:0.75rem" data-i18n="sched.audit_date">วันที่ตรวจ</label>
           <input type="date" id="bulkDate" class="form-control" style="font-size:0.85rem;">
         </div>
         <div class="form-group" style="margin:0">
-          <label class="form-label" style="font-size:0.75rem">รอบที่</label>
+          <label class="form-label" style="font-size:0.75rem" data-i18n="sched.round_field">รอบที่</label>
           <select id="bulkRound" class="form-control" style="font-size:0.85rem;-webkit-appearance:auto;">
-            <option value="Round 1">รอบที่ 1</option>
-            <option value="Round 2" selected>รอบที่ 2</option>
-            <option value="Round 3">รอบที่ 3</option>
-            <option value="Round 4">รอบที่ 4</option>
+            <option value="Round 1" data-i18n="sched.round_opt1">รอบที่ 1</option>
+            <option value="Round 2" selected data-i18n="sched.round_opt2">รอบที่ 2</option>
+            <option value="Round 3" data-i18n="sched.round_opt3">รอบที่ 3</option>
+            <option value="Round 4" data-i18n="sched.round_opt4">รอบที่ 4</option>
           </select>
         </div>
       </div>
       <button class="btn btn-primary btn-block mt-3" id="bulkSaveBtn" onclick="schedSaveBulk()">
-        <i class="bi bi-check-lg"></i> บันทึกทั้งหมด
+        <i class="bi bi-check-lg"></i> <span data-i18n="sched.save_all">บันทึกทั้งหมด</span>
       </button>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=52"></script>
+<script src="js/app.js?v=53"></script>
 </body>
 </html>

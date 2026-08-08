@@ -11,7 +11,7 @@
   <title>ตารางตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=52">
+  <link rel="stylesheet" href="css/style.css?v=53">
 </head>
 <body>
 <div id="loadingOverlay" class="loading-overlay">
@@ -21,8 +21,8 @@
 
 <nav class="top-nav">
   <button class="btn-icon" onclick="navigate('home.html')"><i class="bi bi-arrow-left"></i></button>
-  <div class="brand" style="margin-left:8px"><i class="bi bi-clipboard-data me-1"></i>ตารางตรวจ</div>
-  <button class="btn-icon" onclick="initAssign()" title="รีเฟรช">
+  <div class="brand" style="margin-left:8px"><i class="bi bi-clipboard-data me-1"></i><span data-i18n="asg.title">ตารางตรวจ</span></div>
+  <button class="btn-icon" onclick="initAssign()" data-i18n-title="btn.refresh" title="รีเฟรช">
     <i class="bi bi-arrow-clockwise"></i>
   </button>
 </nav>
@@ -31,26 +31,26 @@
 
   <!-- Filters -->
   <div class="asg-filters">
-    <label>รอบ
-      <select id="asgRound" onchange="renderAssign()"><option value="">ทุกรอบ</option></select>
+    <label><span data-i18n="sched.round_label">รอบ</span>
+      <select id="asgRound" onchange="renderAssign()"><option value="" data-i18n="dash.all_rounds">ทุกรอบ</option></select>
     </label>
-    <label>โรงงาน
-      <select id="asgPlant" onchange="renderAssign()"><option value="">ทุกโรงงาน</option></select>
+    <label><span data-i18n="asg.plant_label">โรงงาน</span>
+      <select id="asgPlant" onchange="renderAssign()"><option value="" data-i18n="imp.all_plants">ทุกโรงงาน</option></select>
     </label>
   </div>
 
   <!-- KPI -->
   <div class="stat-grid mb-2">
-    <div class="stat-card blue"><div class="stat-number" id="asgTotal">-</div><div class="stat-label">มอบทั้งหมด</div></div>
-    <div class="stat-card green"><div class="stat-number" id="asgDone">-</div><div class="stat-label">ตรวจเสร็จ</div></div>
-    <div class="stat-card yellow"><div class="stat-number" id="asgPending">-</div><div class="stat-label">ค้างตรวจ</div></div>
-    <div class="stat-card red"><div class="stat-number" id="asgOverdue">-</div><div class="stat-label">เกินกำหนด</div></div>
+    <div class="stat-card blue"><div class="stat-number" id="asgTotal">-</div><div class="stat-label" data-i18n="asg.stat_total">มอบทั้งหมด</div></div>
+    <div class="stat-card green"><div class="stat-number" id="asgDone">-</div><div class="stat-label" data-i18n="asg.stat_done">ตรวจเสร็จ</div></div>
+    <div class="stat-card yellow"><div class="stat-number" id="asgPending">-</div><div class="stat-label" data-i18n="asg.stat_pending">ค้างตรวจ</div></div>
+    <div class="stat-card red"><div class="stat-number" id="asgOverdue">-</div><div class="stat-label" data-i18n="common.overdue">เกินกำหนด</div></div>
   </div>
 
   <!-- Progress -->
   <div class="card mb-3" style="padding:12px 14px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <span style="font-size:0.8rem;color:var(--gray-600);font-weight:600">ความคืบหน้าการตรวจ</span>
+      <span style="font-size:0.8rem;color:var(--gray-600);font-weight:600" data-i18n="asg.progress_title">ความคืบหน้าการตรวจ</span>
       <span style="font-weight:800;font-size:0.95rem" id="asgProgPct">-</span>
     </div>
     <div class="asg-bar"><div class="asg-bar-fill" id="asgProgFill" style="width:0%"></div></div>
@@ -66,7 +66,7 @@
   <div class="chart-container">
     <div class="chart-title">
       <i class="bi bi-people"></i> <span id="asgAudTitle">รายผู้ตรวจ</span>
-      <span style="font-weight:400;color:var(--gray-600);font-size:0.72rem">— แตะชื่อเพื่อดูพื้นที่ทั้งหมด</span>
+      <span style="font-weight:400;color:var(--gray-600);font-size:0.72rem" data-i18n="asg.roster_hint">— แตะชื่อเพื่อดูพื้นที่ทั้งหมด</span>
     </div>
     <div id="asgAuditors">
       <div class="skeleton" style="height:44px;border-radius:8px;margin-bottom:6px"></div>
@@ -75,8 +75,8 @@
     </div>
     <div id="asgHint" style="font-size:0.72rem;color:var(--gray-600);margin-top:10px;line-height:1.5;display:none">
       <i class="bi bi-info-circle"></i>
-      <b>คะแนนที่ให้</b> = คะแนนเฉลี่ยที่ผู้ตรวจคนนั้นให้กับพื้นที่ <u>ที่แสดงอยู่</u>
-      (ไม่ใช่ผลงานของผู้ตรวจ) — ใช้ดู "ความเข้มงวด" ถ้าสูง/ต่ำกว่าค่ากลางมากอาจต้องสอบเทียบมาตรฐานกัน
+      <span data-i18n-html="asg.given_score_html"><b>คะแนนที่ให้</b> = คะแนนเฉลี่ยที่ผู้ตรวจคนนั้นให้กับพื้นที่ <u>ที่แสดงอยู่</u>
+      (ไม่ใช่ผลงานของผู้ตรวจ) — ใช้ดู "ความเข้มงวด" ถ้าสูง/ต่ำกว่าค่ากลางมากอาจต้องสอบเทียบมาตรฐานกัน</span>
     </div>
   </div>
 
@@ -90,6 +90,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=52"></script>
+<script src="js/app.js?v=53"></script>
 </body>
 </html>

@@ -905,6 +905,7 @@ const TRANSLATIONS = {
     'loading':         'กำลังโหลด...',
     // Login
     'login.app_sub':       'Factory 5S Audit System | Draft 2026',
+    'login.app_name':      'ระบบตรวจ 5ส',
     'login.email_label':   'อีเมล',
     'login.pass_label':    'รหัสผ่าน',
     'login.pass_ph':       'กรอกรหัสผ่าน',
@@ -925,6 +926,9 @@ const TRANSLATIONS = {
     'home.menu_history':   'ประวัติ',
     'home.menu_plant':     'เลือก Plant',
     'home.score_title':    'เกณฑ์คะแนน',
+    'home.hero_round_meta':'รอบ {round} · ครบกำหนด {date}',
+    'home.hero_pending':   'คุณมีงานตรวจค้างอยู่ {n} พื้นที่ · เริ่มที่ {area}',
+    'home.hero_ready':     'พร้อมเริ่มตรวจ 5ส แล้ว — แตะปุ่มด้านล่างเพื่อดูงานที่ได้รับมอบหมาย',
     'home.score_ex':       '90-100% — Excellent 🏆',
     'home.score_good':     '75-89% — Good ✅',
     'home.score_imp':      '0-74% — Need Improvement ⚠️',
@@ -1144,6 +1148,158 @@ const TRANSLATIONS = {
     'imp.perfect_d':             'การตรวจครั้งนี้ผ่านทุกข้อ',
     'imp.failed_count':          'ข้อที่ต้องปรับปรุง',
     'imp.total_items':           'จากทั้งหมด',
+    // Common (reuse ข้ามหน้า — คำซ้ำที่มีความหมายเดียวกันทุกที่ที่ใช้)
+    'common.all':                'ทั้งหมด',
+    'common.overdue':            'เกินกำหนด',
+    // Criteria page (มาตรฐาน 5ส)
+    'crit.title':                'มาตรฐาน 5ส',
+    'crit.readonly':             'อ่านอย่างเดียว',
+    'crit.search_ph':            'ค้นหาข้อมูลมาตรฐาน...',
+    'crit.unit_items':           'ข้อ',
+    'crit.unit_cats':            'หมวด',
+    'crit.all_types':            'ทุกประเภทพื้นที่',
+    'crit.type_prefix':          'ประเภท: ',
+    'crit.no_result':            'ไม่พบข้อมูลที่ค้นหา',
+    'crit.loading':              'โหลดมาตรฐาน 5ส...',
+    'crit.uncategorized':        'ทั่วไป',
+    // Schedule page (มอบหมายการตรวจ — admin)
+    'sched.title':               'มอบหมายการตรวจ',
+    'sched.admin_only':          'เฉพาะ Admin เท่านั้น',
+    'sched.loading_data':        'โหลดข้อมูลการมอบหมาย...',
+    'sched.stat_assigned':       'มอบหมาย',
+    'sched.stat_pending':        'รอมอบหมาย',
+    'sched.stat_total':          'พื้นที่ทั้งหมด',
+    'sched.legend_pending':      'รอตรวจ',
+    'sched.legend_done':         'ตรวจแล้ว',
+    'sched.legend_none':         'ยังไม่มีตาราง',
+    'sched.mode_area':           'ตามพื้นที่',
+    'sched.mode_aud':            'ตามคน',
+    'sched.planning':            'กำลังวางแผน',
+    'sched.round_label':         'รอบ',
+    'sched.round_opt1':          'รอบที่ 1',
+    'sched.round_opt2':          'รอบที่ 2',
+    'sched.round_opt3':          'รอบที่ 3',
+    'sched.round_opt4':          'รอบที่ 4',
+    'sched.due_date':            'วันครบกำหนด',
+    'sched.filter_unassigned':   'ยังไม่มอบ',
+    'sched.search_ph':           '🔍 ค้นหาพื้นที่...',
+    'sched.pick_auditor':        'เลือกผู้ตรวจ',
+    'sched.bulk_selected_suffix':'พื้นที่ที่เลือก',
+    'sched.clear':               'ล้าง',
+    'sched.assign_arrow':        'มอบหมาย →',
+    'sched.select_multi_hint':   '(เลือกได้หลายคน)',
+    'sched.set_schedule':        'กำหนดตาราง',
+    'sched.audit_date':          'วันที่ตรวจ',
+    'sched.round_field':         'รอบที่',
+    'sched.cancel_schedule':     'ยกเลิกตารางตรวจนี้',
+    'sched.save_assignment':     'บันทึกการมอบหมาย',
+    'sched.bulk_modal_title':    'มอบหมายหลายพื้นที่',
+    'sched.select_bulk_hint':    '(หลายคนได้ · ตั้งค่าให้ทุกพื้นที่ที่เลือก)',
+    'sched.save_all':            'บันทึกทั้งหมด',
+    'sched.no_area_found':       'ไม่พบพื้นที่',
+    'sched.status_partial':      'บางส่วน',
+    'sched.status_unassigned':   'ยังไม่มี',
+    'sched.already_in_team':     'อยู่ในทีมแล้ว',
+    'sched.n_auditors_suffix':   'คนตรวจ',
+    'sched.not_assigned_yet':    'ยังไม่มอบหมาย',
+    'sched.done_label':          'ตรวจแล้ว',
+    'sched.edit_single':         'แก้ไขเดี่ยว',
+    'sched.assign_n_areas':      'มอบหมาย {n} พื้นที่',
+    'sched.add_n_people':        'เพิ่ม {n} คน →',
+    'sched.pick_auditor_first':  'เลือกผู้ตรวจก่อน',
+    'sched.pick_at_least_one':   'เลือกผู้ตรวจอย่างน้อย 1 คน',
+    'sched.saving':              'กำลังบันทึก...',
+    'sched.save_partial_tpl':    'บันทึกได้ {ok}/{total} · ล้มเหลว {failed}',
+    'sched.assign_success_tpl':  'มอบหมาย {n} พื้นที่เรียบร้อย ✅',
+    'sched.add_success_tpl':     'เพิ่มผู้ตรวจ {n} คน ให้ {m} พื้นที่เรียบร้อย ✅',
+    'sched.save_success':        'บันทึกการมอบหมายเรียบร้อย ✅',
+    'sched.save_failed':         'บันทึกไม่สำเร็จ',
+    'sched.confirm_cancel':      'ยืนยันยกเลิกตารางตรวจนี้?',
+    'sched.cancel_success':      'ยกเลิกตารางเรียบร้อย',
+    'sched.cancel_failed':       'ยกเลิกไม่สำเร็จ',
+    // Assignment analytics page (ตารางตรวจ)
+    'asg.title':                 'ตารางตรวจ',
+    'asg.plant_label':           'โรงงาน',
+    'asg.stat_total':            'มอบทั้งหมด',
+    'asg.stat_done':             'ตรวจเสร็จ',
+    'asg.stat_pending':          'ค้างตรวจ',
+    'asg.progress_title':        'ความคืบหน้าการตรวจ',
+    'asg.roster_title':          'รายผู้ตรวจ',
+    'asg.my_tasks_title':        'งานของฉัน',
+    'asg.roster_hint':           '— แตะชื่อเพื่อดูพื้นที่ทั้งหมด',
+    'asg.given_score_html':      '<b>คะแนนที่ให้</b> = คะแนนเฉลี่ยที่ผู้ตรวจคนนั้นให้กับพื้นที่ <u>ที่แสดงอยู่</u>\n(ไม่ใช่ผลงานของผู้ตรวจ) — ใช้ดู "ความเข้มงวด" ถ้าสูง/ต่ำกว่าค่ากลางมากอาจต้องสอบเทียบมาตรฐานกัน',
+    'asg.given_score_label':     'คะแนนที่ให้',
+    'asg.no_task_in_filter':     'ยังไม่มีงานที่มอบหมายในเงื่อนไขนี้',
+    'asg.done_badge':            'เสร็จ',
+    'asg.pending_badge':         'ค้าง',
+    'asg.team_prefix':           'ทีม',
+    'asg.areas_unit':            'พื้นที่',
+    'asg.done_of':               'เสร็จ',
+    // Activity log page (บันทึกกิจกรรม — admin)
+    'logs.title':                'บันทึกกิจกรรม',
+    'logs.admin_only':           'เฉพาะ Admin เท่านั้น',
+    'logs.loading':              'โหลดบันทึกกิจกรรม...',
+    'logs.filter_login':         'เข้าระบบ',
+    'logs.filter_submit':        'ส่งผลตรวจ',
+    'logs.filter_assign':        'มอบหมาย',
+    'logs.filter_users':         'ผู้ใช้',
+    'logs.filter_delete':        'การลบ',
+    'logs.no_logs':              'ไม่มีบันทึกในเงื่อนไขนี้',
+    'logs.act_login':            'เข้าระบบ',
+    'logs.act_logout':           'ออกระบบ',
+    'logs.act_submit':           'ส่งผลตรวจ',
+    'logs.act_insert':           'เพิ่ม',
+    'logs.act_update':           'แก้ไข',
+    'logs.act_delete':           'ลบ',
+    'logs.ent_profiles':         'ผู้ใช้',
+    'logs.ent_schedules':        'มอบหมาย',
+    'logs.ent_areas':            'พื้นที่',
+    'logs.ent_criteria':         'เกณฑ์',
+    'logs.ent_audit_headers':    'การตรวจ',
+    // Home page เพิ่มเติม
+    'home.quick_criteria':       'มาตรฐาน',
+    'home.quick_schedule':       'ตารางตรวจ',
+    'home.quick_assign':         'มอบหมาย',
+    // Plant page เพิ่มเติม
+    'plant.nav_criteria':        'มาตรฐาน 5ส',
+    'plant.nav_schedule':        'มอบหมายงาน',
+    'plant.subtitle':            'รองรับ 3 Plant ตามมาตรฐาน 5ส Draft 2026',
+    // Users page เพิ่มเติม
+    'users.danger_zone':         'เขตอันตราย',
+    'users.reset_desc':          'รีเซ็ตข้อมูลเพื่อเริ่มใช้งานจริง — ลบ <b>ประวัติการตรวจ + คะแนน</b>, <b>การมอบหมาย</b> และ <b>รูปภาพ</b> ทั้งหมด<br>เก็บไว้: ผู้ใช้ · บันทึกกิจกรรม · ข้อมูลตั้งต้น &nbsp;·&nbsp; <span style="color:#137333">สำรองอัตโนมัติ กู้คืนได้</span>',
+    'users.reset_btn':           'รีเซ็ตข้อมูลระบบ',
+    'users.reset_modal_desc':    '<b>ลบถาวร:</b> ประวัติการตรวจ + คะแนน · การมอบหมาย · รูปภาพ<br><b>เก็บไว้:</b> ผู้ใช้ · บันทึกกิจกรรม · ข้อมูลตั้งต้น<br><span style="color:#137333">✓ สำรองอัตโนมัติที่ตาราง *_backup (กู้คืนได้)</span>',
+    'users.reset_confirm_label': 'พิมพ์ <b>RESET</b> เพื่อยืนยัน',
+    'users.reset_pw_label':      'รหัสผ่านของคุณ (admin)',
+    'users.reset_pw_ph':         'รหัสผ่าน',
+    'users.cancel':              'ยกเลิก',
+    'users.delete_permanent':    'ลบถาวร',
+    'users.allowed_areas_label': 'พื้นที่ที่อนุญาตให้ตรวจ',
+    'users.all_areas_btn':       'ทุกพื้นที่',
+    'users.search_areas_ph':     'ค้นหา Plant / พื้นที่',
+    'users.select_all_areas':    'เลือกทั้งหมด',
+    'users.areas_hint':          'ไม่เลือกพื้นที่ = ตรวจได้ทุกพื้นที่ตามสิทธิ์ / เลือกได้หลายพื้นที่',
+    // Login page เพิ่มเติม
+    'login.footer_version':      'v1.0.0 | มาตรฐาน 5ส Draft 26.05.2026',
+    // Dashboard เพิ่มเติม
+    'dash.export_pdf_title':     'Export PDF / ออกรายงาน PDF',
+    'dash.lightbox_close':       'ปิด',
+    // Area page เพิ่มเติม
+    'area.checklist_hint':       'Checklist จะโหลดอัตโนมัติตามประเภทพื้นที่',
+    // MyTasks page (งานที่ได้รับมอบหมาย)
+    'mytasks.title':             'งานที่ได้รับมอบหมาย',
+    'tasks.state_today':         'ถึงกำหนดวันนี้',
+    'tasks.state_pending':       'รอตรวจ',
+    'tasks.state_done':          'เสร็จสิ้น',
+    'tasks.today_label':         'วันนี้',
+    'tasks.view_result':         'ดูผล',
+    'tasks.start_now':           'เริ่มตรวจ',
+    'tasks.start':               'เริ่ม',
+    'tasks.count_suffix':        'รายการ',
+    'tasks.pending_prefix':      'ค้าง',
+    'tasks.empty_title':         'ยังไม่มีงานที่ได้รับมอบหมาย',
+    'tasks.empty_desc':          'คุณสามารถเลือกพื้นที่ตรวจเองได้',
+    'tasks.pick_area_btn':       'เลือกพื้นที่ตรวจเอง',
   },
   en: {
     // Common
@@ -1364,6 +1520,7 @@ const TRANSLATIONS = {
     'loading':         'Loading...',
     // Login
     'login.app_sub':       'Factory 5S Audit System | Draft 2026',
+    'login.app_name':      '5S Audit System',
     'login.email_label':   'Email',
     'login.pass_label':    'Password',
     'login.pass_ph':       'Enter password',
@@ -1384,6 +1541,9 @@ const TRANSLATIONS = {
     'home.menu_history':   'History',
     'home.menu_plant':     'Select Plant',
     'home.score_title':    'Score Criteria',
+    'home.hero_round_meta':'Round {round} · Due {date}',
+    'home.hero_pending':   'You have {n} pending audit area(s) · Start with {area}',
+    'home.hero_ready':     'Ready to start your 5S audit — tap below to see your assigned tasks',
     'home.score_ex':       '90-100% — Excellent 🏆',
     'home.score_good':     '75-89% — Good ✅',
     'home.score_imp':      '0-74% — Need Improvement ⚠️',
@@ -1615,6 +1775,158 @@ const TRANSLATIONS = {
     'imp.perfect_d':             'This audit passed every item',
     'imp.failed_count':          'items to improve',
     'imp.total_items':           'out of',
+    // Common
+    'common.all':                'All',
+    'common.overdue':            'Overdue',
+    // Criteria page
+    'crit.title':                '5S Standards',
+    'crit.readonly':             'Read-only',
+    'crit.search_ph':            'Search standards...',
+    'crit.unit_items':           'items',
+    'crit.unit_cats':            'categories',
+    'crit.all_types':            'All area types',
+    'crit.type_prefix':          'Type: ',
+    'crit.no_result':            'No matching results',
+    'crit.loading':              'Loading 5S standards...',
+    'crit.uncategorized':        'General',
+    // Schedule page
+    'sched.title':               'Audit Assignment',
+    'sched.admin_only':          'Admin only',
+    'sched.loading_data':        'Loading assignment data...',
+    'sched.stat_assigned':       'Assigned',
+    'sched.stat_pending':        'Awaiting assignment',
+    'sched.stat_total':          'Total areas',
+    'sched.legend_pending':      'Pending',
+    'sched.legend_done':         'Audited',
+    'sched.legend_none':         'Not scheduled',
+    'sched.mode_area':           'By area',
+    'sched.mode_aud':            'By auditor',
+    'sched.planning':            'Planning',
+    'sched.round_label':         'Round',
+    'sched.round_opt1':          'Round 1',
+    'sched.round_opt2':          'Round 2',
+    'sched.round_opt3':          'Round 3',
+    'sched.round_opt4':          'Round 4',
+    'sched.due_date':            'Due date',
+    'sched.filter_unassigned':   'Unassigned',
+    'sched.search_ph':           '🔍 Search area...',
+    'sched.pick_auditor':        'Select auditors',
+    'sched.bulk_selected_suffix':'area(s) selected',
+    'sched.clear':               'Clear',
+    'sched.assign_arrow':        'Assign →',
+    'sched.select_multi_hint':   '(multiple allowed)',
+    'sched.set_schedule':        'Set schedule',
+    'sched.audit_date':          'Audit date',
+    'sched.round_field':         'Round',
+    'sched.cancel_schedule':     'Cancel this schedule',
+    'sched.save_assignment':     'Save assignment',
+    'sched.bulk_modal_title':    'Assign multiple areas',
+    'sched.select_bulk_hint':    '(multiple allowed · applies to all selected areas)',
+    'sched.save_all':            'Save all',
+    'sched.no_area_found':       'No areas found',
+    'sched.status_partial':      'Partial',
+    'sched.status_unassigned':   'None yet',
+    'sched.already_in_team':     'Already in team',
+    'sched.n_auditors_suffix':   'auditor(s)',
+    'sched.not_assigned_yet':    'Not assigned yet',
+    'sched.done_label':          'Done',
+    'sched.edit_single':         'Edit',
+    'sched.assign_n_areas':      'Assign {n} areas',
+    'sched.add_n_people':        'Add {n} people →',
+    'sched.pick_auditor_first':  'Select auditors first',
+    'sched.pick_at_least_one':   'Select at least 1 auditor',
+    'sched.saving':              'Saving...',
+    'sched.save_partial_tpl':    'Saved {ok}/{total} · failed {failed}',
+    'sched.assign_success_tpl':  'Assigned {n} areas successfully ✅',
+    'sched.add_success_tpl':     'Added {n} auditor(s) to {m} areas successfully ✅',
+    'sched.save_success':        'Assignment saved successfully ✅',
+    'sched.save_failed':         'Save failed',
+    'sched.confirm_cancel':      'Confirm cancel this schedule?',
+    'sched.cancel_success':      'Schedule cancelled',
+    'sched.cancel_failed':       'Cancel failed',
+    // Assignment analytics page
+    'asg.title':                 'Assignment Overview',
+    'asg.plant_label':           'Plant',
+    'asg.stat_total':            'Total assigned',
+    'asg.stat_done':             'Completed',
+    'asg.stat_pending':          'Pending',
+    'asg.progress_title':        'Audit Progress',
+    'asg.roster_title':          'By Auditor',
+    'asg.my_tasks_title':        'My Tasks',
+    'asg.roster_hint':           '— tap a name to see all areas',
+    'asg.given_score_html':      '<b>Score given</b> = the average score that auditor gave to the area <u>currently shown</u>\n(not their own audit result) — use it to gauge "strictness"; if far above/below the mean, standards may need calibrating',
+    'asg.given_score_label':     'Score given',
+    'asg.no_task_in_filter':     'No assignments match this filter',
+    'asg.done_badge':            'Done',
+    'asg.pending_badge':         'Pending',
+    'asg.team_prefix':           'Team',
+    'asg.areas_unit':            'areas',
+    'asg.done_of':               'done',
+    // Activity log page
+    'logs.title':                'Activity Log',
+    'logs.admin_only':           'Admin only',
+    'logs.loading':              'Loading activity log...',
+    'logs.filter_login':         'Login',
+    'logs.filter_submit':        'Submit audit',
+    'logs.filter_assign':        'Assignment',
+    'logs.filter_users':         'Users',
+    'logs.filter_delete':        'Deletion',
+    'logs.no_logs':              'No logs match this filter',
+    'logs.act_login':            'Login',
+    'logs.act_logout':           'Logout',
+    'logs.act_submit':           'Submit audit',
+    'logs.act_insert':           'Insert',
+    'logs.act_update':           'Update',
+    'logs.act_delete':           'Delete',
+    'logs.ent_profiles':         'Users',
+    'logs.ent_schedules':        'Assignment',
+    'logs.ent_areas':            'Area',
+    'logs.ent_criteria':         'Criteria',
+    'logs.ent_audit_headers':    'Audit',
+    // Home page extras
+    'home.quick_criteria':       'Standards',
+    'home.quick_schedule':       'Schedule',
+    'home.quick_assign':         'Assignment',
+    // Plant page extras
+    'plant.nav_criteria':        '5S Standards',
+    'plant.nav_schedule':        'Assignment',
+    'plant.subtitle':            'Supports 3 Plants per 5S Standard Draft 2026',
+    // Users page extras
+    'users.danger_zone':         'Danger Zone',
+    'users.reset_desc':          'Reset data to go live — deletes <b>audit history + scores</b>, <b>assignments</b>, and <b>photos</b> entirely<br>Kept: users · activity log · master data &nbsp;·&nbsp; <span style="color:#137333">Auto-backed up, restorable</span>',
+    'users.reset_btn':           'Reset system data',
+    'users.reset_modal_desc':    '<b>Permanently deleted:</b> audit history + scores · assignments · photos<br><b>Kept:</b> users · activity log · master data<br><span style="color:#137333">✓ Auto-backed up in *_backup tables (restorable)</span>',
+    'users.reset_confirm_label': 'Type <b>RESET</b> to confirm',
+    'users.reset_pw_label':      'Your password (admin)',
+    'users.reset_pw_ph':         'Password',
+    'users.cancel':              'Cancel',
+    'users.delete_permanent':    'Delete permanently',
+    'users.allowed_areas_label': 'Areas allowed to audit',
+    'users.all_areas_btn':       'All areas',
+    'users.search_areas_ph':     'Search Plant / area',
+    'users.select_all_areas':    'Select all',
+    'users.areas_hint':          'No areas selected = can audit any area per role / multiple areas selectable',
+    // Login page extras
+    'login.footer_version':      'v1.0.0 | 5S Standard Draft 26.05.2026',
+    // Dashboard extras
+    'dash.export_pdf_title':     'Export PDF / Export report as PDF',
+    'dash.lightbox_close':       'Close',
+    // Area page extras
+    'area.checklist_hint':       'The checklist loads automatically based on the area type',
+    // MyTasks page
+    'mytasks.title':             'Assigned Tasks',
+    'tasks.state_today':         'Due today',
+    'tasks.state_pending':       'Pending',
+    'tasks.state_done':          'Completed',
+    'tasks.today_label':         'Today',
+    'tasks.view_result':         'View result',
+    'tasks.start_now':           'Start audit',
+    'tasks.start':               'Start',
+    'tasks.count_suffix':        'item(s)',
+    'tasks.pending_prefix':      'Pending',
+    'tasks.empty_title':         'No assigned tasks yet',
+    'tasks.empty_desc':          'You can choose an area to audit yourself',
+    'tasks.pick_area_btn':       'Choose an area yourself',
   }
 };
 
@@ -1668,6 +1980,11 @@ const I18n = {
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
       const key = el.dataset.i18nTitle;
       el.title = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || key;
+    });
+    // aria-label (screen readers)
+    document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+      const key = el.dataset.i18nAria;
+      el.setAttribute('aria-label', (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || key);
     });
     // innerHTML (สำหรับข้อความที่มี HTML tags เช่น <strong>)
     document.querySelectorAll('[data-i18n-html]').forEach(el => {
@@ -2011,19 +2328,20 @@ function statusSvg(name) {
 }
 
 // ค่าคอนฟิกการแสดงผลของแต่ละสถานะ
-const TASK_STATE_CFG = {
-  today:   { svg: 'pencil',    label: 'ถึงกำหนดวันนี้', ico_bg: 'var(--primary-light)', ico_fg: 'var(--primary)', bd_bg: 'var(--primary-light)', bd_fg: 'var(--primary)' },
-  pending: { svg: 'clipboard', label: 'รอตรวจ',        ico_bg: 'var(--gray-100)',      ico_fg: 'var(--gray-500)', bd_bg: 'var(--gray-100)',      bd_fg: 'var(--gray-600)' },
-  overdue: { svg: 'warn',      label: 'เกินกำหนด',      ico_bg: '#fdecec',              ico_fg: 'var(--danger)',   bd_bg: '#fdecec',              bd_fg: 'var(--danger)' },
-  done:    { svg: 'check',     label: 'เสร็จสิ้น',       ico_bg: '#e9f7ee',              ico_fg: 'var(--success)',  bd_bg: '#e9f7ee',              bd_fg: 'var(--success)' }
-};
+const TASK_STATE_CFG = () => ({
+  today:   { svg: 'pencil',    label: I18n.t('tasks.state_today'),   ico_bg: 'var(--primary-light)', ico_fg: 'var(--primary)', bd_bg: 'var(--primary-light)', bd_fg: 'var(--primary)' },
+  pending: { svg: 'clipboard', label: I18n.t('tasks.state_pending'), ico_bg: 'var(--gray-100)',      ico_fg: 'var(--gray-500)', bd_bg: 'var(--gray-100)',      bd_fg: 'var(--gray-600)' },
+  overdue: { svg: 'warn',      label: I18n.t('common.overdue'),      ico_bg: '#fdecec',              ico_fg: 'var(--danger)',   bd_bg: '#fdecec',              bd_fg: 'var(--danger)' },
+  done:    { svg: 'check',     label: I18n.t('tasks.state_done'),    ico_bg: '#e9f7ee',              ico_fg: 'var(--success)',  bd_bg: '#e9f7ee',              bd_fg: 'var(--success)' }
+});
 
 // สร้าง HTML แถวงานที่ได้รับมอบหมาย (สไตล์รายการกะทัดรัด)
 function renderAssignedTaskCards(tasks) {
+  const stateCfg = TASK_STATE_CFG();
   return tasks.map(s => {
     const st  = taskState(s);
-    const cfg = TASK_STATE_CFG[st];
-    const dateLabel = st === 'today' ? 'วันนี้' : UI.formatDate(s.Audit_Date);
+    const cfg = stateCfg[st];
+    const dateLabel = st === 'today' ? I18n.t('tasks.today_label') : UI.formatDate(s.Audit_Date);
     const sub = [s.Plant_Name || s.Plant_ID || '', s.Audit_Round || '', dateLabel]
       .filter(Boolean).map(escHtml).join(' · ');
     const startArgs = `'${escAttr(s.Plant_ID)}','${escAttr(s.Plant_Name || s.Plant_ID)}','${escAttr(s.Area_ID)}','${escAttr(s.Area_Name || s.Area_ID)}','${escAttr(s.Area_Type || '')}','${escAttr(s.Schedule_ID || '')}'`;
@@ -2033,11 +2351,11 @@ function renderAssignedTaskCards(tasks) {
       const doneAction = s.Audit_ID
         ? `navigate('summary.html', { auditId: '${escAttr(s.Audit_ID)}' })`
         : `navigate('history.html')`;
-      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="${doneAction}">ดูผล</button>`;
+      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="${doneAction}">${escHtml(I18n.t('tasks.view_result'))}</button>`;
     } else if (st === 'today') {
-      action = `<button class="btn btn-primary" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700" onclick="startAssignedAudit(${startArgs})">เริ่มตรวจ</button>`;
+      action = `<button class="btn btn-primary" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700" onclick="startAssignedAudit(${startArgs})">${escHtml(I18n.t('tasks.start_now'))}</button>`;
     } else {
-      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 18px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="startAssignedAudit(${startArgs})">เริ่ม</button>`;
+      action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 18px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="startAssignedAudit(${startArgs})">${escHtml(I18n.t('tasks.start'))}</button>`;
     }
     return `
       <div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:12px 14px;margin-bottom:10px${st === 'done' ? ';opacity:.72' : ''}">
@@ -2094,17 +2412,17 @@ async function initMyTasks() {
       });
       const pendingCount = myTasks.filter(t => t.Status !== 'Completed').length;
       if (summary) summary.innerHTML =
-        `<span style="color:var(--dark);font-weight:700">${myTasks.length} รายการ</span> · ค้าง ${pendingCount}`;
+        `<span style="color:var(--dark);font-weight:700">${myTasks.length} ${escHtml(I18n.t('tasks.count_suffix'))}</span> · ${escHtml(I18n.t('tasks.pending_prefix'))} ${pendingCount}`;
       list.innerHTML = renderAssignedTaskCards(myTasks);
     } else {
       if (summary) summary.textContent = '';
       list.innerHTML = `
         <div class="card text-center" style="padding:32px 20px">
           <i class="bi bi-clipboard-check" style="font-size:2.4rem;color:var(--gray-500)"></i>
-          <div style="margin-top:10px;font-weight:700;color:var(--dark)">ยังไม่มีงานที่ได้รับมอบหมาย</div>
-          <div style="font-size:0.82rem;color:var(--gray-600);margin:6px 0 16px">คุณสามารถเลือกพื้นที่ตรวจเองได้</div>
+          <div style="margin-top:10px;font-weight:700;color:var(--dark)">${escHtml(I18n.t('tasks.empty_title'))}</div>
+          <div style="font-size:0.82rem;color:var(--gray-600);margin:6px 0 16px">${escHtml(I18n.t('tasks.empty_desc'))}</div>
           <button class="btn btn-primary btn-block" onclick="navigate('plant.html')" style="height:46px">
-            <i class="bi bi-clipboard-check"></i> เลือกพื้นที่ตรวจเอง
+            <i class="bi bi-clipboard-check"></i> ${escHtml(I18n.t('tasks.pick_area_btn'))}
           </button>
         </div>`;
     }
@@ -2174,13 +2492,13 @@ async function initHome() {
     pending.sort((a, b) => String(a.Audit_Date || '').localeCompare(String(b.Audit_Date || '')));
     const near = pending[0];
     if (near) {
-      setEl('heroMeta', `รอบ ${near.Audit_Round || '-'} · ครบกำหนด ${UI.formatDate(near.Audit_Date)}`);
-      setEl('heroDesc', `คุณมีงานตรวจค้างอยู่ ${pending.length} พื้นที่ · เริ่มที่ ${near.Area_Name || near.Area_ID}`);
+      setEl('heroMeta', I18n.t('home.hero_round_meta').replace('{round}', near.Audit_Round || '-').replace('{date}', UI.formatDate(near.Audit_Date)));
+      setEl('heroDesc', I18n.t('home.hero_pending').replace('{n}', pending.length).replace('{area}', near.Area_Name || near.Area_ID));
     } else {
       const up = (schedRes.success && schedRes.data.length)
         ? schedRes.data.find(s => s.Status === 'Pending') : null;
-      setEl('heroMeta', up ? `รอบ ${up.Audit_Round || '-'} · ครบกำหนด ${UI.formatDate(up.Audit_Date)}` : '');
-      setEl('heroDesc', 'พร้อมเริ่มตรวจ 5ส แล้ว — แตะปุ่มด้านล่างเพื่อดูงานที่ได้รับมอบหมาย');
+      setEl('heroMeta', up ? I18n.t('home.hero_round_meta').replace('{round}', up.Audit_Round || '-').replace('{date}', UI.formatDate(up.Audit_Date)) : '');
+      setEl('heroDesc', I18n.t('home.hero_ready'));
     }
   } catch(err) {
     UI.hideLoading();
@@ -4098,17 +4416,17 @@ async function initSchedule() {
   // FIX: อ่าน role จาก AppState.user (Session.load() คืน boolean)
   const user = AppState.user || {};
   if (String(user.role || '').toLowerCase() !== 'admin') {
-    UI.toast('เฉพาะ Admin เท่านั้น', 'error');
+    UI.toast(I18n.t('sched.admin_only'), 'error');
     navigate('home.html');
     return;
   }
   updateUserUI();
 
-  UI.showLoading('โหลดข้อมูลการมอบหมาย...');
+  UI.showLoading(I18n.t('sched.loading_data'));
   try {
     const res = await API.get('getScheduleAdmin', {});
     UI.hideLoading();
-    if (!res.success) { UI.toast(res.error || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
 
     _schedAllAreas  = res.areas   || [];
     _schedAuditors  = res.auditors || [];
@@ -4135,7 +4453,7 @@ async function initSchedule() {
     schedUpdateBulk();
   } catch(err) {
     UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
 }
 
@@ -4188,18 +4506,18 @@ function schedRenderGrid() {
   });
 
   const statusCfg = {
-    pending:    { label:'รอตรวจ',    icon:'bi-clock' },
-    partial:    { label:'บางส่วน',   icon:'bi-hourglass-split' },
-    completed:  { label:'ตรวจแล้ว', icon:'bi-check-circle-fill' },
-    overdue:    { label:'เกินกำหนด',icon:'bi-exclamation-circle' },
-    unassigned: { label:'ยังไม่มี', icon:'bi-dash-circle' },
+    pending:    { label:I18n.t('sched.legend_pending'),    icon:'bi-clock' },
+    partial:    { label:I18n.t('sched.status_partial'),    icon:'bi-hourglass-split' },
+    completed:  { label:I18n.t('sched.legend_done'),       icon:'bi-check-circle-fill' },
+    overdue:    { label:I18n.t('common.overdue'),          icon:'bi-exclamation-circle' },
+    unassigned: { label:I18n.t('sched.status_unassigned'), icon:'bi-dash-circle' },
   };
 
   const grid = document.getElementById('areaGrid');
   if (!grid) return;
   if (!filtered.length) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--gray-500)">
-      <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px"></i>ไม่พบพื้นที่
+      <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:8px"></i>${escHtml(I18n.t('sched.no_area_found'))}
     </div>`;
     return;
   }
@@ -4219,8 +4537,8 @@ function schedRenderGrid() {
       body = `
         <div class="card-auditor-chips">
           ${already
-            ? `<span class="sched-status-badge completed"><i class="bi bi-person-check"></i>อยู่ในทีมแล้ว</span>`
-            : `<span style="font-size:0.7rem;color:var(--gray-500)"><i class="bi bi-people"></i> ${audIds.length} คนตรวจ</span>`}
+            ? `<span class="sched-status-badge completed"><i class="bi bi-person-check"></i>${escHtml(I18n.t('sched.already_in_team'))}</span>`
+            : `<span style="font-size:0.7rem;color:var(--gray-500)"><i class="bi bi-people"></i> ${audIds.length} ${escHtml(I18n.t('sched.n_auditors_suffix'))}</span>`}
         </div>`;
     } else {
       const chips = audIds.length
@@ -4231,16 +4549,16 @@ function schedRenderGrid() {
             const hue = uid.charCodeAt(uid.length-1) * 7 % 360;
             return `<span class="auditor-mini-chip"><span class="auditor-mini-avatar" style="background:hsl(${hue},55%,45%)">${escHtml(initials)}</span>${escHtml((u.Name||'').split(' ')[0] || uid)}</span>`;
           }).join('') + (audIds.length>3 ? `<span style="font-size:0.66rem;color:var(--gray-600)">+${audIds.length-3}</span>` : '')
-        : `<span style="font-size:0.7rem;color:var(--gray-500);display:flex;align-items:center;gap:3px;"><i class="bi bi-person-x"></i>ยังไม่มอบหมาย</span>`;
+        : `<span style="font-size:0.7rem;color:var(--gray-500);display:flex;align-items:center;gap:3px;"><i class="bi bi-person-x"></i>${escHtml(I18n.t('sched.not_assigned_yet'))}</span>`;
       const dateStr = area.Audit_Date ? new Date(area.Audit_Date).toLocaleDateString('th-TH',{day:'numeric',month:'short'}) : '—';
       // ความก้าวหน้ารายคน — โชว์เมื่อมอบหมายหลายคนและยังไม่ครบ (ส่วน H)
       const prog = (area.Required_N > 0 && area.Done_N < area.Required_N && area.Done_N > 0)
-        ? ` · ตรวจแล้ว ${area.Done_N}/${area.Required_N}` : '';
+        ? ` · ${escHtml(I18n.t('sched.done_label'))} ${area.Done_N}/${area.Required_N}` : '';
       body = `
         <div class="card-auditor-chips">${chips}</div>
         <div class="card-date-row"><i class="bi bi-calendar3"></i>${dateStr}${area.Audit_Round ? ' · ' + escHtml(area.Audit_Round) : ''}${prog}</div>
         <button class="btn-assign-dashed" onclick="event.stopPropagation();openSchedModal('${escAttr(area.Area_ID)}')">
-          <i class="bi bi-pencil-square"></i> แก้ไขเดี่ยว
+          <i class="bi bi-pencil-square"></i> ${escHtml(I18n.t('sched.edit_single'))}
         </button>`;
     }
 
@@ -4322,9 +4640,9 @@ function schedUpdateBulk() {
   if (go) {
     if (_schedMode === 'aud') {
       const c = _schedAudPickSet.size;
-      go.innerHTML = c ? `เพิ่ม ${c} คน →` : 'เลือกผู้ตรวจก่อน';
+      go.innerHTML = c ? I18n.t('sched.add_n_people').replace('{n}', c) : I18n.t('sched.pick_auditor_first');
     } else {
-      go.innerHTML = 'มอบหมาย →';
+      go.innerHTML = I18n.t('sched.assign_arrow');
     }
   }
 }
@@ -4339,7 +4657,7 @@ function schedBulkGo() {
 function schedOpenBulk() {
   _bulkAuds = new Set();
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
-  setEl('bulkTitle', `มอบหมาย ${areas.length} พื้นที่`);
+  setEl('bulkTitle', I18n.t('sched.assign_n_areas').replace('{n}', areas.length));
   const list = document.getElementById('bulkAreaList');
   if (list) list.innerHTML = areas.map(a =>
     `<span class="bulk-area-chip">${escHtml(a.Area_Name || a.Area_ID)}</span>`).join('');
@@ -4381,12 +4699,12 @@ function schedCloseBulk() {
 
 async function schedSaveBulk() {
   const auds = Array.from(_bulkAuds).join(',');
-  if (!auds) { UI.toast('เลือกผู้ตรวจอย่างน้อย 1 คน', 'warning'); return; }
+  if (!auds) { UI.toast(I18n.t('sched.pick_at_least_one'), 'warning'); return; }
   const date  = document.getElementById('bulkDate')?.value || '';
   const round = document.getElementById('bulkRound')?.value || 'Round 2';
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
   const btn = document.getElementById('bulkSaveBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก...'; }
+  if (btn) { btn.disabled = true; btn.textContent = I18n.t('sched.saving'); }
   try {
     const results = await Promise.all(areas.map(a =>
       API.post('saveSchedule', {
@@ -4405,18 +4723,18 @@ async function schedSaveBulk() {
     _schedSelected.clear();
     schedRenderGrid();
     schedUpdateBulk();
-    if (failed) UI.toast(`บันทึกได้ ${results.length-failed}/${results.length} · ล้มเหลว ${failed}`, 'warning');
-    else UI.toast(`มอบหมาย ${results.length} พื้นที่เรียบร้อย ✅`, 'success');
+    if (failed) UI.toast(I18n.t('sched.save_partial_tpl').replace('{ok}', results.length-failed).replace('{total}', results.length).replace('{failed}', failed), 'warning');
+    else UI.toast(I18n.t('sched.assign_success_tpl').replace('{n}', results.length), 'success');
   } catch(err) {
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
-  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> บันทึกทั้งหมด'; }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> ' + escHtml(I18n.t('sched.save_all')); }
 }
 
 // ---- by-auditor (โหมดตามคน = ADD) ----
 async function schedSaveByAuditor() {
   const uids = [..._schedAudPickSet];
-  if (!uids.length) { UI.toast('เลือกผู้ตรวจอย่างน้อย 1 คน', 'warning'); return; }
+  if (!uids.length) { UI.toast(I18n.t('sched.pick_at_least_one'), 'warning'); return; }
   const planDate  = document.getElementById('planDate')?.value || '';
   const planRound = document.getElementById('planRound')?.value || 'Round 2';
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
@@ -4444,10 +4762,10 @@ async function schedSaveByAuditor() {
     _schedSelected.clear();
     schedRenderGrid();
     schedUpdateBulk();
-    if (failed) UI.toast(`บันทึกได้ ${results.length-failed}/${results.length} · ล้มเหลว ${failed}`, 'warning');
-    else UI.toast(`เพิ่มผู้ตรวจ ${uids.length} คน ให้ ${results.length} พื้นที่เรียบร้อย ✅`, 'success');
+    if (failed) UI.toast(I18n.t('sched.save_partial_tpl').replace('{ok}', results.length-failed).replace('{total}', results.length).replace('{failed}', failed), 'warning');
+    else UI.toast(I18n.t('sched.add_success_tpl').replace('{n}', uids.length).replace('{m}', results.length), 'success');
   } catch(err) {
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
   if (go) go.style.pointerEvents = '';
 }
@@ -4534,7 +4852,7 @@ async function saveSchedule() {
   const audIds   = Array.from(_schedSelectedAuds).join(',');
 
   const btn = document.getElementById('saveSchedBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก...'; }
+  if (btn) { btn.disabled = true; btn.textContent = I18n.t('sched.saving'); }
 
   try {
     const res = await API.post('saveSchedule', {
@@ -4554,20 +4872,20 @@ async function saveSchedule() {
       area.Sched_Status = 'Pending';
       closeAssignModal();
       schedRenderGrid();
-      UI.toast('บันทึกการมอบหมายเรียบร้อย ✅', 'success');
+      UI.toast(I18n.t('sched.save_success'), 'success');
     } else {
-      UI.toast(res.error || 'บันทึกไม่สำเร็จ', 'error');
+      UI.toast(res.error || I18n.t('sched.save_failed'), 'error');
     }
   } catch(err) {
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
-  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> บันทึกการมอบหมาย'; }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> ' + escHtml(I18n.t('sched.save_assignment')); }
 }
 
 async function deleteSchedule() {
   const area = _schedCurrentArea;
   if (!area || !area.Schedule_ID) return;
-  if (!confirm('ยืนยันยกเลิกตารางตรวจนี้?')) return;
+  if (!confirm(I18n.t('sched.confirm_cancel'))) return;
 
   try {
     const res = await API.get('deleteSchedule', { scheduleId: area.Schedule_ID });
@@ -4581,12 +4899,12 @@ async function deleteSchedule() {
       closeAssignModal();
       schedRenderGrid();
       schedUpdateBulk();
-      UI.toast('ยกเลิกตารางเรียบร้อย', 'success');
+      UI.toast(I18n.t('sched.cancel_success'), 'success');
     } else {
-      UI.toast(res.error || 'ยกเลิกไม่สำเร็จ', 'error');
+      UI.toast(res.error || I18n.t('sched.cancel_failed'), 'error');
     }
   } catch(err) {
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
 }
 
@@ -4605,17 +4923,17 @@ async function initCriteria() {
   if (!Session.requireLogin()) return;
   updateUserUI();
 
-  UI.showLoading('โหลดมาตรฐาน 5ส...');
+  UI.showLoading(I18n.t('crit.loading'));
   try {
     const res = await API.get('getCriteria', { areaType: 'All' });
     UI.hideLoading();
-    if (!res.success) { UI.toast('โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+    if (!res.success) { UI.toast(I18n.t('msg.load_error'), 'error'); return; }
 
     _criteriaAll = res.data || [];
     criteriaRender();
   } catch(err) {
     UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
 }
 
@@ -4627,7 +4945,7 @@ function setTypeFilter(type, btn) {
   criteriaRender(searchEl ? searchEl.value : '');
 
   const labelEl = document.getElementById('filterLabel');
-  if (labelEl) labelEl.textContent = type === 'All' ? 'ทุกประเภทพื้นที่' : 'ประเภท: ' + type;
+  if (labelEl) labelEl.textContent = type === 'All' ? I18n.t('crit.all_types') : I18n.t('crit.type_prefix') + type;
 }
 
 function filterCriteria(q) {
@@ -4658,7 +4976,7 @@ function criteriaRender(searchQ = '') {
   // จัดกลุ่มตาม Category
   const grouped = {};
   items.forEach(c => {
-    const cat = c.Category || 'ทั่วไป';
+    const cat = c.Category || I18n.t('crit.uncategorized');
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(c);
   });
@@ -4673,7 +4991,7 @@ function criteriaRender(searchQ = '') {
     container.innerHTML = `
       <div class="empty-search">
         <i class="bi bi-search"></i>
-        ไม่พบข้อมูลที่ค้นหา
+        ${escHtml(I18n.t('crit.no_result'))}
       </div>`;
     return;
   }
@@ -4696,7 +5014,7 @@ function criteriaRender(searchQ = '') {
         <div class="category-header" onclick="toggleCategory('cat-${idx}')">
           <div class="category-icon"><i class="bi bi-folder2"></i></div>
           <div class="category-title">${escHtml(cat)}</div>
-          <span class="category-count">${list.length} ข้อ</span>
+          <span class="category-count">${list.length} ${escHtml(I18n.t('crit.unit_items'))}</span>
           <i class="bi bi-chevron-down category-chevron"></i>
         </div>
         <div class="criteria-list">${items}</div>
@@ -4715,31 +5033,31 @@ function toggleCategory(id) {
 async function initAssign() {
   if (!Session.requireLogin()) return;
   updateUserUI();
-  UI.showLoading('กำลังโหลด...');
+  UI.showLoading(I18n.t('loading'));
   try {
     const res = await API.get('getAssignmentAnalytics', {});
     UI.hideLoading();
-    if (!res.success) { UI.toast(res.error || 'โหลดข้อมูลไม่สำเร็จ', 'error'); return; }
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
     AppState.assignData = res;
 
     // เติมตัวกรอง รอบ + โรงงาน (เฉพาะที่มีงานมอบหมาย)
     const roundSel = document.getElementById('asgRound');
     if (roundSel) {
       const rounds = [...new Set(res.schedules.map(s => s.Audit_Round).filter(Boolean))].sort();
-      roundSel.innerHTML = '<option value="">ทุกรอบ</option>' +
+      roundSel.innerHTML = `<option value="">${escHtml(I18n.t('dash.all_rounds'))}</option>` +
         rounds.map(r => `<option value="${escAttr(r)}">${escHtml(r)}</option>`).join('');
     }
     const plantSel = document.getElementById('asgPlant');
     if (plantSel) {
       const used = new Set(res.schedules.map(s => s.Plant_ID));
-      plantSel.innerHTML = '<option value="">ทุกโรงงาน</option>' +
+      plantSel.innerHTML = `<option value="">${escHtml(I18n.t('imp.all_plants'))}</option>` +
         res.plants.filter(p => used.has(p.Plant_ID))
           .map(p => `<option value="${escAttr(p.Plant_ID)}">${escHtml(p.Plant_Name)}</option>`).join('');
     }
     renderAssign();
   } catch(err) {
     UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
 }
 
@@ -4814,10 +5132,10 @@ function renderAssign() {
              prog:a.scheds.length ? Math.round(done * 100 / a.scheds.length) : 0 };
   }).sort((x,y) => (y.avg ?? -1) - (x.avg ?? -1));
 
-  setEl('asgAudTitle', isStaff ? 'รายผู้ตรวจ' : 'งานของฉัน');
+  setEl('asgAudTitle', isStaff ? I18n.t('asg.roster_title') : I18n.t('asg.my_tasks_title'));
 
   if (!auditors.length) {
-    cont.innerHTML = `<p class="text-muted text-center" style="padding:16px 0">ยังไม่มีงานที่มอบหมายในเงื่อนไขนี้</p>`;
+    cont.innerHTML = `<p class="text-muted text-center" style="padding:16px 0">${escHtml(I18n.t('asg.no_task_in_filter'))}</p>`;
     if (hint) hint.style.display = 'none';
     return;
   }
@@ -4830,9 +5148,9 @@ function renderAssign() {
       let badge;
       if (mySlot.Done) {
         const pct = scoreLU[a.id + '|' + s.Schedule_ID];
-        badge = `<span class="asg-badge ok">เสร็จ${typeof pct === 'number' ? ' · ' + pct + '%' : ''}</span>`;
+        badge = `<span class="asg-badge ok">${escHtml(I18n.t('asg.done_badge'))}${typeof pct === 'number' ? ' · ' + pct + '%' : ''}</span>`;
       } else {
-        badge = `<span class="asg-badge ${s.Overdue ? 'danger' : 'warn'}">ค้าง${s.Overdue ? ' · เกินกำหนด' : ''}</span>`;
+        badge = `<span class="asg-badge ${s.Overdue ? 'danger' : 'warn'}">${escHtml(I18n.t('asg.pending_badge'))}${s.Overdue ? ' · ' + escHtml(I18n.t('common.overdue')) : ''}</span>`;
       }
       const loc = [s.Area_Name, s.Plant_Name, s.Audit_Round].filter(Boolean).join(' · ');
 
@@ -4841,7 +5159,7 @@ function renderAssign() {
       if ((s.Required_N || 0) > 1) {
         const others = (s.Slots || []).filter(sl => sl.Auditor_ID !== a.id)
           .map(sl => `${sl.Done ? '✅' : '⏳'} ${escHtml(sl.Name)}`).join(' · ');
-        team = `<div class="asg-team">ทีม ${s.Done_N}/${s.Required_N} · ${others}</div>`;
+        team = `<div class="asg-team">${escHtml(I18n.t('asg.team_prefix'))} ${s.Done_N}/${s.Required_N} · ${others}</div>`;
       }
       return `<div class="asg-drow"><span class="asg-da">${escHtml(loc)}</span>${badge}</div>${team}`;
     }).join('');
@@ -4851,10 +5169,10 @@ function renderAssign() {
           <span class="asg-chev" id="asgchev-${idx}">▸</span>
           <div style="flex:1;min-width:0">
             <div class="asg-aud-name">${escHtml(a.name)}</div>
-            <div class="asg-aud-meta">${a.total} พื้นที่ · เสร็จ ${a.done}/${a.total}</div>
+            <div class="asg-aud-meta">${a.total} ${escHtml(I18n.t('asg.areas_unit'))} · ${escHtml(I18n.t('asg.done_of'))} ${a.done}/${a.total}</div>
           </div>
           <div class="asg-give">
-            <div class="asg-give-lb">คะแนนที่ให้</div>
+            <div class="asg-give-lb">${escHtml(I18n.t('asg.given_score_label'))}</div>
             <span class="asg-pill ${cls(a.avg)}">${a.avg==null ? '—' : a.avg + '%'}</span>
           </div>
           <div class="asg-mini"><div style="width:${a.prog}%"></div></div>
@@ -4882,19 +5200,19 @@ async function initLogs() {
   if (!Session.requireLogin()) return;
   const user = AppState.user || {};
   if (String(user.role || '').toLowerCase() !== 'admin') {
-    UI.toast('เฉพาะ Admin เท่านั้น', 'error'); navigate('home.html'); return;
+    UI.toast(I18n.t('logs.admin_only'), 'error'); navigate('home.html'); return;
   }
   updateUserUI();
-  UI.showLoading('โหลดบันทึกกิจกรรม...');
+  UI.showLoading(I18n.t('logs.loading'));
   try {
     const res = await API.get('getLogs', {});
     UI.hideLoading();
-    if (!res.success) { UI.toast(res.error || 'โหลดไม่สำเร็จ', 'error'); return; }
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
     _allLogs = res.data;
     renderLogs();
   } catch(err) {
     UI.hideLoading();
-    UI.toast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
 }
 
@@ -4912,19 +5230,19 @@ function renderLogs() {
   const rows = _allLogs.filter(l => !f || l.Action === f || l.Entity === f);
 
   if (!rows.length) {
-    cont.innerHTML = `<p class="text-muted text-center" style="padding:24px 0">ไม่มีบันทึกในเงื่อนไขนี้</p>`;
+    cont.innerHTML = `<p class="text-muted text-center" style="padding:24px 0">${escHtml(I18n.t('logs.no_logs'))}</p>`;
     return;
   }
 
   const meta = {
-    LOGIN:        { icon:'bi-box-arrow-in-right', cls:'ok',   label:'เข้าระบบ' },
-    LOGOUT:       { icon:'bi-box-arrow-right',    cls:'muted',label:'ออกระบบ' },
-    SUBMIT_AUDIT: { icon:'bi-clipboard-check',    cls:'ok',   label:'ส่งผลตรวจ' },
-    INSERT:       { icon:'bi-plus-circle',        cls:'ok',   label:'เพิ่ม' },
-    UPDATE:       { icon:'bi-pencil',             cls:'warn', label:'แก้ไข' },
-    DELETE:       { icon:'bi-trash3',             cls:'danger',label:'ลบ' },
+    LOGIN:        { icon:'bi-box-arrow-in-right', cls:'ok',   label:I18n.t('logs.act_login') },
+    LOGOUT:       { icon:'bi-box-arrow-right',    cls:'muted',label:I18n.t('logs.act_logout') },
+    SUBMIT_AUDIT: { icon:'bi-clipboard-check',    cls:'ok',   label:I18n.t('logs.act_submit') },
+    INSERT:       { icon:'bi-plus-circle',        cls:'ok',   label:I18n.t('logs.act_insert') },
+    UPDATE:       { icon:'bi-pencil',             cls:'warn', label:I18n.t('logs.act_update') },
+    DELETE:       { icon:'bi-trash3',             cls:'danger',label:I18n.t('logs.act_delete') },
   };
-  const entityTH = { profiles:'ผู้ใช้', schedules:'มอบหมาย', areas:'พื้นที่', criteria:'เกณฑ์', audit_headers:'การตรวจ' };
+  const entityTH = { profiles:I18n.t('logs.ent_profiles'), schedules:I18n.t('logs.ent_schedules'), areas:I18n.t('logs.ent_areas'), criteria:I18n.t('logs.ent_criteria'), audit_headers:I18n.t('logs.ent_audit_headers') };
 
   cont.innerHTML = rows.map((l, i) => {
     const m = meta[l.Action] || { icon:'bi-dot', cls:'muted', label:l.Action };
