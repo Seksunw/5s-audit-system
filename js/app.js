@@ -5112,7 +5112,7 @@ function buildReportHTML(dash, impItems, opts) {
     return `<tr><td><span class="rank-badge ${medal}">${i+1}</span></td>
       <td>${esc(p.plantName)}</td>
       <td><div class="bar"><i style="width:${Math.max(0,Math.min(100,raw))}%;background:${b.bar}"></i></div></td>
-      <td class="pct">${Math.round(raw)}%</td>
+      <td class="pct">${raw.toFixed(1)}%</td>
       <td><span class="band ${b.c}">${esc(b.t)}</span></td></tr>`;
   }).join('');
 
@@ -5129,7 +5129,7 @@ function buildReportHTML(dash, impItems, opts) {
     return `<tr><td style="width:34px"><span class="rank-badge ${b.c==='bad'?'m3':b.c==='ok'&&raw>=90?'m1':''}">${row.mark}</span></td>
       <td>${esc(a.areaName)}</td>
       <td><div class="bar"><i style="width:${Math.max(0,Math.min(100,raw))}%;background:${b.bar}"></i></div></td>
-      <td class="pct" style="width:58px">${Math.round(raw)}%</td>
+      <td class="pct" style="width:58px">${raw.toFixed(1)}%</td>
       <td style="width:92px"><span class="band ${b.c}">${esc(b.t)}</span></td></tr>`;
   }).join('');
 
@@ -5163,7 +5163,7 @@ function buildReportHTML(dash, impItems, opts) {
 
   // area score lookup จาก areaRanking (ชื่อรูปแบบ "Plant · Area")
   const areaScoreByName = {};
-  areaRanking.forEach(a => { areaScoreByName[a.areaName] = Math.round(scoreOf(a)); });
+  areaRanking.forEach(a => { areaScoreByName[a.areaName] = scoreOf(a); });
 
   const sheets = groupArr.map((g, gi) => {
     const topicsInArea = groupByTopic(g.list, it => it.Criteria_ID || it.Question);
@@ -5229,7 +5229,7 @@ function buildReportHTML(dash, impItems, opts) {
           <div><span class="k">${esc(S.due)}</span><span class="v" style="color:var(--danger)">${esc(S.within)} ${fmtDate(dueIso)}</span></div>
         </div>
         <div class="sheet-scorebar">
-          ${areaPct != null ? `<div class="sc ${scoreCls}">${areaPct}%</div>` : ''}
+          ${areaPct != null ? `<div class="sc ${scoreCls}">${areaPct.toFixed(1)}%</div>` : ''}
           <div class="lbl">${esc(S.areaScore)}${(areaPct!=null&&areaPct<60)?` · <b>${esc(S.urgent)}</b>`:''} · ${esc(S.found)} <b>${topicsInArea.length}</b> ${esc(S.itemsUnit)} (${esc(S.failN)} ${gN0} · ${esc(S.weakN)} ${gN1})</div>
         </div>
       </div>
@@ -5380,6 +5380,10 @@ async function exportDashboardPDF() {
       dash = r.success ? r.data : {};
       items = (ir.success && ir.items) ? ir.items : [];
     }
+    // ส่งเฉพาะข้อที่ตรงกับตัวกรองโรงงาน/พื้นที่ที่เลือกอยู่บน dashboard ตอนนี้ —
+    // ให้ PDF ตรงกับสิ่งที่เห็นในส่วน "พื้นที่ต้องปรับปรุง" เป๊ะๆ ไม่ใช่ทั้งบริษัท
+    if (typeof _impPlantFilter !== 'undefined' && _impPlantFilter) items = items.filter(it => it.Plant_ID === _impPlantFilter);
+    if (typeof _impAreaFilter  !== 'undefined' && _impAreaFilter)  items = items.filter(it => it.Area_ID  === _impAreaFilter);
     const html = buildReportHTML(dash, items, {
       lang: I18n.getLang(),
       preparedBy: (typeof AppState !== 'undefined' && AppState.user && AppState.user.name) || '',

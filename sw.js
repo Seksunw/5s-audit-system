@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.16'; // v5.16: เพิ่มตัวกรองโรงงานใน Dashboard "พื้นที่ต้องปรับปรุง" (2026-08-08)
+const CACHE_NAME = '5s-audit-v5.17'; // v5.17: PDF export ให้ตรงกับ dashboard — ทศนิยม 1 ตำแหน่งใน ranking/area score + เคารพตัวกรองโรงงาน/พื้นที่ (2026-08-08)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

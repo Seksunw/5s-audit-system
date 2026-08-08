@@ -26,10 +26,10 @@
 
 ## โครงไฟล์ที่ต้องรู้
 
-- `js/app.js` — **โค้ด frontend ทั้งหมดอยู่ไฟล์เดียว** (~5,300 บรรทัด): I18n · Session · API(`_sb`) · AppState · UI · ทุกหน้า
+- `js/app.js` — **โค้ด frontend ทั้งหมดอยู่ไฟล์เดียว** (~5,400+ บรรทัด, โตขึ้นเรื่อยๆ): I18n · Session · API(`_sb`) · AppState · UI · ทุกหน้า
 - `css/style.css` — global stylesheet (CSS variables)
 - `*.html` (14 หน้า) — router ใน app.js อ่านชื่อไฟล์ → เรียก `init<Page>()`
-- `supabase/` — `schema.sql` (โครงจริง), `seed_master.sql` (plants/areas/criteria), `patches.sql` (แก้ DB สะสม), `storage_and_first_admin.sql`
+- `supabase/` — `schema.sql` (โครงจริง, ไม่มี role `viewer`/ไม่มี table ล่าสุด เพราะเพิ่มทีหลังผ่าน patches.sql), `seed_master.sql` (plants/areas/criteria), `patches.sql` (แก้ DB สะสม, ไฟล์เดียวจริง), `storage_and_first_admin.sql` · ไฟล์ SQL อื่นที่เป็น utility เดี่ยวๆ ไม่ใช่ migration: `delete_user.sql` (ลบ user ผ่าน SQL Editor เท่านั้น เพราะ FK+revoke กันไว้ไม่ให้ลบผ่านแอป), `reset_test_data.sql` (⚠️ DANGER ล้างข้อมูลทดสอบ ใช้ครั้งเดียวตอนเปลี่ยนเข้าสู่ production), `RUN_2026-08-05*.sql` (snapshot ของ patches.sql ส่วน G/H ที่รันไปแล้ว — ประวัติ ไม่ต้องรันซ้ำ)
 - `sw.js` — Service Worker (JS ดึงสดจาก network เสมอ)
 - `docs/PROJECT_SUMMARY.md` — สถาปัตยกรรมละเอียด · `work-logs/` — ประวัติงานรายวัน
 
@@ -38,9 +38,15 @@
 - **ไม่มี build/compile** — แก้ไฟล์แล้วเปิดหน้าได้เลย
 - **Deploy = push `main`** → GitHub Pages เสิร์ฟไฟล์จาก root ของ branch โดยตรง (มี `.nojekyll` = ข้าม Jekyll เสิร์ฟไฟล์ดิบ) เผยแพร่อัตโนมัติภายในไม่กี่นาที
 - ⚠️ **repo เป็น PUBLIC** — ทุกไฟล์ที่ push ขึ้นไปคนทั่วไปเห็นได้ (รวม worklogs, docs, โค้ด) · **ห้ามใส่ secret/ข้อมูลลับใด ๆ ในไฟล์ที่ track**
-- ⚠️ **หลังแก้ CSS/JS ต้อง bump cache-bust `?v=NN` ในทุก HTML + เลข cache ใน `sw.js`** ไม่งั้น SW เสิร์ฟไฟล์เก่า (อาการ: การ์ด/พื้นที่หายชั่วคราวหลังอัปเดต) — ปัจจุบันอยู่ที่ `v=50`
+- ⚠️ **หลังแก้ CSS/JS ต้อง bump cache-bust `?v=NN` ในทุก HTML + เลข cache ใน `sw.js`** ไม่งั้น SW เสิร์ฟไฟล์เก่า (อาการ: การ์ด/พื้นที่หายชั่วคราวหลังอัปเดต) — เลขล่าสุดเช็คได้จาก `spec.md` § Current state (เลขนี้เปลี่ยนบ่อย ไม่ hardcode ไว้ที่นี่)
 - **เขียน worklog ใหม่ทุกครั้งที่ทำงานเสร็จ** ที่ `work-logs/WORK_LOG_YYYY-MM-DD.md` (สไตล์: หัวข้อหลัก + สรุป + รายละเอียด + commit hash)
 - **commit/push เมื่อผู้ใช้สั่งเท่านั้น** · commit message เป็นแนว conventional (`feat:`, `fix:`, `docs:`)
+
+### Local dev / debug
+
+- **ไม่มี dev/staging Supabase แยก** — `CONFIG.SUPABASE_URL` ใน `js/app.js` ชี้ไป project เดียวกับ production เสมอ (ref เดียวกับที่ `.mcp.json` ต่ออยู่) → ทดสอบ feature ใหม่ = กระทบข้อมูลจริงเสมอ ระวังเป็นพิเศษ
+- เปิดไฟล์ตรงๆ ผ่าน `file://` พอสำหรับดูหน้าตา UI ทั่วไป แต่ **Service Worker register ไม่ได้ถ้าไม่ใช่ origin http(s)** — ถ้าต้องทดสอบพฤติกรรม PWA/offline cache ให้รันผ่าน static server (เช่น `python3 -m http.server`) แทน
+- `console.log/.debug/.info` ถูกปิดอัตโนมัติทุกที่ ยกเว้น `localhost`/`127.0.0.1` — เปิดกลับมาดู log บนเว็บจริงได้ด้วย `localStorage.setItem('5s_debug','1')` แล้ว refresh (ปิดกลับด้วย `.removeItem('5s_debug')`)
 
 ## ไฟล์ที่ push ขึ้น GitHub / ไฟล์ที่ห้าม push
 

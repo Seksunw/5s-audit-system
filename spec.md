@@ -95,7 +95,7 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 7. `dd7abf8` — แก้บั๊ก `selectArea()` ไม่ส่ง `scheduleId` + backfill ข้อมูลจริง 7 audit rows (คุณเล็ก×6, คุณแหวน×1) + recompute `schedules.status`
 8. `750a0d2` — WORK_LOG_2026-08-07.md + อัปเดต CLAUDE.md (cache-bust v50, gotchas ใหม่)
 
-**cache-bust ปัจจุบัน:** `js/app.js`/`css/style.css` = `?v=51` ในทุก HTML · `sw.js` `CACHE_NAME` = `5s-audit-v5.16`
+**cache-bust ปัจจุบัน:** `js/app.js`/`css/style.css` = `?v=52` ในทุก HTML · `sw.js` `CACHE_NAME` = `5s-audit-v5.17`
 
 **เรื่องที่คุยจบแล้วไม่ต้องทำอะไรต่อ:** GitHub Actions annotation "job was not acquired by Runner of type hosted" (run #69, ~19m50s) — ยืนยันแล้วว่าเป็น GitHub-side runner allocation hiccup ชั่วคราว ไม่เกี่ยวกับโค้ด/workflow ของ repo, run ถัดๆมา (#70-76) ปกติดีหมด
 
@@ -103,6 +103,7 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 - เริ่ม session ด้วยการตั้งระบบ `spec.md` นี้ + เพิ่ม rule ใน CLAUDE.md ให้ update ทุกครั้งหลังทำงานเสร็จ
 - แก้ข้อมูลจริง (ผู้ใช้รัน SQL เอง, verify แล้ว): `audit_round` ที่กรอกผิดเป็น `'Round 2'` ตอนมอบหมายงาน Office (CAF-OF/MTN-OF, สร้าง 2026-08-07) — แก้เป็น `'Round 1'` ทั้งหมด ทั้ง `schedules` (2 แถว) และ `audit_headers` (4 แถว, locked แล้ว) ระบบมีรอบตรวจเดียวจริง ไม่มีรอบอื่นหลงเหลือ (verify: `schedules`/`audit_headers` เหลือค่า `audit_round` เดียวคือ Round 1 ทั้งหมด — 16 และ 57 แถวตามลำดับ) — ไม่ต้องผ่าน unlock/relock เพราะ `trg_chk_locked` ผูกแค่ `audit_details` ไม่ครอบ `audit_headers`
 - Dashboard "พื้นที่ต้องปรับปรุง": เพิ่มตัวกรองโรงงาน (`impPlant` dropdown) คู่กับตัวกรองพื้นที่เดิม — เลือกโรงงานแล้ว area dropdown จะ cascade กรองเหลือแค่พื้นที่ของโรงงานนั้น (`_impPlantFilter`/`_impPlantList`, `impFillPlantFilter()`, `impPlantChange()` ใน app.js; เพิ่ม `Plant_ID` ใน `getImprovementItems()`'s areaList; เพิ่ม dropdown ใน dashboard.html; i18n key `imp.all_plants` TH/EN) — cache-bust v50→v51, sw.js v5.15→v5.16
+- แก้ **PDF export ไม่ตรงกับ dashboard 100%** (bug จริงที่ผู้ใช้เจอ): (1) Plant Ranking/Area Ranking ในรายงานปัดเป็นจำนวนเต็ม (`Math.round`) ขณะที่ dashboard โชว์ทศนิยม 1 ตำแหน่งแล้วตั้งแต่ 2026-08-07 (`60e7dec`) — แก้ให้ `raw.toFixed(1)` ทั้ง `plantRows`, `areaRows`, และ badge คะแนนพื้นที่ (`areaScoreByName`/`areaPct`) ใน `buildReportHTML()`; (2) `exportDashboardPDF()` เดิมส่ง `_impItems` (ทุกพื้นที่ทั้งบริษัท) เข้ารายงานเสมอ ไม่สนตัวกรองโรงงาน/พื้นที่ที่เลือกอยู่บนหน้าจอ — แก้ให้ filter ด้วย `_impPlantFilter`/`_impAreaFilter` ก่อนส่งเข้า `buildReportHTML()` (เฉพาะ "พื้นที่ต้องปรับปรุง"/corrective-action sheets เท่านั้น — Plant/Area Ranking บนหน้าสรุปยังคงโชว์ทั้งบริษัทเหมือนเดิม เพราะเป็นตารางเปรียบเทียบภาพรวม ไม่ใช่ส่วนที่ตัวกรองนี้ครอบคลุม) — cache-bust v51→v52, sw.js v5.16→v5.17
 
 ---
 
