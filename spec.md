@@ -67,6 +67,9 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 - **`patches.sql` เป็นไฟล์เดียว idempotent สำหรับทุกการแก้ DB** (ไม่แก้ `schema.sql` ตรงๆ)
   ทำไม: `schema.sql` มีไว้สำหรับสร้าง DB ใหม่เปล่าเท่านั้น รันซ้ำบน DB จริงจะพัง — patches.sql append-only + idempotent ปลอดภัยกว่า, แต่**ต้องเช็ค live DB จริงเทียบไฟล์เป็นระยะ** (เจอ deployment gap จริงมาแล้วกับ `admin_reset_data()`)
 
+- **เลิกเขียน `work-logs/WORK_LOG_YYYY-MM-DD.md` ใหม่ ใช้ `spec.md` § Current state อย่างเดียว** (9 ส.ค. 2026)
+  ทำไม: ตั้งแต่มี `spec.md` (8 ส.ค.) พบว่าไม่ได้เขียน worklog คู่กันเลยจริง (ค้าง 2 วัน) เพราะซ้ำซ้อนกัน — spec.md สั้นกว่า อ่านเร็วกว่าตอนเริ่ม session ใหม่ ผู้ใช้ยืนยันว่าไม่ได้ใช้ worklog อ่านย้อนหลัง/ส่งรายงานคนอื่นแล้ว จึงไม่มีเหตุผลต้องดูแล 2 ระบบพร้อมกัน · ไฟล์เก่าใน `work-logs/` ยังเก็บไว้เป็นประวัติ ไม่ลบ แต่ไม่สร้างใหม่อีก
+
 ---
 
 ## 3. Todo — backlog (update ทุกครั้งที่มีงานใหม่/เสร็จ)
@@ -126,11 +129,14 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 - **เกณฑ์มาตรฐาน 5ส (criteria) รองรับ EN แล้ว** — ผู้ใช้มีไฟล์ต้นฉบับ `5S Standard (มาตรฐาน 5ส) _R.00 16.06.2026.pdf` (มาตรฐานกลางทางการ ไทย+อังกฤษคู่กันทุกข้อ 34 หมวด ตรงเลข sub_category กับตาราง `criteria` เป๊ะ — ยืนยันด้วย SQL: 132 ข้อ/34 หมวด ตรงกันทั้งหมด) ถามว่าใช้ไฟล์นี้ทำอะไรได้บ้างเรื่องเปลี่ยนภาษามาตรฐานตอนใช้แอปเป็น EN
   - **พบ nuance สำคัญ:** PDF มีคำแปลอังกฤษที่แปลจากข้อความไทย**ฉบับเต็ม** (ยาว/เป็นทางการ) แต่ `criteria.question`/`description` ในระบบเป็น**เวอร์ชันสรุปสั้น** (ตัดมาให้เหมาะจอมือถือ) — ไม่ใช่คำเดียวกัน แม้ความหมายตรงกัน
   - ผู้ใช้เลือก: แปล/สรุปคำแปล EN ใหม่ให้สั้นกระชับเท่าภาษาไทยปัจจุบัน (ไม่ใช้คำแปลยาวจาก PDF ตรงๆ) — ใช้ PDF เป็น reference ความถูกต้องของศัพท์เทคนิคเท่านั้น (เช่น "จป.วิชาชีพ" = professional safety officer/JSO, SDS = Safety Data Sheets)
-  - **DB:** เพิ่มคอลัมน์ `criteria.question_en`, `description_en`, `category_en` (patches.sql ส่วน I, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` + `UPDATE ... FROM (VALUES...)` ครบทั้ง 132 แถว — verify แล้วว่า criteria_id ตรงกับ DB 100% ไม่ขาดไม่เกิน) — **ผู้ใช้ยังไม่ได้รัน SQL นี้** (รอสั่ง)
+  - **DB:** เพิ่มคอลัมน์ `criteria.question_en`, `description_en`, `category_en` (patches.sql ส่วน I, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` + `UPDATE ... FROM (VALUES...)` ครบทั้ง 132 แถว) — **ผู้ใช้รัน SQL แล้ว + verify ผ่าน MCP แล้ว: 132/132 แถวมีครบ 3 คอลัมน์ สุ่มเช็ค 4 แถวข้ามหลายหมวดตรงเป๊ะ** (รวมแถวที่มี escaped quote ซ้อน `C-30-6` ก็ไม่เพี้ยน)
   - **Code:** `mapCriteria()` (ใช้กับ `getCriteria()` → criteria.html + audit.html checklist), `getImprovementItems()` (dashboard "พื้นที่ต้องปรับปรุง" + PDF export), `getAuditDetail()` (summary.html) — ทั้ง 3 จุดเลือกคอลัมน์ EN/TH ตาม `I18n.getLang()==='en'` fallback เป็นไทยเสมอถ้าแถวไหนยังไม่มีคำแปล (กันเกณฑ์ใหม่ในอนาคตที่ลืมเติม _en)
   - node --check ผ่าน, verify criteria_id ครบ 132/132 ไม่ซ้ำไม่ขาดด้วย diff
   - cache-bust v53→v54, sw.js v5.18→v5.19
-  - **ค้าง:** รอผู้ใช้รัน SQL ส่วน I ใน Supabase SQL Editor แล้ว verify ว่า criteria.html/audit.html/dashboard เปลี่ยนเป็นอังกฤษถูกต้องตอนสลับภาษา
+  - **commit + push แล้ว** (`638d4b6`) — ฟีเจอร์นี้เสร็จสมบูรณ์ ไม่มีอะไรค้าง (ยังไม่ได้ลองเปิดแอปจริงสลับ EN ดูด้วยตาตัวเองว่าหน้าตาถูกต้อง — ถ้าเจอปัญหาระหว่างใช้งานจริงค่อยแจ้ง)
+
+**2026-08-09 (ต่ออีก):**
+- **เลิกเขียน `work-logs/` ใหม่ ใช้ `spec.md` อย่างเดียว** — ผู้ใช้ถามว่า worklog รายวันยังจำเป็นไหม เช็คแล้วพบว่าตั้งแต่มี spec.md (8 ส.ค.) ไม่ได้เขียน worklog คู่กันเลย (ค้าง 2 วัน) ผู้ใช้ยืนยันไม่ได้ใช้อ่านย้อนหลัง/ส่งรายงานแล้ว ตัดสินใจเลิกเขียนใหม่ถาวร ดูเหตุผลเต็มใน §2 · แก้ CLAUDE.md ตัด rule "เขียน worklog ทุกครั้ง" ออก + ปรับ pointer ต้นไฟล์ให้ชี้ spec.md เป็นหลัก (ไฟล์เก่าใน `work-logs/` ยังเก็บไว้ ไม่ลบ)
 
 ---
 

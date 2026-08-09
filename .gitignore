@@ -14,6 +14,10 @@ sync_commits.py
 *.docx
 Criteria_Master.csv
 
+# worklog รายวันแบบเก่า — เลิกเขียนใหม่แล้ว (9 ส.ค. 2026, ใช้ spec.md แทน)
+# เก็บไฟล์เก่าไว้ในเครื่อง local เป็นประวัติส่วนตัว ไม่ต้องขึ้น GitHub อีก
+work-logs/
+
 # security — ห้ามขึ้น GitHub เด็ดขาด (repo เป็น public + เสิร์ฟผ่าน GitHub Pages)
 # รายงานช่องโหว่ที่ยังไม่ได้แก้ = แผนที่ให้ผู้โจมตี
 docs/SECURITY_ASSESSMENT.md

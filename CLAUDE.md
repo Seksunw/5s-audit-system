@@ -1,7 +1,8 @@
 # CLAUDE.md — 5S Audit System
 
 คู่มือประจำโปรเจกต์สำหรับ Claude Code — **อ่านไฟล์นี้ก่อนเริ่มงานทุกครั้ง**
-เอกสารเชิงลึก: `docs/PROJECT_SUMMARY.md` · ประวัติรายวัน: `work-logs/WORK_LOG_YYYY-MM-DD.md` · **save point ปัจจุบัน: `spec.md`**
+เอกสารเชิงลึก: `docs/PROJECT_SUMMARY.md` · **save point ปัจจุบัน: `spec.md`**
+ประวัติรายวันแบบเก่า: `work-logs/WORK_LOG_YYYY-MM-DD.md` (เลิกเขียนใหม่แล้วตั้งแต่ 9 ส.ค. 2026 — ไฟล์เก่าเก็บไว้เป็นประวัติ ไม่ต้องอัปเดต ดู `spec.md` § Current state แทน)
 
 ---
 
@@ -31,7 +32,7 @@
 - `*.html` (14 หน้า) — router ใน app.js อ่านชื่อไฟล์ → เรียก `init<Page>()`
 - `supabase/` — `schema.sql` (โครงจริง, ไม่มี role `viewer`/ไม่มี table ล่าสุด เพราะเพิ่มทีหลังผ่าน patches.sql), `seed_master.sql` (plants/areas/criteria), `patches.sql` (แก้ DB สะสม, ไฟล์เดียวจริง), `storage_and_first_admin.sql` · ไฟล์ SQL อื่นที่เป็น utility เดี่ยวๆ ไม่ใช่ migration: `delete_user.sql` (ลบ user ผ่าน SQL Editor เท่านั้น เพราะ FK+revoke กันไว้ไม่ให้ลบผ่านแอป), `reset_test_data.sql` (⚠️ DANGER ล้างข้อมูลทดสอบ ใช้ครั้งเดียวตอนเปลี่ยนเข้าสู่ production), `RUN_2026-08-05*.sql` (snapshot ของ patches.sql ส่วน G/H ที่รันไปแล้ว — ประวัติ ไม่ต้องรันซ้ำ)
 - `sw.js` — Service Worker (JS ดึงสดจาก network เสมอ)
-- `docs/PROJECT_SUMMARY.md` — สถาปัตยกรรมละเอียด · `work-logs/` — ประวัติงานรายวัน
+- `docs/PROJECT_SUMMARY.md` — สถาปัตยกรรมละเอียด · `work-logs/` — ประวัติงานรายวัน (archive เก่า ไม่เขียนเพิ่มแล้ว)
 
 ## Dev / Deploy workflow
 
@@ -39,8 +40,8 @@
 - **Deploy = push `main`** → GitHub Pages เสิร์ฟไฟล์จาก root ของ branch โดยตรง (มี `.nojekyll` = ข้าม Jekyll เสิร์ฟไฟล์ดิบ) เผยแพร่อัตโนมัติภายในไม่กี่นาที
 - ⚠️ **repo เป็น PUBLIC** — ทุกไฟล์ที่ push ขึ้นไปคนทั่วไปเห็นได้ (รวม worklogs, docs, โค้ด) · **ห้ามใส่ secret/ข้อมูลลับใด ๆ ในไฟล์ที่ track**
 - ⚠️ **หลังแก้ CSS/JS ต้อง bump cache-bust `?v=NN` ในทุก HTML + เลข cache ใน `sw.js`** ไม่งั้น SW เสิร์ฟไฟล์เก่า (อาการ: การ์ด/พื้นที่หายชั่วคราวหลังอัปเดต) — เลขล่าสุดเช็คได้จาก `spec.md` § Current state (เลขนี้เปลี่ยนบ่อย ไม่ hardcode ไว้ที่นี่)
-- **เขียน worklog ใหม่ทุกครั้งที่ทำงานเสร็จ** ที่ `work-logs/WORK_LOG_YYYY-MM-DD.md` (สไตล์: หัวข้อหลัก + สรุป + รายละเอียด + commit hash)
 - **commit/push เมื่อผู้ใช้สั่งเท่านั้น** · commit message เป็นแนว conventional (`feat:`, `fix:`, `docs:`)
+- ⚠️ **เลิกเขียน `work-logs/WORK_LOG_YYYY-MM-DD.md` ใหม่แล้ว (ตัดสินใจ 9 ส.ค. 2026)** — ซ้ำซ้อนกับ `spec.md` § Current state ที่ทำหน้าที่นี้อยู่แล้ว (สั้นกว่า อ่านเร็วกว่าตอนเริ่ม session ใหม่) ไฟล์ `work-logs/` เก่ายังเก็บไว้เป็นประวัติ ไม่ต้องลบ แต่**ห้ามสร้างไฟล์ใหม่ในโฟลเดอร์นี้อีก**
 
 ### Local dev / debug
 
@@ -50,7 +51,7 @@
 
 ## ไฟล์ที่ push ขึ้น GitHub / ไฟล์ที่ห้าม push
 
-**push ขึ้น (public, ถูก deploy):** `*.html` ทุกหน้า · `js/app.js` · `css/style.css` · `sw.js` · `manifest.json` · `.nojekyll` · `supabase/*.sql` · `docs/PROJECT_SUMMARY.md` · `work-logs/*` · `CLAUDE.md` · `SUPABASE_MIGRATION_PLAN.md`
+**push ขึ้น (public, ถูก deploy):** `*.html` ทุกหน้า · `js/app.js` · `css/style.css` · `sw.js` · `manifest.json` · `.nojekyll` · `supabase/*.sql` · `docs/PROJECT_SUMMARY.md` · `CLAUDE.md` · `spec.md` · `SUPABASE_MIGRATION_PLAN.md`
 
 **ห้าม push — อยู่ใน `.gitignore` แล้ว (อย่าเผลอ `git add -f`):**
 
@@ -61,6 +62,7 @@
 | `*.docx` · `Criteria_Master.csv` | เอกสาร/ข้อมูลต้นฉบับ (ไม่ต้อง deploy) |
 | `export_to_obsidian.py` · `sync_commits.py` | เครื่องมือ local |
 | `.obsidian/` · `.DS_Store` | editor/OS junk |
+| `work-logs/` | เลิกเขียนใหม่แล้ว (9 ส.ค. 2026) — untrack ออกจาก GitHub แล้ว แต่ยังเก็บไว้ในเครื่อง local เป็นประวัติส่วนตัว |
 
 > กติกา: เพิ่มไฟล์ประเภทลับ/ต้นฉบับ/artifact ใหม่ → ต่อ pattern ใน `.gitignore` ก่อน commit เสมอ · **secret จริงเคยรั่วแล้ว git history ต้อง rewrite มาแล้ว (2026-08-03)** อย่าให้เกิดซ้ำ
 
