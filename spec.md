@@ -97,7 +97,7 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 7. `dd7abf8` — แก้บั๊ก `selectArea()` ไม่ส่ง `scheduleId` + backfill ข้อมูลจริง 7 audit rows (คุณเล็ก×6, คุณแหวน×1) + recompute `schedules.status`
 8. `750a0d2` — WORK_LOG_2026-08-07.md + อัปเดต CLAUDE.md (cache-bust v50, gotchas ใหม่)
 
-**cache-bust ปัจจุบัน:** `js/app.js`/`css/style.css` = `?v=53` ในทุก HTML · `sw.js` `CACHE_NAME` = `5s-audit-v5.18`
+**cache-bust ปัจจุบัน:** `js/app.js`/`css/style.css` = `?v=54` ในทุก HTML · `sw.js` `CACHE_NAME` = `5s-audit-v5.19`
 
 **เรื่องที่คุยจบแล้วไม่ต้องทำอะไรต่อ:** GitHub Actions annotation "job was not acquired by Runner of type hosted" (run #69, ~19m50s) — ยืนยันแล้วว่าเป็น GitHub-side runner allocation hiccup ชั่วคราว ไม่เกี่ยวกับโค้ด/workflow ของ repo, run ถัดๆมา (#70-76) ปกติดีหมด
 
@@ -121,6 +121,16 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
   - verify: `node --check` ผ่าน, `<`/`>` เท่ากันทุกไฟล์ (ไม่มี tag เปิด/ปิดไม่ครบ), ทุก `data-i18n*` key ที่ใช้ใน HTML มีอยู่จริงใน TRANSLATIONS ทั้ง TH/EN (ไม่มี key ค้าง/สะกดผิด)
   - **ไม่กระทบข้อมูล/คะแนน/audit ที่ทำไปแล้วเลย** — เป็นการแก้ frontend text-display layer ล้วนๆ ไม่แตะ id/onclick/query/logic คำนวณใดๆ (คุยยืนยันกับผู้ใช้ก่อนเริ่มแล้ว)
   - cache-bust v52→v53, sw.js v5.17→v5.18
+
+**2026-08-09 (ต่อ):**
+- **เกณฑ์มาตรฐาน 5ส (criteria) รองรับ EN แล้ว** — ผู้ใช้มีไฟล์ต้นฉบับ `5S Standard (มาตรฐาน 5ส) _R.00 16.06.2026.pdf` (มาตรฐานกลางทางการ ไทย+อังกฤษคู่กันทุกข้อ 34 หมวด ตรงเลข sub_category กับตาราง `criteria` เป๊ะ — ยืนยันด้วย SQL: 132 ข้อ/34 หมวด ตรงกันทั้งหมด) ถามว่าใช้ไฟล์นี้ทำอะไรได้บ้างเรื่องเปลี่ยนภาษามาตรฐานตอนใช้แอปเป็น EN
+  - **พบ nuance สำคัญ:** PDF มีคำแปลอังกฤษที่แปลจากข้อความไทย**ฉบับเต็ม** (ยาว/เป็นทางการ) แต่ `criteria.question`/`description` ในระบบเป็น**เวอร์ชันสรุปสั้น** (ตัดมาให้เหมาะจอมือถือ) — ไม่ใช่คำเดียวกัน แม้ความหมายตรงกัน
+  - ผู้ใช้เลือก: แปล/สรุปคำแปล EN ใหม่ให้สั้นกระชับเท่าภาษาไทยปัจจุบัน (ไม่ใช้คำแปลยาวจาก PDF ตรงๆ) — ใช้ PDF เป็น reference ความถูกต้องของศัพท์เทคนิคเท่านั้น (เช่น "จป.วิชาชีพ" = professional safety officer/JSO, SDS = Safety Data Sheets)
+  - **DB:** เพิ่มคอลัมน์ `criteria.question_en`, `description_en`, `category_en` (patches.sql ส่วน I, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` + `UPDATE ... FROM (VALUES...)` ครบทั้ง 132 แถว — verify แล้วว่า criteria_id ตรงกับ DB 100% ไม่ขาดไม่เกิน) — **ผู้ใช้ยังไม่ได้รัน SQL นี้** (รอสั่ง)
+  - **Code:** `mapCriteria()` (ใช้กับ `getCriteria()` → criteria.html + audit.html checklist), `getImprovementItems()` (dashboard "พื้นที่ต้องปรับปรุง" + PDF export), `getAuditDetail()` (summary.html) — ทั้ง 3 จุดเลือกคอลัมน์ EN/TH ตาม `I18n.getLang()==='en'` fallback เป็นไทยเสมอถ้าแถวไหนยังไม่มีคำแปล (กันเกณฑ์ใหม่ในอนาคตที่ลืมเติม _en)
+  - node --check ผ่าน, verify criteria_id ครบ 132/132 ไม่ซ้ำไม่ขาดด้วย diff
+  - cache-bust v53→v54, sw.js v5.18→v5.19
+  - **ค้าง:** รอผู้ใช้รัน SQL ส่วน I ใน Supabase SQL Editor แล้ว verify ว่า criteria.html/audit.html/dashboard เปลี่ยนเป็นอังกฤษถูกต้องตอนสลับภาษา
 
 ---
 

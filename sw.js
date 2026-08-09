@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.18'; // v5.18: เติม i18n ให้ครบทุกหน้า (criteria/schedule/logs/assign/home/plant/users/index/mytasks) ทั้ง static HTML + JS-rendered content (2026-08-09)
+const CACHE_NAME = '5s-audit-v5.19'; // v5.19: มาตรฐาน 5ส (criteria) รองรับ EN — question_en/description_en/category_en ใน mapCriteria/getImprovementItems/getAuditDetail (2026-08-09)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

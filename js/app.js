@@ -71,7 +71,20 @@ const REV = {
 const mapPlant = p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name, Status:MAP.status[p.status]||p.status });
 const mapArea  = a => ({ Area_ID:a.area_id, Plant_ID:a.plant_id, Area_Name:a.area_name, Area_Type:MAP.areaType[a.area_type]||a.area_type, Status:MAP.status[a.status]||a.status });
 const _critType = arr => (!arr || !arr.length) ? 'All' : arr.map(t => MAP.areaType[t]||t).join(',');
-const mapCriteria = c => ({ Criteria_ID:c.criteria_id, Category:c.category, Sub_Category:c.sub_category, Question:c.question, Description:c.description, Area_Type:_critType(c.area_types), Max_Score:c.max_score, Active:c.active });
+// มาตรฐาน (Category/Question/Description) รองรับ EN ผ่านคอลัมน์ _en คู่กัน — fallback เป็นไทยถ้าแถวนั้นยังไม่มีคำแปล
+const mapCriteria = c => {
+  const en = I18n.getLang() === 'en';
+  return {
+    Criteria_ID:c.criteria_id,
+    Category:(en && c.category_en) || c.category,
+    Sub_Category:c.sub_category,
+    Question:(en && c.question_en) || c.question,
+    Description:(en && c.description_en) || c.description,
+    Area_Type:_critType(c.area_types),
+    Max_Score:c.max_score,
+    Active:c.active
+  };
+};
 const mapProfile = u => ({ User_ID:u.id, Employee_ID:u.employee_id, Name:u.name, Department:u.department, Email:u.email, Role:MAP.role[u.role]||u.role, Status:MAP.status[u.status]||u.status, Assigned_Areas:(u.assigned_areas||[]).join(','), Assigned_Plants:(u.assigned_plants||[]).join(','), Password:'***' });
 const mapHeader = h => ({ Audit_ID:h.audit_id, Plant_ID:h.plant_id, Area_ID:h.area_id, Auditor_ID:h.auditor_id, Audit_Date:h.audit_date, Total_Score:h.total_score, Max_Score:h.max_score, Percent:Number(h.percent), Status:MAP.auditStatus[h.status]||h.status });
 
@@ -438,7 +451,7 @@ const SBH = {
     const [{ data:dets, error:dErr }, { data:areas }, { data:plants }, { data:profs }] =
       await Promise.all([
         _sb.from('audit_details')
-          .select('audit_id, criteria_id, score, na, remark, photo_urls, criteria(question, category, sub_category)')
+          .select('audit_id, criteria_id, score, na, remark, photo_urls, criteria(question, question_en, category, category_en, sub_category)')
           .in('audit_id', auditIds).eq('na', false).lte('score', 1),
         _sb.from('areas').select('area_id, area_name, status'),
         _sb.from('plants').select('plant_id, plant_name'),
@@ -450,6 +463,7 @@ const SBH = {
     const plantName = {}; (plants || []).forEach(p => { plantName[p.plant_id] = p.plant_name; });
     const nameById  = {}; (profs  || []).forEach(p => { nameById[p.id]        = p.name; });
 
+    const en = I18n.getLang() === 'en';
     const items = (dets || []).map(d => {
       const h    = headById[d.audit_id] || {};
       const a    = areaById[h.area_id];
@@ -465,9 +479,9 @@ const SBH = {
         Audit_Round:h.audit_round || '',
         Auditor:    nameById[h.auditor_id] || '-',
         Score:      Number(d.score),
-        Category:   d.criteria && d.criteria.category,
+        Category:   d.criteria && ((en && d.criteria.category_en) || d.criteria.category),
         Sub_Category: (d.criteria && d.criteria.sub_category) || '',
-        Question:   (d.criteria && d.criteria.question) || '-',
+        Question:   (d.criteria && ((en && d.criteria.question_en) || d.criteria.question)) || '-',
         Remark:     d.remark || '',
         Photos:     (d.photo_urls || []).filter(Boolean),
       };
@@ -493,11 +507,13 @@ const SBH = {
   async getAuditDetail({ auditId }) {
     const { data:h, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
     if (error) return { success:false, error:'ไม่พบข้อมูล Audit' };
-    const { data:d } = await _sb.from('audit_details').select('*, criteria(question,category,sub_category)').eq('audit_id', auditId);
+    const { data:d } = await _sb.from('audit_details').select('*, criteria(question,question_en,category,category_en,sub_category)').eq('audit_id', auditId);
+    const en = I18n.getLang() === 'en';
     const details = (d||[]).map(x => ({
       Detail_ID:x.detail_id, Criteria_ID:x.criteria_id, Score:x.score, Na:x.na, Remark:x.remark,
       Photo_URL:(x.photo_urls||[]).join(','),
-      Question:x.criteria && x.criteria.question, Category:x.criteria && x.criteria.category
+      Question:x.criteria && ((en && x.criteria.question_en) || x.criteria.question),
+      Category:x.criteria && ((en && x.criteria.category_en) || x.criteria.category)
     }));
     return { success:true, header:mapHeader(h), details };
   },
