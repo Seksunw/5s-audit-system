@@ -83,6 +83,12 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 - [ ] `TRANSLATIONS` ใน app.js มี key `en:` ซ้ำ 2 ครั้ง (บล็อกแรกตาย โดนบล็อกหลังทับ ไม่กระทบผู้ใช้) — เช็คก่อนแก้ i18n อย่าไปแก้บล็อกแรกคาดหวังผล
 - [ ] **ปรับโครงสร้างพื้นที่ "รอบอาคาร" ให้ตรงกับ P&C จริง ก่อนรอบตรวจถัดไป** — ตอนนี้แก้แบบเร่งด่วนไปแค่ `audit_headers.plant_id` (ดู §4 2026-08-08) ให้ Dashboard คำนวณถูก แต่ `areas.plant_id`/`area_name` ของ `NIF-OD`/`POC-OD`/`SUP-OD` ยังไม่แก้ ต้องทำให้ครบ: (1) `areas.plant_id` ทั้ง 3 → `CAF`, (2) rename `area_name` กันชื่อ "รอบอาคาร" ชนกัน 3 พื้นที่ (เช่น "รอบอาคาร (NIF)"), (3) backfill `schedules.plant_id` ของ 3 งานมอบหมายเดิม → `CAF` ด้วย — ถ้าไม่ทำก่อนรอบถัดไป auditor คนที่ยังไม่ตรวจ (schedule ยัง pending) จะได้ผลตรวจใหม่เป็น plant_id เดิม (NIF/POC/SUP) อัตโนมัติจากแอป ต้องแก้มือซ้ำอีกครั้ง
 - [ ] (เสนอไว้ ยังไม่ยืนยัน) `Session.refreshRole()` ให้ sync `name` พร้อม `role`/`status` ด้วย — ตอนนี้คนที่ล็อกอินค้างอยู่ก่อนถูกเปลี่ยนชื่อใน `profiles` จะยังเห็นชื่อเก่าที่หัวเว็บ + ช่อง "จัดทำโดย" ใน PDF export จนกว่าจะ logout/login ใหม่ (ดู §4 2026-08-08)
+- [x] **สำเนา (snapshot) repo ไว้ใต้ GitHub org — เสร็จแล้ว** (2026-08-13) — เปลี่ยนแผนจาก "ย้าย org" เป็นแค่ทำสำเนาไว้เฉยๆ ไม่ใช่การย้ายจริง: สร้าง repo เปล่า (private, ไม่มี README/.gitignore/license) ที่ `github.com/NBD-Health-Care-Company-Limited/5s-audit-system` แล้ว `git push` ประวัติ commit ทั้งหมดของ `main` ไปให้ (เพิ่ม git remote ชื่อ `org` ในเครื่อง คู่กับ `origin` เดิม) verify ตรงกันที่ commit `5a3a790` — **เป็น one-time snapshot เท่านั้น ไม่ sync ต่อเนื่อง**
+- [ ] **ย้ายหน้าเว็บไป custom domain ของบริษัท** (ยังไม่ทำ, แยกจากเรื่อง org แล้ว) — ผู้ใช้มีแพลนย้าย hosting จาก `seksunw.github.io/5s-audit-system` ไป domain ของบริษัทเอง — ยังไม่รู้ว่ามี domain/สิทธิ์แก้ DNS พร้อมหรือยัง (ไม่เกี่ยวกับ org repo ด้านบนแล้ว เพราะ org เป็นแค่สำเนา ไม่ใช่ตัวที่ deploy จริง)
+
+**⚠️ กติกาสำคัญเรื่อง git remote `org` (ยืนยันกับผู้ใช้ 2026-08-13):**
+- **`origin` (`Seksunw/5s-audit-system`) คือที่ deploy จริงและเป็นเป้าหมายเดียวของคำสั่ง "commit + push" ตามปกติเสมอ** — ไม่เปลี่ยน ไม่กระทบจากการมี remote `org`
+- **ห้าม push ไปที่ remote `org` โดยอัตโนมัติเด็ดขาด** แม้ตอน commit+push ปกติไป `origin` — การอัปเดตสำเนาที่ `org` ต้องเป็นคำสั่งแยกต่างหากที่ผู้ใช้พิมพ์ชัดเจนเท่านั้น (เช่น "push ไป org ด้วย") ไม่ใช่ default behavior
 
 ---
 
@@ -137,6 +143,18 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 
 **2026-08-09 (ต่ออีก):**
 - **เลิกเขียน `work-logs/` ใหม่ ใช้ `spec.md` อย่างเดียว** — ผู้ใช้ถามว่า worklog รายวันยังจำเป็นไหม เช็คแล้วพบว่าตั้งแต่มี spec.md (8 ส.ค.) ไม่ได้เขียน worklog คู่กันเลย (ค้าง 2 วัน) ผู้ใช้ยืนยันไม่ได้ใช้อ่านย้อนหลัง/ส่งรายงานแล้ว ตัดสินใจเลิกเขียนใหม่ถาวร ดูเหตุผลเต็มใน §2 · แก้ CLAUDE.md ตัด rule "เขียน worklog ทุกครั้ง" ออก + ปรับ pointer ต้นไฟล์ให้ชี้ spec.md เป็นหลัก (ไฟล์เก่าใน `work-logs/` ยังเก็บไว้ ไม่ลบ)
+
+**2026-08-10:**
+- **เช็ค `supabase/*.sql` เทียบ DB จริงผ่าน MCP** — เทียบ `pg_get_functiondef` ของฟังก์ชันทั้ง 8 ตัว (`recalc_audit_header`, `chk_header_locked`, `chk_header_schedule`, `sync_schedule_status`, `lock_audit`, `is_staff`, `log_activity`, `admin_reset_data`) กับ `patches.sql` ตรงกันคำต่อคำทุกตัว รวมถึง `admin_reset_data()` ที่เคยเจอ deployment gap จริง (บั๊ก enum cast, 2026-08-07) — **ตอนนี้ตรงกันแล้ว ไม่มีอะไรค้าง** เช็ค RLS policy `headers_update` ก็ตรงกับเวอร์ชัน admin-only ล่าสุด (§G5) ไม่ได้ค้างเวอร์ชันเก่า · เช็ค `pg_proc` ทั้งหมดใน schema `public` (10 ฟังก์ชัน) ไม่มีตัวแปลกปลอมที่ไม่มีในไฟล์
+- **แก้คะแนนย้อนหลังรวม 8 รายการ** (ผู้ใช้ review remark/รูปแนบเทียบสภาพจริงแล้วสั่งแก้เองทีละรายการ) — ทุกรายการทำผ่าน pattern **unlock→edit→relock** ตาม §5 (MCP ต่อแบบ read-only แก้ไม่ได้ ต้องให้ผู้ใช้รัน SQL เองใน SQL Editor ทุกครั้ง) คืนค่า `locked_at` เป็นเวลาล็อกเดิมเป๊ะหลังแก้เสร็จทุกรายการ (ไม่ทับเป็นเวลาปัจจุบัน กันประวัติ finalize เพี้ยน) · `trg_recalc_audit` คำนวณ header ใหม่ให้อัตโนมัติทุกครั้ง verify ผ่าน MCP แล้วทั้งหมด:
+  1. Production Line F3 (NIF) R1 — คุณกนัฐยา รัดนะ, `C-23-1` (พัดลม/แอร์มีฝุ่นเกาะ) 0→1 → 136/146 (93.15%) → 137/146 (93.84%)
+  2. Production Line F3 (NIF) R1 — คุณอัญชลี เสือร้าย, `C-23-1` 0→1 → 134/146 (91.78%) → 135/146 (92.47%)
+  3. Production Line F1 (SUP) R1 — คุณกนัฐยา รัดนะ, `C-23-1` 2→1 → 137/140 (97.86%) → 136/140 (97.14%)
+  4. Production Line F3 (NIF) R1 — คุณอัญชลี เสือร้าย, `C-03-2` (อุปกรณ์ดับเพลิง ป้ายบ่งชี้/วิธีใช้) 1→2 + เคลียร์ remark เดิม ("ไม่มีวิธีใช้งานถังดับเพลิง" ขัดกับคะแนนเต็ม) → 135/146 (92.47%) → 136/146 (93.15%)
+  5–8. Warehouse F3 (NIF) R1 — คุณดิรทยา เสือป่า / คุณประเสริฐ ทิมจร / คุณรัชณี จิตรสุนทร / คุณศิริลักษณ์ ศรีสำราญ (ทั้ง 4 คนที่ตรวจพื้นที่นี้), `C-32-2` (จุดจอดรถเข็น/แฮนด์ลิฟท์ ระบุใน Layout) 2→1 → 97/98 (98.98%) → 95/98 (96.94%) เท่ากันทุกคน (max_score พื้นที่นี้เท่ากันทั้ง 4 audit)
+
+  ทุกรายการยัง status **excellent** เหมือนเดิม ไม่มี audit ไหนเปลี่ยน tier · เช็คผลกระทบ Plant Ranking แล้วบางส่วน: NIF Round 1 เฉลี่ยรายคน (mean of percent) 96.3% → 96.4% (+0.1pp, จากรายการ 1/2/4 ที่อยู่ใน audit เดียวกันของ Production Line F3) — **ยังไม่เช็ค** ผลกระทบต่อ SUP ranking (รายการ 3) และผลกระทบเพิ่มเติมต่อ NIF ranking จาก Warehouse F3 (รายการ 5–8)
+- **เอาคุณชัญธิกา อ่อนน้อมออกจากทีมตรวจ "รอบอาคาร" ที่ค้าง 3 พื้นที่** (SUP/POC/NIF, Round 1, 2026-08-07) — ผู้ใช้สั่งเพราะคนนี้ตรวจพื้นที่อื่นครบแล้ว (4 พื้นที่: CAF/Office, MTN/Office, MTN/ช่าง, CAF/โรงอาหาร ล็อกครบทุกอัน) แต่ไม่มี audit record ของ 3 พื้นที่ "รอบอาคาร" นี้เลย (เช็คแล้วไม่ใช่บั๊ก scheduleId เดิม — ไม่ได้ตรวจจริง) เดิม required 4/done 3 ค้างเพราะรอเธอคนเดียว — แก้โดย `UPDATE schedules SET auditor_ids = array_remove(auditor_ids, <her uuid>)` ทั้ง 3 แถว (ไม่ต้อง unlock/relock เพราะ `trg_chk_locked` ผูกแค่ `audit_details` ไม่ครอบ `schedules`) · ยืนยันแล้วว่าทุกหน้าที่โชว์สถานะงาน (My Tasks/Home hero/Schedule Board/Assignment Analytics) **อ่านจาก view `schedule_progress` สดๆ ไม่ได้อ่านคอลัมน์ `schedules.status`** → พอ required ลดเป็น 3 = done ที่มีอยู่แล้ว `is_completed` พลิกเป็น true ทันทีไม่ต้องแก้อะไรเพิ่ม · sync คอลัมน์ `schedules.status` เป็น `completed` ให้ด้วยเพื่อความสะอาดของข้อมูล (ตาม precedent 2026-08-08 — คอลัมน์นี้ไม่มีจุดไหนในแอปอ่านแล้วจริงๆ แต่เก็บให้ตรงกับ view ไว้กันสับสนตอนดู DB ตรงๆ) · verify ผ่าน MCP แล้วทั้ง 3 พื้นที่: required_n=3, done_n=3, is_completed=true
 
 ---
 
