@@ -13,6 +13,7 @@ export_to_obsidian.py
 sync_commits.py
 *.docx
 Criteria_Master.csv
+5S Standard (มาตรฐาน 5ส) _R.00 16.06.2026.pdf
 
 # worklog รายวันแบบเก่า — เลิกเขียนใหม่แล้ว (9 ส.ค. 2026, ใช้ spec.md แทน)
 # เก็บไฟล์เก่าไว้ในเครื่อง local เป็นประวัติส่วนตัว ไม่ต้องขึ้น GitHub อีก

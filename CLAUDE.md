@@ -19,8 +19,6 @@
 ## ภาพรวม
 
 ระบบตรวจประเมินมาตรฐาน **5ส** สำหรับโรงงาน — **Mobile-first PWA** สองภาษา (TH/EN)
-- **Frontend:** static site (Vanilla JS ES6+, HTML, CSS, Bootstrap Icons) — **ไม่มี build step**
-- **Backend:** Supabase (PostgreSQL + Auth + Storage) เรียกตรงผ่าน `supabase-js` — ไม่มี server กลาง
 - **Hosting:** GitHub Pages · repo `Seksunw/5s-audit-system` · branch `main`
 - **Live:** https://seksunw.github.io/5s-audit-system/
 - ความปลอดภัยคุมด้วย **Row Level Security (RLS)** + trigger ที่ระดับ DB (client bypass ไม่ได้)
@@ -28,7 +26,6 @@
 ## โครงไฟล์ที่ต้องรู้
 
 - `js/app.js` — **โค้ด frontend ทั้งหมดอยู่ไฟล์เดียว** (~5,400+ บรรทัด, โตขึ้นเรื่อยๆ): I18n · Session · API(`_sb`) · AppState · UI · ทุกหน้า
-- `css/style.css` — global stylesheet (CSS variables)
 - `*.html` (14 หน้า) — router ใน app.js อ่านชื่อไฟล์ → เรียก `init<Page>()`
 - `supabase/` — `schema.sql` (โครงจริง, ไม่มี role `viewer`/ไม่มี table ล่าสุด เพราะเพิ่มทีหลังผ่าน patches.sql), `seed_master.sql` (plants/areas/criteria), `patches.sql` (แก้ DB สะสม, ไฟล์เดียวจริง), `storage_and_first_admin.sql` · ไฟล์ SQL อื่นที่เป็น utility เดี่ยวๆ ไม่ใช่ migration: `delete_user.sql` (ลบ user ผ่าน SQL Editor เท่านั้น เพราะ FK+revoke กันไว้ไม่ให้ลบผ่านแอป), `reset_test_data.sql` (⚠️ DANGER ล้างข้อมูลทดสอบ ใช้ครั้งเดียวตอนเปลี่ยนเข้าสู่ production), `RUN_2026-08-05*.sql` (snapshot ของ patches.sql ส่วน G/H ที่รันไปแล้ว — ประวัติ ไม่ต้องรันซ้ำ)
 - `sw.js` — Service Worker (JS ดึงสดจาก network เสมอ)
@@ -36,8 +33,6 @@
 
 ## Dev / Deploy workflow
 
-- **ไม่มี build/compile** — แก้ไฟล์แล้วเปิดหน้าได้เลย
-- **Deploy = push `main`** → GitHub Pages เสิร์ฟไฟล์จาก root ของ branch โดยตรง (มี `.nojekyll` = ข้าม Jekyll เสิร์ฟไฟล์ดิบ) เผยแพร่อัตโนมัติภายในไม่กี่นาที
 - ⚠️ **repo เป็น PUBLIC** — ทุกไฟล์ที่ push ขึ้นไปคนทั่วไปเห็นได้ (รวม worklogs, docs, โค้ด) · **ห้ามใส่ secret/ข้อมูลลับใด ๆ ในไฟล์ที่ track**
 - ⚠️ **หลังแก้ CSS/JS ต้อง bump cache-bust `?v=NN` ในทุก HTML + เลข cache ใน `sw.js`** ไม่งั้น SW เสิร์ฟไฟล์เก่า (อาการ: การ์ด/พื้นที่หายชั่วคราวหลังอัปเดต) — เลขล่าสุดเช็คได้จาก `spec.md` § Current state (เลขนี้เปลี่ยนบ่อย ไม่ hardcode ไว้ที่นี่)
 - **commit/push เมื่อผู้ใช้สั่งเท่านั้น** · commit message เป็นแนว conventional (`feat:`, `fix:`, `docs:`)
@@ -78,9 +73,7 @@
 
 ## Supabase / Database
 
-- 8 ตาราง: `profiles` (1:1 auth.users), `plants`, `areas`, `criteria`, `audit_headers`, `audit_details`, `schedules`, `audit_logs`
 - **Roles (นโยบาย 5 ส.ค. 2026 — ใช้จริง 3 ตัว):** `admin` (จัดการทุกอย่าง แก้/ลบผลตรวจได้ตลอด) · `auditor` (ตรวจ + ดู Dashboard ทั้งบริษัท แต่ประวัติเห็นเฉพาะของตัวเอง · แก้ผลตัวเองไม่ได้หลัง submit) · `viewer` (ดูได้ทุกอย่างรวมประวัติทุกคน แต่ตรวจ/อัปโหลด/แก้ไม่ได้) · `manager`+`area_manager` **เลิกใช้** (ซ่อนจาก dropdown · Postgres ลบค่า enum ไม่ได้ → คนที่ยังเป็น role เก่าได้สิทธิ์เท่า auditor · `is_staff()` = admin-only แล้ว)
-- **Enums อื่น:** `audit_status`(excellent/good/need_improvement/pending/failed), `area_type`, `record_status`, `schedule_status`
 - **ล็อกผลตรวจ:** หลัง finalize `audit_headers.locked_at` ถูกตั้งผ่าน RPC `lock_audit` (security definer) · `headers_update` policy = admin เท่านั้น · auditor แก้/ลบ/ปลอมคะแนน header ตัวเองไม่ได้ (patches.sql ส่วน G2+G5) · trigger `trg_chk_locked` กันแก้ audit_details ที่ล็อกแล้ว
 - **เกณฑ์ผ่าน:** ≥90 excellent · ≥75 good · <75 need_improvement
 - **RLS:** ผู้ล็อกอินทุกคน "อ่าน" ภาพรวมทั้งบริษัทได้ (plants/areas/criteria/profiles/audit_*) · "เขียน" จำกัดเจ้าของ/admin — ระวังตอน query ว่า auditor เห็นได้แค่ไหน
@@ -96,15 +89,6 @@
 - ⚠️ **ทุกทางที่นำไปสู่หน้า `audit.html` ต้องส่ง `scheduleId` ต่อด้วยเสมอถ้าพื้นที่นั้นมีงานมอบหมายอยู่** — เจอบั๊กจริง (2026-08-07): `selectArea()` (ทางเข้าปกติ Plant→Area) ไม่เคยส่ง `scheduleId` ทั้งที่การ์ดโชว์ badge รอบตรวจอยู่แล้ว ต่างจาก `startAssignedAudit()` (จากหน้า "งานที่ได้รับมอบหมาย") ที่ส่งถูก ผลคือผลตรวจถูกต้องแต่ `audit_headers.schedule_id = null` ไม่นับเข้า progress งานมอบหมาย ถ้าเพิ่มทางเข้าหน้าตรวจใหม่ ต้องเช็คจุดนี้ด้วยทุกครั้ง
 - `FACILITY_PLANT_IDS = ['CAF','MTN']` ใน app.js — 2 plant นี้ไม่เหมือน plant อื่น (SUP/POC/NIF): area หลักของมันคือ cafeteria/maintenance เอง (ไม่ใช่ production/warehouse) `getAreas()` เลยยกเว้นไม่ซ่อน area type พวกนี้ให้ 2 plant นี้โดยเฉพาะ — เพิ่ม plant ลักษณะนี้ในอนาคตต้องอัปเดต constant นี้ด้วย
 - ⚠️ **`areas.plant_id` กับ `audit_headers.plant_id` ไม่จำเป็นต้องตรงกันเสมอไป** — ระบบไม่มีแนวคิด "ทีมที่รับผิดชอบตรวจ" แยกจาก "โรงงานเจ้าของพื้นที่" ทางกายภาพ ตอนนี้ (2026-08-08) พื้นที่ "รอบอาคาร" ของ NIF/POC/SUP (`NIF-OD`/`POC-OD`/`SUP-OD`) ยังผูก `areas.plant_id` เป็นโรงงานเดิม แต่ `audit_headers.plant_id` ของผลตรวจ Round 1 ถูกแก้มือเป็น `CAF` (P&C) แล้วเพราะเป็นพื้นที่รับผิดชอบของทีม P&C จริง — จงใจให้ไม่ตรงกันชั่วคราว (Dashboard: Plant Ranking อ่านจาก `audit_headers.plant_id` → นับเข้า P&C ถูก, แต่ Area Ranking/`getAreas()` อ่านจาก `areas.plant_id` → ยังโชว์ว่าเป็นของ NIF/POC/SUP) ถ้าจะปรับให้ตรงกันถาวรต้องแก้ `areas.plant_id` + rename `area_name` กันชื่อ "รอบอาคาร" ชนกัน 3 พื้นที่ + backfill `schedules.plant_id` ด้วย — ยังไม่ทำ รอทำตอนรอบตรวจถัดไป
-
-## ฟีเจอร์ล่าสุด
-
-- **2026-08-07:** เริ่มใช้งานจริงวันแรก — แก้บั๊กงานมอบหมายค้าง (`selectArea()` ไม่ส่ง `scheduleId`, ดูหัวข้อ Gotchas) + backfill ข้อมูลจริง 7 รายการ · PDF ใบแจ้งพื้นที่รองรับตรวจหลายคนต่อพื้นที่ (`groupByTopic()` รวมหัวข้อซ้ำ + รวมชื่อผู้ตรวจที่หัวใบ ไม่โชว์ชื่อ/คะแนนต่อคอมเมนต์) · plant CAF/MTN โชว์เป็น plant ปกติ + เพิ่มพื้นที่ Office (`CAF-OF`/`MTN-OF`, inherit เกณฑ์ office อัตโนมัติ) · Dashboard Ranking แสดง % ทศนิยม 1 ตำแหน่ง · แนบรูปเลือกจากอัลบั้มได้ (เอา `capture=environment` ออก)
-- **2026-08-06:** ปุ่ม **Export PDF** ในหน้า dashboard — `buildReportHTML()` + `exportDashboardPDF()` ประกอบรายงาน (สรุป + ใบแจ้งพื้นที่ต้องปรับปรุงรายพื้นที่ TH/EN) แล้วพิมพ์ผ่าน hidden iframe (Print CSS); `getDashboard` คืน `auditorRoster`, `getImprovementItems` ดึง `sub_category`
-- **2026-08-04:** dashboard เขียนใหม่ เหลือ Plant/Area Ranking + การ์ดพื้นที่ต้องปรับปรุง
-- **2026-07-30:** ย้ายทั้งระบบจาก Google Apps Script → Supabase
-
-*(รายละเอียดแต่ละงานดูใน `work-logs/`)*
 
 ---
 
