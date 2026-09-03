@@ -174,6 +174,10 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 - **เช็คความอ่อนไหวของข้อมูลก่อน migrate:** พบว่า `profiles` table ตอนนี้ auditor ทุกคนอ่านได้ทั้งตาราง (อีเมล/role ของทุกคนรวม viewer ภายนอก) — ควรใช้โอกาส migrate นี้แก้ security role ให้จำกัดกว่าเดิม ไม่ใช่ port ช่องโหว่เดิมไปตรงๆ · ตัวแนวคิด/สถาปัตยกรรมแอปเองไม่มีอะไรเป็นความลับ ปลอดภัยที่จะอธิบายให้ contractor ภายนอกฟังได้เต็มที่
 - **ยังไม่ตัดสินใจ/รอคำตอบ:** license พร้อมหรือยัง (กำลังลองเช็ค), มีคนเขียน C#/.NET ได้ไหม, Azure SQL เข้าเงื่อนไขนโยบายบริษัทไหม, deadline, cutover ทีเดียวหรือคู่ขนาน — **ยังไม่ได้เริ่มลงมือสร้างอะไรจริงในระบบ ทั้งหมดยังเป็นขั้นวางแผน/ขอสิทธิ์**
 
+**2026-09-03 (ต่อ): `/verify` เช็คสุขภาพระบบ + เคลียร์ของค้าง**
+- **`/verify` (เช็คแบบ read-only ผ่าน MCP):** ยืนยันไม่มีอะไรเสียหายจากงานรอบก่อน — live site โหลดปกติ, email migration 15/15 คนตรง (`profiles.email` = `auth.users.email` ทุกแถว, ไม่มี domain เก่าหลงเหลือ), audit header ที่ควรล็อกยังล็อกอยู่ครบ (`locked_at` ไม่มีแถวไหนเป็น null ผิดปกติจากการ unlock→edit→relock ที่ทำไปก่อนหน้า), trigger หลักทั้ง 3 ตัว (`trg_chk_locked`/`trg_log_details`/`trg_recalc_audit`) enabled ปกติ · Supabase advisors ไม่มีอะไรใหม่นอกจากที่รู้อยู่แล้วใน Gotchas (profiles อ่านได้ทั้งตาราง, leaked password protection ปิดอยู่) + performance lint ทั่วไป (unindexed FK, RLS initplan) ที่ยังไม่กระทบอะไรที่ scale 15 คน
+- **commit `597bc45`:** เคลียร์ของที่ค้างจาก `/doctor` รอบก่อน — (1) `.gitignore` เพิ่ม pattern กันไฟล์ `5S Standard (มาตรฐาน 5ส) _R.00 16.06.2026.pdf` ที่หลุดมาอยู่ที่ root (เอกสารต้นฉบับ ไม่ deploy หมวดเดียวกับ `.docx`/`Criteria_Master.csv`) (2) commit การตัด `CLAUDE.md` ให้สั้นลงตามคำแนะนำ `/doctor` (ตัด tech-stack bullets ที่ derive จากโค้ดได้เอง, deploy notes, table/enum list, changelog section เก่า) (3) commit การอัปเดต spec.md บันทึกว่า email migration 15 คนเสร็จสมบูรณ์แล้ว — **commit อย่างเดียว ยังไม่ push** (`DATAVERSE_MIGRATION_PLAN.md` ยังคง untracked ตามที่สั่งไว้ ไม่ได้ใส่ .gitignore เพราะยังเป็นสถานะ "รอ" ไม่ใช่ "ห้ามขึ้นถาวร")
+
 ---
 
 ## 5. Data contract — interface ระหว่าง component
