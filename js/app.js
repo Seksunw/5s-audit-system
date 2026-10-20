@@ -704,20 +704,21 @@ const SBH = {
   },
 
   // ---- Schedule (admin) ----
-  async getScheduleAdmin() {
+  async getScheduleAdmin({ round } = {}) {
+    let sq = _sb.from('schedules').select('*');
+    if (round) sq = sq.eq('audit_round', round);
     const [{ data:areas }, { data:scheds }, { data:prog }, { data:auditors }, { data:plants }] =
       await Promise.all([
         _sb.from('areas').select('*').eq('status','active').order('area_id'),
-        _sb.from('schedules').select('*'),
+        sq,
         _sb.from('schedule_progress').select('schedule_id, required_n, done_n, is_completed'),
         _sb.from('profiles').select('*').eq('status','active').order('name'),
         _sb.from('plants').select('*').eq('status','active'),
       ]);
 
-    // ⚠️ ข้อจำกัดที่ยังไม่แก้ (D2 — งานถัดไป): 1 พื้นที่เก็บได้แค่ 1 งาน
-    //    ถ้ามอบหมายพื้นที่เดียวกันซ้อน 2 รอบ แถวหลังจะทับแถวหน้าในกระดานนี้
-    //    → ระหว่างนี้: ปิดรอบเดิมให้ครบก่อนแล้วค่อยมอบหมายรอบใหม่
-    //    (Dashboard/ตารางตรวจไม่กระทบ เพราะอ่านจาก audit_headers ที่มี audit_round)
+    // กระดานผูก 1 พื้นที่ = 1 งาน "ต่อรอบ" (D2) — กรองด้วย audit_round ของรอบที่กำลังวางแผน
+    //    เดิมผูกทุกรอบรวมกัน → งานรอบเก่า (completed) ถูกส่ง scheduleId ไป UPDATE ทับ
+    //    แทนที่จะ INSERT งานรอบใหม่ → ประวัติรอบเก่าหาย + คนที่เคยตรวจรอบเก่าโดนบล็อก (2026-10-20)
     const byArea = {}; (scheds||[]).forEach(s => { byArea[s.area_id] = s; });
     const progBySched = {}; (prog||[]).forEach(p => { progBySched[p.schedule_id] = p; });
 
@@ -4427,6 +4428,11 @@ let _schedSelected = new Set();   // Area_IDs ที่ติ๊กเลือ�
 let _schedAudPickSet = new Set(); // ผู้ตรวจที่เลือกในโหมด "ตามคน" (หลายคนได้)
 let _bulkAuds      = new Set();   // ผู้ตรวจที่เลือกใน bulk modal (โหมดตามพื้นที่)
 
+// รอบที่กำลังวางแผน — กระดานโชว์/บันทึกเฉพาะงานของรอบนี้เท่านั้น
+function _schedPlanRound() {
+  return document.getElementById('planRound')?.value || 'Round 2';
+}
+
 async function initSchedule() {
   if (!Session.requireLogin()) return;
   // FIX: อ่าน role จาก AppState.user (Session.load() คืน boolean)
@@ -4440,7 +4446,7 @@ async function initSchedule() {
 
   UI.showLoading(I18n.t('sched.loading_data'));
   try {
-    const res = await API.get('getScheduleAdmin', {});
+    const res = await API.get('getScheduleAdmin', { round: _schedPlanRound() });
     UI.hideLoading();
     if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
 
@@ -4465,6 +4471,23 @@ async function initSchedule() {
     if (planDate && !planDate.value) planDate.value = tmr.toISOString().split('T')[0];
 
     schedRenderAudPick();
+    schedRenderGrid();
+    schedUpdateBulk();
+  } catch(err) {
+    UI.hideLoading();
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
+  }
+}
+
+// เปลี่ยนรอบที่กำลังวางแผน → โหลดงานของรอบนั้นใหม่ทั้งกระดาน
+async function schedChangeRound() {
+  UI.showLoading(I18n.t('sched.loading_data'));
+  try {
+    const res = await API.get('getScheduleAdmin', { round: _schedPlanRound() });
+    UI.hideLoading();
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.load_error'), 'error'); return; }
+    _schedAllAreas = res.areas || [];
+    _schedSelected.clear();
     schedRenderGrid();
     schedUpdateBulk();
   } catch(err) {
@@ -4679,9 +4702,9 @@ function schedOpenBulk() {
     `<span class="bulk-area-chip">${escHtml(a.Area_Name || a.Area_ID)}</span>`).join('');
   schedRenderBulkAudGrid();
   const planDate = document.getElementById('planDate')?.value || '';
-  const planRound = document.getElementById('planRound')?.value || 'Round 2';
   const bd = document.getElementById('bulkDate'); if (bd) bd.value = planDate;
-  const br = document.getElementById('bulkRound'); if (br) br.value = planRound;
+  // รอบล็อกตามรอบที่กำลังวางแผน — เปลี่ยนรอบที่ตัวเลือกบนกระดานเท่านั้น
+  const br = document.getElementById('bulkRound'); if (br) { br.value = _schedPlanRound(); br.disabled = true; }
   document.getElementById('bulkModal')?.classList.add('show');
 }
 
@@ -4717,7 +4740,7 @@ async function schedSaveBulk() {
   const auds = Array.from(_bulkAuds).join(',');
   if (!auds) { UI.toast(I18n.t('sched.pick_at_least_one'), 'warning'); return; }
   const date  = document.getElementById('bulkDate')?.value || '';
-  const round = document.getElementById('bulkRound')?.value || 'Round 2';
+  const round = _schedPlanRound();
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
   const btn = document.getElementById('bulkSaveBtn');
   if (btn) { btn.disabled = true; btn.textContent = I18n.t('sched.saving'); }
@@ -4752,7 +4775,7 @@ async function schedSaveByAuditor() {
   const uids = [..._schedAudPickSet];
   if (!uids.length) { UI.toast(I18n.t('sched.pick_at_least_one'), 'warning'); return; }
   const planDate  = document.getElementById('planDate')?.value || '';
-  const planRound = document.getElementById('planRound')?.value || 'Round 2';
+  const planRound = _schedPlanRound();
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
   const go = document.getElementById('bulkGo');
   if (go) go.style.pointerEvents = 'none';
@@ -4762,7 +4785,7 @@ async function schedSaveByAuditor() {
       uids.forEach(uid => { if (!existing.includes(uid)) existing.push(uid); });  // ADD ทุกคนที่เลือก (union)
       const auds  = existing.join(',');
       const date  = a.Audit_Date  || planDate;           // คงค่าเดิมถ้ามี
-      const round = a.Audit_Round || planRound;
+      const round = planRound;                           // กระดานผูกเฉพาะงานของรอบนี้อยู่แล้ว
       return API.post('saveSchedule', {
         areaId:a.Area_ID, plantId:a.Plant_ID, auditDate:date, auditRound:round,
         auditorIds:auds, scheduleId:a.Schedule_ID || ''
@@ -4822,12 +4845,14 @@ function openSchedModal(areaId) {
   const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
   const dateEl = document.getElementById('schedDate');
   if (dateEl) dateEl.value = area.Audit_Date || tmr.toISOString().split('T')[0];
+  // รอบล็อกตามรอบที่กำลังวางแผน — กันย้ายงานข้ามรอบ/สร้างงานซ้ำรอบที่มีอยู่แล้ว
   const roundEl = document.getElementById('schedRound');
-  if (roundEl) roundEl.value = area.Audit_Round || 'Round 2';
+  if (roundEl) { roundEl.value = _schedPlanRound(); roundEl.disabled = true; }
 
-  // Delete button visibility
+  // Delete button visibility — ลบได้เฉพาะงานที่ยังไม่มีใครตรวจ
+  // (FK audit_headers.schedule_id ON DELETE SET NULL → ลบงานที่มีผลตรวจแล้ว ผลตรวจจะหลุดจากงานมอบหมาย)
   const delRow = document.getElementById('deleteSchedRow');
-  if (delRow) delRow.style.display = area.Schedule_ID ? 'block' : 'none';
+  if (delRow) delRow.style.display = (area.Schedule_ID && !(area.Done_N > 0)) ? 'block' : 'none';
 
   schedRenderAuditorGrid();
   document.getElementById('assignModal').classList.add('show');
@@ -4864,7 +4889,7 @@ async function saveSchedule() {
   const area = _schedCurrentArea;
   if (!area) return;
   const dateVal  = document.getElementById('schedDate')?.value || '';
-  const roundVal = document.getElementById('schedRound')?.value || 'Round 2';
+  const roundVal = _schedPlanRound();
   const audIds   = Array.from(_schedSelectedAuds).join(',');
 
   const btn = document.getElementById('saveSchedBtn');
@@ -4900,7 +4925,7 @@ async function saveSchedule() {
 
 async function deleteSchedule() {
   const area = _schedCurrentArea;
-  if (!area || !area.Schedule_ID) return;
+  if (!area || !area.Schedule_ID || area.Done_N > 0) return;
   if (!confirm(I18n.t('sched.confirm_cancel'))) return;
 
   try {

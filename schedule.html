@@ -11,7 +11,7 @@
   <title>มอบหมายการตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=54">
+  <link rel="stylesheet" href="css/style.css?v=55">
   <style>
     /* Plant Tabs */
     .plant-tab-bar {
@@ -399,7 +399,7 @@
   <div class="sched-plan">
     <span class="plan-lb" data-i18n="sched.planning">กำลังวางแผน</span>
     <label><span data-i18n="sched.round_label">รอบ</span>
-      <select id="planRound">
+      <select id="planRound" onchange="schedChangeRound()">
         <option value="Round 1" data-i18n="sched.round_opt1">รอบที่ 1</option>
         <option value="Round 2" selected data-i18n="sched.round_opt2">รอบที่ 2</option>
         <option value="Round 3" data-i18n="sched.round_opt3">รอบที่ 3</option>
@@ -543,6 +543,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=54"></script>
+<script src="js/app.js?v=55"></script>
 </body>
 </html>

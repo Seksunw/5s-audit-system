@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.19'; // v5.19: มาตรฐาน 5ส (criteria) รองรับ EN — question_en/description_en/category_en ใน mapCriteria/getImprovementItems/getAuditDetail (2026-08-09)
+const CACHE_NAME = '5s-audit-v5.20'; // v5.20: Schedule Board ผูกงานเฉพาะรอบที่กำลังวางแผน (กันแก้ทับงานรอบเก่า) (2026-10-20)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',
