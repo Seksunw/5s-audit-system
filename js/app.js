@@ -1060,6 +1060,7 @@ const TRANSLATIONS = {
     'area.type.Cafeteria':   'โรงอาหาร',
     'area.type.Outdoor':     'รอบอาคาร',
     'login.btn.loading':   'กำลังเข้าสู่ระบบ...',
+    'login.session_expired': 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
     'login.btn.reset':     'เข้าสู่ระบบ',
     'msg.verifying':       'กำลังตรวจสอบ...',
     'msg.login_failed':    'เข้าสู่ระบบไม่สำเร็จ',
@@ -1704,6 +1705,7 @@ const TRANSLATIONS = {
     'area.type.Outdoor':     'Outdoor',
     // Login states
     'login.btn.loading':   'Signing in...',
+    'login.session_expired': 'Your session has expired — please sign in again',
     'login.btn.reset':     'Sign In',
     'msg.verifying':       'Verifying...',
     'msg.login_failed':    'Login failed',
@@ -2375,6 +2377,12 @@ async function initLogin() {
   const submitBtn= document.getElementById('loginBtn');
 
   if (!form) return;
+
+  // ถูกพากลับมาเพราะ session ของ Supabase หลุด → บอกให้ผู้ใช้รู้ว่าทำไมต้อง login ใหม่
+  try {
+    const lm = sessionStorage.getItem('loginMsg');
+    if (lm && errorEl) { sessionStorage.removeItem('loginMsg'); errorEl.textContent = I18n.t(lm); }
+  } catch(_) {}
 
   // Helper: อัปเดต text ใน button โดยไม่ทำลาย icon
   const setLoginBtnText = (btn, text, iconClass = 'bi-box-arrow-in-right') => {
@@ -4326,6 +4334,7 @@ async function logEvent(action, detail, entity, entityId) {
 }
 
 async function logout() {
+  _loggingOut = true;
   await logEvent('LOGOUT', 'ออกจากระบบ');
   try {
     await API.post('logout');
@@ -5720,11 +5729,46 @@ function toggleLog(i) {
 // ============================================================
 // AUTO-INIT ตาม page ปัจจุบัน
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
+/**
+ * session ของแอป (localStorage `5s_session`) กับ session ของ Supabase Auth เก็บแยกกัน
+ * ถ้าฝั่ง Supabase หลุด (token หมดอายุ/ถูกเพิกถอน/refresh ชนกันหลายแท็บ) แต่ `5s_session` ยังอยู่
+ * → หน้าเว็บคิดว่า login อยู่ แต่ทุก query วิ่งเป็น anon แล้ว RLS คืนผลว่างโดยไม่มี error
+ * → ทุกหน้าดูเหมือน "ไม่มีข้อมูล" (เจอจริง 2026-10-20: Schedule Board ขึ้น "ไม่พบพื้นที่")
+ * แก้: เช็คก่อนเข้าทุกหน้า + ฟัง SIGNED_OUT ระหว่างใช้งาน → เคลียร์แล้วพาไปหน้า login พร้อมบอกเหตุผล
+ */
+let _loggingOut = false;   // logout ตั้งใจ → ไม่ต้องขึ้น "เซสชันหมดอายุ"
+
+function _sessionExpired() {
+  Session.clear();
+  try { sessionStorage.setItem('loginMsg', 'login.session_expired'); } catch(_) {}
+  navigate('index.html');
+}
+
+async function ensureAuthSession() {
+  if (!Session.load()) return true;          // ยังไม่ login → requireLogin ของแต่ละหน้าพาไปหน้า login เอง
+  try {
+    const { data } = await _sb.auth.getSession();   // ถ้า access token หมดอายุ supabase-js จะ refresh ให้ก่อน
+    if (data && data.session) return true;
+  } catch(_) {}
+  _sessionExpired();
+  return false;
+}
+
+try {
+  _sb.auth.onAuthStateChange((event) => {
+    if (event !== 'SIGNED_OUT' || _loggingOut) return;
+    const onLogin = /(?:^|\/)(index\.html)?$/.test(location.pathname);
+    if (!onLogin && Session.load()) _sessionExpired();
+  });
+} catch(_) {}
+
+document.addEventListener('DOMContentLoaded', async () => {
   // Apply ภาษาที่เลือกไว้ทุกหน้า
   I18n.apply();
 
   const page = window.location.pathname.split('/').pop().replace('.html','');
+
+  if (page !== 'index' && page !== '' && !(await ensureAuthSession())) return;
 
   switch(page) {
     case 'index':    case '':  initLogin();     break;
