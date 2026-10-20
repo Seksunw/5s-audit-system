@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.20'; // v5.20: Schedule Board ผูกงานเฉพาะรอบที่กำลังวางแผน (กันแก้ทับงานรอบเก่า) (2026-10-20)
+const CACHE_NAME = '5s-audit-v5.21'; // v5.21: ตรวจแบบทีม (ฟอร์มเดียว/ดราฟ/กึ่งเรียลไทม์) + Dashboard เฉลี่ย 2 ชั้น (2026-10-20)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

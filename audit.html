@@ -11,7 +11,7 @@
   <title>ตรวจ 5ส | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=55">
+  <link rel="stylesheet" href="css/style.css?v=56">
 </head>
 <body style="padding-bottom:calc(var(--bottom-nav) + 70px)">
 
@@ -22,7 +22,7 @@
 
 <!-- Top Nav -->
 <nav class="top-nav">
-  <button class="btn-icon" onclick="confirmBack()"><i class="bi bi-arrow-left"></i></button>
+  <button class="btn-icon" onclick="auditBack()"><i class="bi bi-arrow-left"></i></button>
   <div style="flex:1;margin-left:8px;min-width:0">
     <div style="color:var(--gray-600);font-size:0.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="auditPlantName">-</div>
     <div style="color:var(--dark);font-weight:700;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="auditAreaName">-</div>
@@ -34,7 +34,7 @@
 </nav>
 
 <!-- Content -->
-<div class="page-content" style="padding-top:calc(var(--nav-height) + 80px)">
+<div class="page-content" style="padding-top:calc(var(--nav-height) + 104px)">
 
   <!-- Audit Info Bar -->
   <div style="position:fixed;top:var(--nav-height);left:0;right:0;background:#fff;
@@ -50,9 +50,15 @@
           <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
         </div>
       </div>
-      <div style="flex-shrink:0">
-        <input type="date" id="auditDate" class="form-control" style="padding:6px 10px;font-size:0.8rem;width:130px">
-      </div>
+    </div>
+    <!-- แถบทีม: รายชื่อกรรมการ + สถานะบันทึกอัตโนมัติ + รีเฟรช (ตรวจแบบทีม) -->
+    <div class="team-bar">
+      <i class="bi bi-people-fill"></i>
+      <span class="team-members" id="teamMembers">-</span>
+      <span class="team-save-status saved" id="teamSaveStatus"></span>
+      <button type="button" class="team-refresh-btn" onclick="teamRefreshNow()" data-i18n-title="team.refresh" title="รีเฟรช">
+        <i class="bi bi-arrow-clockwise"></i>
+      </button>
     </div>
   </div>
 
@@ -82,13 +88,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=55"></script>
-<script>
-  function confirmBack() {
-    if (confirm(I18n.t('audit.confirm_back'))) {
-      history.back();
-    }
-  }
-</script>
+<script src="js/app.js?v=56"></script>
 </body>
 </html>

@@ -86,7 +86,11 @@ const mapCriteria = c => {
   };
 };
 const mapProfile = u => ({ User_ID:u.id, Employee_ID:u.employee_id, Name:u.name, Department:u.department, Email:u.email, Role:MAP.role[u.role]||u.role, Status:MAP.status[u.status]||u.status, Assigned_Areas:(u.assigned_areas||[]).join(','), Assigned_Plants:(u.assigned_plants||[]).join(','), Password:'***' });
-const mapHeader = h => ({ Audit_ID:h.audit_id, Plant_ID:h.plant_id, Area_ID:h.area_id, Auditor_ID:h.auditor_id, Audit_Date:h.audit_date, Total_Score:h.total_score, Max_Score:h.max_score, Percent:Number(h.percent), Status:MAP.auditStatus[h.status]||h.status });
+const mapHeader = h => ({ Audit_ID:h.audit_id, Plant_ID:h.plant_id, Area_ID:h.area_id, Auditor_ID:h.auditor_id, Audit_Date:h.audit_date, Total_Score:h.total_score, Max_Score:h.max_score, Percent:Number(h.percent), Status:MAP.auditStatus[h.status]||h.status, Is_Team:!!h.is_team, Team_IDs:h.team_ids||[], Schedule_ID:h.schedule_id||'', Locked:!!h.locked_at });
+
+// ผู้ตรวจของผลตรวจ 1 ใบ: แบบทีม = รายชื่อทีม ณ ตอนส่ง (team_ids) · แบบเดี่ยว = เจ้าของ (auditor_id)
+const auditorIdsOf = h => (h.is_team && (h.team_ids || []).length) ? h.team_ids : [h.auditor_id];
+const auditorNamesOf = (h, nameById) => auditorIdsOf(h).map(id => nameById[id] || '-').join(', ');
 
 let _profileCache = null;
 async function _currentProfile() {
@@ -151,12 +155,18 @@ const SBH = {
     if (error) throw error;
     let areas = data.map(mapArea);
 
-    // annotate pending schedule + scope สำหรับ auditor
-    const { data:scheds } = await _sb.from('schedules').select('*').eq('status','pending');
-    const byArea = {}; (scheds||[]).forEach(s => { byArea[s.area_id] = s; });
+    // annotate งานที่ "ฉัน" ได้รับมอบหมายและยังค้างอยู่ — ไม่ใช่งานของคนอื่น
+    // (ปิดตรวจนอกงานมอบหมายแล้ว 2026-10-20: พื้นที่ที่ไม่มี Schedule_ID = กดตรวจไม่ได้)
+    // admin เห็น schedules ทุกแถวผ่าน RLS → ต้องเช็คว่าตัวเองอยู่ในทีมด้วย ไม่งั้นกดแล้วโดน DB ปฏิเสธ
+    const prof = await _currentProfile();
+    const { data:scheds } = await _sb.from('schedules').select('*').eq('status','pending')
+      .order('audit_date', { ascending:true });
+    const byArea = {};
+    (scheds||[]).forEach(s => {
+      if (prof && (s.auditor_ids||[]).includes(prof.id) && !byArea[s.area_id]) byArea[s.area_id] = s;
+    });
     areas.forEach(a => { const s = byArea[a.Area_ID]; if (s) { a.Schedule_ID=s.schedule_id; a.Audit_Round=s.audit_round; a.Audit_Date=s.audit_date; } });
 
-    const prof = await _currentProfile();
     const isStaff = prof && ['admin','manager'].includes(prof.role);
     if (prof && !isStaff) {
       const assigned = new Set(prof.assigned_areas || []);
@@ -203,7 +213,7 @@ const SBH = {
 
     const [{ data, error }, { data:prog }, { data:mine }] = await Promise.all([
       _sb.from('schedules').select('*, areas(area_name, area_type), plants(plant_name)'),
-      _sb.from('schedule_progress').select('schedule_id, done_n, required_n, is_completed'),
+      _sb.from('schedule_progress').select('schedule_id, done_n, required_n, is_completed, team_mode, team_audit_id, team_locked'),
       me ? _sb.from('audit_headers')
              .select('audit_id, schedule_id, locked_at, status')
              .eq('auditor_id', me)
@@ -223,7 +233,13 @@ const SBH = {
 
     return { success:true, data:(data || []).map(s => {
       const p    = progBySched[s.schedule_id] || {};
-      const myId = myAuditBySched[s.schedule_id] || '';
+      // งานทีม (Round 2+): สถานะเป็นของทีม — ผลตรวจใบเดียว ใครในทีมกดส่งก็เสร็จทั้งทีม
+      //   Pending = ยังไม่มีใครเปิด · InProgress = มีดราฟแล้ว · Completed = ทีมส่งผลแล้ว
+      const team   = !!p.team_mode;
+      const myId   = team ? (p.team_audit_id || '') : (myAuditBySched[s.schedule_id] || '');
+      const status = team
+        ? (p.team_locked ? 'Completed' : (p.team_audit_id ? 'InProgress' : 'Pending'))
+        : (myId ? 'Completed' : 'Pending');
       return {
         Schedule_ID:s.schedule_id, Plant_ID:s.plant_id, Area_ID:s.area_id,
         Area_Name:(s.areas && s.areas.area_name) || s.area_id,
@@ -231,11 +247,12 @@ const SBH = {
         Plant_Name:(s.plants && s.plants.plant_name) || s.plant_id,
         Auditor_ID:(s.auditor_ids||[]).join(','),
         Audit_Date:s.audit_date, Audit_Round:s.audit_round,
-        Status:   myId ? 'Completed' : 'Pending',   // ← ของฉัน
-        Audit_ID: myId,                             // ← ของฉัน
+        Status:   status,                           // ← ของฉัน (งานเดี่ยว) / ของทีม (งานทีม)
+        Audit_ID: myId,                             // ← ผลของฉัน / ผลของทีม (รวมดราฟ)
         Done_N:     Number(p.done_n)     || 0,
         Required_N: Number(p.required_n) || 0,
         Team_Done:  !!p.is_completed,
+        Team_Mode:  team,
       };
     }) };
   },
@@ -271,10 +288,12 @@ const SBH = {
     //
     // เดิมดึง percent ของทุกคนมาแล้วค่อย .filter() ใน JS → % ของคนอื่นถึง browser
     // ไปแล้วก่อนกรอง เปิด DevTools ก็เห็น · ตอนนี้ไม่ส่งมาเลย
+    // เฉพาะผลที่ส่งแล้ว (locked) — ดราฟของทีมมี status/percent จาก trigger แล้วแต่ยังไม่ใช่ผลจริง
     let hq = _sb.from('audit_headers')
-      .select('auditor_id, schedule_id, plant_id, area_id, percent, audit_date, audit_round')
-      .neq('status','pending');
-    if (!isStaff && prof0) hq = hq.eq('auditor_id', prof0.id);
+      .select('auditor_id, schedule_id, plant_id, area_id, percent, audit_date, audit_round, is_team, team_ids')
+      .neq('status','pending').not('locked_at', 'is', null);
+    // auditor: ผลของตัวเอง + ผลทีมที่ตัวเองอยู่ในทีม (team_ids)
+    if (!isStaff && prof0) hq = hq.or(`auditor_id.eq.${prof0.id},team_ids.cs.{${prof0.id}}`);
 
     const [{ data:scheds }, { data:prog }, { data:hdrs }, { data:profs }, { data:plants }] =
       await Promise.all([
@@ -318,11 +337,12 @@ const SBH = {
       };
     });
 
-    const headers = (hdrs||[]).map(h => ({
-      Auditor_ID:h.auditor_id, Schedule_ID:h.schedule_id,
+    // ผลทีม 1 ใบ = คะแนนที่ "ทุกคนในทีม" ให้ร่วมกัน → กระจายเป็นแถวของสมาชิกแต่ละคน
+    const headers = (hdrs||[]).flatMap(h => auditorIdsOf(h).map(aid => ({
+      Auditor_ID:aid, Schedule_ID:h.schedule_id,
       Plant_ID:h.plant_id, Area_ID:h.area_id,
       Percent:Number(h.percent)||0, Date:h.audit_date, Round:h.audit_round || ''
-    }));
+    })));
 
     return { success:true, schedules, headers, isStaff,
       plants:(plants||[]).map(p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name })) };
@@ -406,14 +426,20 @@ const SBH = {
     const canSeeAll = !!(prof && (prof.role === 'admin' || prof.role === 'viewer'));
 
     // ตัด audit ที่ยังไม่สมบูรณ์/N-A ทั้งหมด (status=pending) ให้สอดคล้องกับ dashboard
-    let q = _sb.from('audit_headers').select('*, profiles(name)').neq('status','pending');
-    if (!canSeeAll && prof) q = q.eq('auditor_id', prof.id);
+    // + เฉพาะที่ส่งแล้ว (locked) — ดราฟของทีมยังไม่ใช่ประวัติ
+    let q = _sb.from('audit_headers').select('*').neq('status','pending').not('locked_at', 'is', null);
+    // auditor: ผลของตัวเอง + ผลทีมที่ตัวเองอยู่ในทีม
+    if (!canSeeAll && prof) q = q.or(`auditor_id.eq.${prof.id},team_ids.cs.{${prof.id}}`);
     if (plantId) q = q.eq('plant_id', plantId);
     const range = _monthRange(month, year);
     if (range) q = q.gte('audit_date', range[0]).lt('audit_date', range[1]);
-    const { data, error } = await q.order('audit_date', { ascending:false });
+    const [{ data, error }, { data:profs }] = await Promise.all([
+      q.order('audit_date', { ascending:false }),
+      _sb.from('profiles').select('id, name'),
+    ]);
     if (error) throw error;
-    const mapped = (data||[]).map(h => { const m = mapHeader(h); m.Auditor_ID = (h.profiles && h.profiles.name) || h.auditor_id; return m; });
+    const nameById = {}; (profs||[]).forEach(p => { nameById[p.id] = p.name; });
+    const mapped = (data||[]).map(h => { const m = mapHeader(h); m.Auditor_ID = auditorNamesOf(h, nameById); return m; });
     return { success:true, data:mapped, total:mapped.length };
   },
 
@@ -435,8 +461,8 @@ const SBH = {
    */
   async getImprovementItems({ round } = {}) {
     let hq = _sb.from('audit_headers')
-      .select('audit_id, area_id, plant_id, audit_date, audit_round, auditor_id')
-      .neq('status', 'pending');
+      .select('audit_id, area_id, plant_id, audit_date, audit_round, auditor_id, is_team, team_ids')
+      .neq('status', 'pending').not('locked_at', 'is', null);   // ดราฟของทีมไม่นับ
     if (round) hq = hq.eq('audit_round', round);
     const { data:heads, error } = await hq;
     if (error) return { success:false, error:error.message };
@@ -477,7 +503,7 @@ const SBH = {
         Plant_Name: plantName[h.plant_id] || h.plant_id || '-',
         Audit_Date: h.audit_date,
         Audit_Round:h.audit_round || '',
-        Auditor:    nameById[h.auditor_id] || '-',
+        Auditor:    auditorNamesOf(h, nameById),
         Score:      Number(d.score),
         Category:   d.criteria && ((en && d.criteria.category_en) || d.criteria.category),
         Sub_Category: (d.criteria && d.criteria.sub_category) || '',
@@ -507,7 +533,11 @@ const SBH = {
   async getAuditDetail({ auditId }) {
     const { data:h, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
     if (error) return { success:false, error:'ไม่พบข้อมูล Audit' };
-    const { data:d } = await _sb.from('audit_details').select('*, criteria(question,question_en,category,category_en,sub_category)').eq('audit_id', auditId);
+    const [{ data:d }, { data:profs }] = await Promise.all([
+      _sb.from('audit_details').select('*, criteria(question,question_en,category,category_en,sub_category)').eq('audit_id', auditId),
+      _sb.from('profiles').select('id, name'),
+    ]);
+    const nameById = {}; (profs||[]).forEach(p => { nameById[p.id] = p.name; });
     const en = I18n.getLang() === 'en';
     const details = (d||[]).map(x => ({
       Detail_ID:x.detail_id, Criteria_ID:x.criteria_id, Score:x.score, Na:x.na, Remark:x.remark,
@@ -515,7 +545,7 @@ const SBH = {
       Question:x.criteria && ((en && x.criteria.question_en) || x.criteria.question),
       Category:x.criteria && ((en && x.criteria.category_en) || x.criteria.category)
     }));
-    return { success:true, header:mapHeader(h), details };
+    return { success:true, header:mapHeader(h), details, auditors:auditorNamesOf(h, nameById) };
   },
 
   /**
@@ -523,20 +553,25 @@ const SBH = {
    *
    * @param {string} round  กรองตามรอบการตรวจ ('' = ทุกรอบ)
    *
-   * 🔑 เปลี่ยนวิธีเฉลี่ยเป็น "รายคน" (ส่วน H — ตัดสินใจ 5 ส.ค. 2026)
+   * 🔑 "เฉลี่ย 2 ชั้น" (ตัดสินใจ 20 ต.ค. 2026 — ต่อยอดจาก "เฉลี่ยรายคน" ส่วน H 5 ส.ค. 2026)
    *
-   *   เดิม pooled: Σ total_score / Σ max_score
-   *     → `na` (ไม่มีในพื้นที่) ทำให้ max_score ของแต่ละคนไม่เท่ากัน
-   *       คนที่กด NA น้อยกว่าจึงมีน้ำหนักในค่าเฉลี่ยมากกว่า
-   *     ตัวอย่าง พื้นที่ A: อ้น 90% (เต็ม 100) · สมชาย 80% (เต็ม 50)
-   *       pooled     = (90+40)/150 = 86.7%   ← อ้นมีน้ำหนัก 2 เท่า
-   *       เฉลี่ยรายคน= (90+80)/2   = 85%     ← ทุกคนเท่ากัน  ✓ ใช้อันนี้
+   *   ยังเป็น mean of percent เสมอ — ห้ามกลับไป pooled (Σ total_score / Σ max_score)
+   *     เพราะ `na` ทำให้ max_score แต่ละใบไม่เท่ากัน ใบที่กด NA น้อยจะมีน้ำหนักมากกว่า
    *
-   *   เจตนา: "คะแนนพื้นที่ = เฉลี่ยจากผลตรวจของ auditor ทุกคนที่รับมอบหมาย"
-   *          ทุกความเห็นน้ำหนักเท่ากัน
+   *   ชั้นที่ 1 — "หน่วย" = พื้นที่ × รอบ: คะแนนหน่วย = เฉลี่ย % ของผลตรวจในพื้นที่นั้นรอบนั้น
+   *       Round 1 (ตรวจเดี่ยว 3–5 ใบ/พื้นที่) → เฉลี่ยรายคน · Round 2+ (ตรวจแบบทีม) → ผลทีม 1 ใบ
+   *   ชั้นที่ 2 — คะแนนโรงงาน/พื้นที่/ภาพรวม/แนวโน้ม = เฉลี่ยของคะแนนหน่วย
+   *
+   *   ทำไม: Round 1 มีหลายใบต่อพื้นที่ Round 2 มีใบเดียว — ถ้าเฉลี่ยรายใบตรงๆ หน่วยไม่เท่ากัน
+   *         เทียบข้ามรอบไม่ได้ และตัวกรอง "ทุกรอบ" จะเอียงไปทาง Round 1 (~4 เท่า)
+   *   ผลต่อ Round 1 (คำนวณจากข้อมูลจริง): ภาพรวม 92.0 → 91.4% · รายโรงงานเปลี่ยน 0.0 ถึง −0.3 pp
+   *
+   *   KPI นับจาก "หน่วย": passRate / excellent / good / needImprovement
+   *   totalAudit = จำนวนผลตรวจ (ใบ) · n ใน ranking = จำนวนผลตรวจในกลุ่ม (บอกความน่าเชื่อถือ)
    */
   async getDashboard({ round } = {}) {
-    let hq = _sb.from('audit_headers').select('*').neq('status','pending');
+    // เฉพาะผลที่ส่งแล้ว (locked) — ดราฟของทีมมี percent จาก trigger แล้วแต่ยังไม่ใช่ผลจริง
+    let hq = _sb.from('audit_headers').select('*').neq('status','pending').not('locked_at', 'is', null);
     if (round) hq = hq.eq('audit_round', round);
 
     const [{ data:headers }, { data:areas }, { data:plants }, { data:allRounds }, { data:profs }] =
@@ -546,55 +581,73 @@ const SBH = {
         _sb.from('plants').select('plant_id,plant_name'),
         // รายการรอบทั้งหมดสำหรับ dropdown — ดึงแยกไม่ให้ถูก filter ตัดตัวเลือกทิ้ง
         _sb.from('audit_headers').select('audit_round').neq('status','pending')
-           .not('audit_round','is',null),
+           .not('locked_at', 'is', null).not('audit_round','is',null),
         _sb.from('profiles').select('id,name'),   // ชื่อผู้ตรวจ สำหรับ auditor roster ในรายงาน PDF
       ]);
 
     const H = headers || [];
     const pct = h => Number(h.percent) || 0;
-    const tot = h => Number(h.total_score) || 0;
-    const mx  = h => Number(h.max_score)   || 0;
     const totalAudit = H.length;
 
-    // ค่าเฉลี่ยรายคน (mean of percent) — ทุกผลตรวจน้ำหนักเท่ากัน
     const meanPct = arr => arr.length
       ? arr.reduce((s,v)=>s+v, 0) / arr.length : 0;
-    const avgRaw   = meanPct(H.map(pct));
+
+    // ชั้นที่ 1: หน่วย = โรงงาน × พื้นที่ × รอบ (ผลเก่าที่ไม่มีรอบ → แยกตามวันที่ตรวจ)
+    // monthKey ใส่เพิ่มเฉพาะตอนทำแนวโน้มรายเดือน (หน่วยเดียวกันแต่ตรวจคนละเดือนแยกกัน)
+    const toUnits = (rows, withMonth) => {
+      const g = {};
+      rows.forEach(h => {
+        const month = String(h.audit_date || '').slice(0, 7);
+        const k = [h.plant_id, h.area_id, h.audit_round || ('d:' + h.audit_date), withMonth ? month : '']
+          .join('|');
+        const u = g[k] || (g[k] = { plant_id:h.plant_id, area_id:h.area_id, month, pcts:[] });
+        u.pcts.push(pct(h));
+      });
+      return Object.values(g).map(u => ({ ...u, score: meanPct(u.pcts), n: u.pcts.length }));
+    };
+    const units = toUnits(H, false);
+    const uScore = u => u.score;
+
+    const avgRaw   = meanPct(units.map(uScore));
     const avgScore = Math.round(avgRaw);
 
-    const passRate = totalAudit ? Math.round(H.filter(h=>pct(h)>=75).length*100/totalAudit) : 0;
-    const excellent = H.filter(h=>pct(h)>=90).length;
-    const good = H.filter(h=>pct(h)>=75 && pct(h)<90).length;
-    const needImprovement = H.filter(h=>pct(h)<75).length;
+    const nUnits = units.length;
+    const passRate = nUnits ? Math.round(units.filter(u => u.score >= 75).length * 100 / nUnits) : 0;
+    const excellent = units.filter(u => u.score >= 90).length;
+    const good = units.filter(u => u.score >= 75 && u.score < 90).length;
+    const needImprovement = units.filter(u => u.score < 75).length;
 
     const areaName  = {}; (areas||[]).forEach(a=>areaName[a.area_id]=a.area_name);
     const areaPlant = {}; (areas||[]).forEach(a=>areaPlant[a.area_id]=a.plant_id);
     const plantName = {}; (plants||[]).forEach(p=>plantName[p.plant_id]=p.plant_name);
 
     /**
-     * @param keyFn    คีย์จัดกลุ่ม
+     * ชั้นที่ 2: เฉลี่ยคะแนนหน่วยตามกลุ่ม
+     * @param keyFn    คีย์จัดกลุ่ม (จาก unit)
      * @param labelFn  ป้ายที่แสดง
      * @param label    ชื่อ field ที่ส่งกลับ
      *
-     * n = จำนวนผลตรวจในกลุ่ม — ranking จาก 1 ครั้ง กับ 10 ครั้งเชื่อถือได้ไม่เท่ากัน
+     * n = จำนวนผลตรวจ (ใบ) ในกลุ่ม — ranking จาก 1 ใบ กับ 10 ใบเชื่อถือได้ไม่เท่ากัน
      * avgScoreRaw = ค่าไม่ปัดเศษ ใช้ตัดสินแถบสี (กัน .5 ข้ามแถบ) และใช้ sort
      */
     const avgBy = (keyFn, labelFn, label) => {
       const g = {};
-      H.forEach(h => { const k = keyFn(h); (g[k] = g[k] || []).push(pct(h)); });
-      return Object.entries(g).map(([k, arr]) => {
-        const raw = meanPct(arr);
-        return { [label]:labelFn(k), avgScore:Math.round(raw), avgScoreRaw:raw, n:arr.length };
+      units.forEach(u => { const k = keyFn(u); (g[k] = g[k] || []).push(u); });
+      return Object.entries(g).map(([k, us]) => {
+        const raw = meanPct(us.map(uScore));
+        return { [label]:labelFn(k), avgScore:Math.round(raw), avgScoreRaw:raw,
+                 n:us.reduce((s, u) => s + u.n, 0) };
       }).sort((a,b) => b.avgScoreRaw - a.avgScoreRaw);
     };
 
-    const plantComparison = avgBy(h => h.plant_id, k => plantName[k] || k, 'plantName');
+    // Plant Ranking อ่านจาก audit_headers.plant_id (โรงงานที่ผลตรวจนับเข้า)
+    const plantComparison = avgBy(u => u.plant_id, k => plantName[k] || k, 'plantName');
 
-    // จัดกลุ่มด้วย plant + area  (area_id มี prefix โรงงานอยู่แล้ว เช่น SUP-WH-F1
-    // จึงไม่ชนกันข้ามโรงงาน — แต่ "ชื่อ" ซ้ำ เช่น "Warehouse F1" มีทั้ง 3 โรงงาน
-    // ถ้าไม่ใส่ชื่อโรงงานในป้าย ranking จะมี 3 แถวชื่อเหมือนกันแยกไม่ออก)
+    // จัดกลุ่มด้วย area_id (มี prefix โรงงานอยู่แล้ว เช่น SUP-WH-F1 จึงไม่ชนกันข้ามโรงงาน
+    // แต่ "ชื่อ" ซ้ำ เช่น "Warehouse F1" มีทั้ง 3 โรงงาน → ใส่ชื่อโรงงานในป้ายด้วย)
+    // ⚠️ prefix ของ area_id ไม่ใช่ตัวบอกโรงงานเสมอ (เช่น NIF-OD อยู่ใต้ CAF) — ใช้ areas.plant_id ก่อน
     const areaRanking = avgBy(
-      h => h.area_id,
+      u => u.area_id,
       k => {
         const pid = areaPlant[k] || String(k).split('-')[0];
         const pn  = plantName[pid] || pid;
@@ -603,12 +656,9 @@ const SBH = {
       'areaName'
     );
 
-    // แนวโน้มรายเดือน — เฉลี่ยรายคนเช่นกัน
+    // แนวโน้มรายเดือน — เฉลี่ย 2 ชั้นเหมือนกัน (หน่วยแยกตามเดือนที่ตรวจ)
     const mg = {};
-    H.forEach(h => {
-      const mth = String(h.audit_date||'').slice(0,7);
-      if (mth) (mg[mth] = mg[mth] || []).push(pct(h));
-    });
+    toUnits(H, true).forEach(u => { if (u.month) (mg[u.month] = mg[u.month] || []).push(u.score); });
     const monthlyTrend = Object.entries(mg).sort().slice(-6).map(([month, arr]) => {
       const raw = meanPct(arr);
       return { month, avgScore:Math.round(raw), avgScoreRaw:raw };
@@ -617,10 +667,11 @@ const SBH = {
     const rounds = [...new Set((allRounds||[]).map(r => r.audit_round).filter(Boolean))].sort();
 
     // รายชื่อผู้ตรวจประจำรอบ (auditor roster) — ใครตรวจพื้นที่ไหนบ้าง สำหรับหน้าสรุปในรายงาน PDF
+    // ผลทีม: นับให้สมาชิกทุกคนในทีม (team_ids) ไม่ใช่แค่คนที่เปิดผลตรวจ
     const nameById  = {}; (profs || []).forEach(p => { nameById[p.id] = p.name; });
     const rosterMap = {};
-    H.forEach(h => {
-      const aid = h.auditor_id; if (!aid) return;
+    H.forEach(h => auditorIdsOf(h).forEach(aid => {
+      if (!aid) return;
       const r = rosterMap[aid] || (rosterMap[aid] = { name: nameById[aid] || aid, areas: [], _seen: new Set() });
       const akey = h.area_id;
       if (akey && !r._seen.has(akey)) {
@@ -628,7 +679,7 @@ const SBH = {
         const pid = areaPlant[akey] || String(akey).split('-')[0];
         r.areas.push({ area: areaName[akey] || akey, plant: plantName[pid] || pid });
       }
-    });
+    }));
     const auditorRoster = Object.values(rosterMap)
       .map(r => ({ name: r.name, areas: r.areas, plants: [...new Set(r.areas.map(a => a.plant))] }))
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
@@ -711,7 +762,7 @@ const SBH = {
       await Promise.all([
         _sb.from('areas').select('*').eq('status','active').order('area_id'),
         sq,
-        _sb.from('schedule_progress').select('schedule_id, required_n, done_n, is_completed'),
+        _sb.from('schedule_progress').select('schedule_id, required_n, done_n, is_completed, team_mode, team_audit_id, team_locked'),
         _sb.from('profiles').select('*').eq('status','active').order('name'),
         _sb.from('plants').select('*').eq('status','active'),
       ]);
@@ -731,17 +782,22 @@ const SBH = {
         Auditor_IDs: s ? (s.auditor_ids||[]).join(',') : '',
         Audit_Date: s ? s.audit_date : null, Audit_Round: s ? s.audit_round : null,
         Schedule_ID: s ? s.schedule_id : null,
-        // สถานะรายคน: ยังไม่มีใครตรวจ / บางส่วน / ครบ
+        // งานเดี่ยว: สถานะรายคน (ยังไม่มีใครตรวจ / บางส่วน / ครบ)
+        // งานทีม: Partial = ทีมเปิดดราฟแล้วแต่ยังไม่ส่ง · Completed = ทีมส่งผลแล้ว
         Done_N: doneN, Required_N: reqN,
+        Team_Mode: s ? (p.team_mode !== false) : true,   // งานใหม่ = ทีม (default ของ DB)
+        Team_Started: !!p.team_audit_id,
         Sched_Status: !s ? null
                     : p.is_completed        ? 'Completed'
-                    : doneN > 0             ? 'Partial'
+                    : (doneN > 0 || p.team_audit_id) ? 'Partial'
                     : 'Pending',
       };
     });
     return { success:true,
       areas: areaRows,
-      auditors: (auditors||[]).map(u => ({ User_ID:u.id, Name:u.name, Department:u.department, Role:MAP.role[u.role]||u.role })),
+      // viewer ตรวจไม่ได้ (DB บล็อก) → ไม่ให้เลือกเข้าทีมตั้งแต่ต้น
+      auditors: (auditors||[]).filter(u => u.role !== 'viewer')
+        .map(u => ({ User_ID:u.id, Name:u.name, Department:u.department, Role:MAP.role[u.role]||u.role })),
       plants: (plants||[]).map(p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name })),
     };
   },
@@ -765,104 +821,87 @@ const SBH = {
     return { success:true };
   },
 
-  // ---- Audit submit ----
-  /**
-   * เคยตรวจงานที่มอบหมายนี้ไปแล้วหรือยัง — ใช้กันตรวจซ้ำ "ก่อน" เข้าหน้ากรอก
-   * นับเฉพาะที่ submit เสร็จ (locked_at หรือ status<>pending)
-   * header ค้างที่ยังไม่ finalize ไม่นับ → ยังตรวจใหม่ได้
-   */
-  async hasAuditedSchedule({ scheduleId, auditorId }) {
-    if (!scheduleId || !auditorId) return { success:true, audited:false };
-    const { data, error } = await _sb.from('audit_headers')
-      .select('audit_id, locked_at, status')
-      .eq('schedule_id', scheduleId).eq('auditor_id', auditorId);
-    // เช็กไม่ได้ → ปล่อยผ่าน (unique index กันตอน submit อยู่แล้ว) ไม่บล็อกการทำงาน
-    if (error) return { success:true, audited:false };
-    const done = (data || []).find(h => h.locked_at || h.status !== 'pending');
-    return { success:true, audited:!!done, auditId:done ? done.audit_id : '' };
-  },
+  // ---- ตรวจแบบทีม (Round 2+ · patches.sql ส่วน K) ----
+  //
+  // ผลตรวจ 1 ใบต่องานมอบหมาย ทุกคนในทีมเขียนร่วมกัน · คำตอบบันทึกลง DB ทุกครั้งที่กด
+  // (ดราฟ = header ที่ locked_at is null) · ใครในทีมกดส่งก็ได้ → lock_audit (DB เช็คว่าตอบครบ)
+  //
+  // แทน flow เดิมของการตรวจเดี่ยว (insert header → ส่ง details ทีละ chunk → finalize ตอนจบ)
+  // ซึ่งเก็บคำตอบไว้ในหน่วยความจำจนกด submit — ปิดแอป/เน็ตหลุดกลางทาง = หายหมด
+  // ตรวจนอกงานมอบหมาย (ไม่มี scheduleId) ปิดแล้วทั้งที่หน้าเว็บและ DB (2026-10-20)
 
-  /**
-   * สร้าง header ของผลตรวจ
-   *
-   * scheduleId → ผูกผลตรวจกับงานที่มอบหมาย (ส่วน H)
-   *   • trigger chk_header_schedule ตรวจว่าผู้ตรวจอยู่ในรายชื่อที่มอบหมายจริง
-   *     และก๊อป audit_round มาเก็บให้เอง (ห้ามส่งจาก client — ปลอมได้)
-   *   • unique (schedule_id, auditor_id) กันตรวจซ้ำงานเดียว
-   *
-   * ⚠️ ล้าง header ค้างของตัวเองก่อน (self-heal)
-   *    flow การ submit คือ: insert header → ส่ง details เป็นชุด → finalize
-   *    ถ้าเน็ตหลุดกลางทางและ rollback ไม่สำเร็จ จะเหลือ header ที่ยัง pending ค้างอยู่
-   *    unique index จะบล็อกการตรวจใหม่ → auditor ตันสนิท
-   *    จึงลบ header ที่ยังไม่ finalize (locked_at is null + pending) ของตัวเองทิ้งก่อน
-   *    RLS headers_delete อนุญาตเจ้าของลบได้เมื่อ locked_at is null
-   */
-  async submitAuditHeader(p) {
-    if (p.scheduleId) {
-      const { error: cleanErr } = await _sb.from('audit_headers')
-        .delete()
-        .eq('schedule_id', p.scheduleId)
-        .eq('auditor_id', p.auditorId)
-        .is('locked_at', null)
-        .eq('status', 'pending');
-      if (cleanErr) console.warn('[submit] ล้าง header ค้างไม่สำเร็จ:', cleanErr.message);
-    }
-
-    const { data, error } = await _sb.from('audit_headers')
-      .insert({
-        plant_id:    p.plantId,
-        area_id:     p.areaId,
-        auditor_id:  p.auditorId,
-        audit_date:  p.auditDate,
-        schedule_id: p.scheduleId || null,
-      })
-      .select('audit_id').single();
-
-    if (error) {
-      // 23505 = unique_violation → ตรวจงานนี้ไปแล้ว (ผลเดิม finalize แล้ว ลบทิ้งไม่ได้)
-      if (error.code === '23505') return { success:false, error:I18n.t('err.already_audited') };
-      return { success:false, error:error.message };
-    }
-    return { success:true, auditId:data.audit_id };
-  },
-
-  async submitAuditDetails(p) {
-    let arr; try { arr = JSON.parse(p.details); } catch(e) { return { success:false, error:'details JSON ไม่ถูกต้อง' }; }
-    const rows = arr.map(d => ({
-      audit_id:p.auditId, criteria_id:d.criteriaId, score:Number(d.score)||0,
-      na: !!d.na,
-      remark:(d.remark||'').slice(0,200),
-      photo_urls: d.photoUrl ? String(d.photoUrl).split(',').filter(Boolean) : [],
-    }));
-    const { error } = await _sb.from('audit_details').upsert(rows, { onConflict:'audit_id,criteria_id' });
+  /** เปิดผลตรวจของทีม (ยังไม่มี → DB สร้างให้ กัน 2 คนเปิดพร้อมกันได้ 2 ใบ) + รายชื่อทีม */
+  async openTeamAudit({ scheduleId }) {
+    const { data, error } = await _sb.rpc('open_team_audit', { p_schedule_id: scheduleId });
     if (error) return { success:false, error:error.message };
-    return { success:true, saved:rows.length };   // trigger คำนวณคะแนน header ให้เอง
+    const [{ data:s }, { data:profs }] = await Promise.all([
+      _sb.from('schedules')
+        .select('schedule_id, auditor_ids, audit_round, areas(area_name), plants(plant_name)')
+        .eq('schedule_id', scheduleId).single(),
+      _sb.from('profiles').select('id, name'),
+    ]);
+    const nameById = {}; (profs || []).forEach(p => { nameById[p.id] = p.name; });
+    return { success:true, auditId:data.audit_id, lockedAt:data.locked_at || null, nameById,
+      team:      ((s && s.auditor_ids) || []).map(id => ({ id, name:nameById[id] || '-' })),
+      areaName:  (s && s.areas  && s.areas.area_name)   || '',
+      plantName: (s && s.plants && s.plants.plant_name) || '',
+      round:     (s && s.audit_round) || '' };
+  },
+
+  /** กึ่งเรียลไทม์: ข้อที่เปลี่ยนหลัง since + สถานะ header ใน request เดียว */
+  async teamAuditChanges({ auditId, since }) {
+    const { data, error } = await _sb.rpc('team_audit_changes', { p_audit_id:auditId, p_since:since || null });
+    if (error) return { success:false, error:error.message };
+    return { success:true, now:data.now, header:data.header || {}, rows:data.rows || [] };
   },
 
   /**
-   * ปิดงานตรวจ — อ่านคะแนนที่ trigger คำนวณไว้ แล้ว "ล็อก" ไม่ให้แก้ย้อนหลัง
+   * บันทึกคำตอบของทีม — rows = [{ criteriaId, score?, na?, remark? }]
    *
-   * 🔒 locked_at: หลังตั้งค่าแล้ว auditor แก้ไม่ได้อีก (RLS headers_update + trigger
-   *    trg_chk_locked บน audit_details) · admin แก้ได้ตลอด
-   *    ดู patches.sql ส่วน G2
-   *
-   * ⚠️ ต้องล็อก "หลัง" อ่านคะแนนเสร็จ — ถ้าล็อกก่อน trigger recalc ทำงานไม่ได้
-   *    การล็อกล้มไม่ทำให้ submit ล้ม (ผลตรวจบันทึกแล้ว) แค่รายงานว่าล็อกไม่สำเร็จ
+   * ส่งเฉพาะช่องที่เปลี่ยน และแยก request ตามชุดคอลัมน์ — upsert หลายแถวที่คีย์ไม่เท่ากัน
+   * PostgREST จะเติม null ให้ช่องที่ไม่ได้ส่ง (เช่นเราให้คะแนน แต่หมายเหตุที่เพื่อนพิมพ์โดนลบ)
    */
-  async finalizeAudit({ auditId }) {
-    const { data, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
-    if (error) return { success:false, error:error.message };
-
-    let locked = false;
-    if (!data.locked_at) {
-      const { data: lockRes, error: lockErr } = await _sb.rpc('lock_audit', { p_audit_id: auditId });
-      if (lockErr) console.warn('[finalize] ล็อกผลตรวจไม่สำเร็จ:', lockErr.message);
-      else locked = !!(lockRes && lockRes.success);
-    } else {
-      locked = true;
+  async saveTeamAnswers({ auditId, rows }) {
+    const groups = {};
+    (rows || []).forEach(r => {
+      const row = { audit_id:auditId, criteria_id:r.criteriaId };
+      if ('score'  in r) row.score  = r.score;
+      if ('na'     in r) row.na     = !!r.na;
+      if ('remark' in r) row.remark = String(r.remark || '').slice(0, 200);
+      const key = Object.keys(row).sort().join(',');
+      (groups[key] = groups[key] || []).push(row);
+    });
+    for (const list of Object.values(groups)) {
+      const { error } = await _sb.from('audit_details').upsert(list, { onConflict:'audit_id,criteria_id' });
+      if (error) return { success:false, error:error.message };
     }
+    return { success:true };   // trigger คำนวณคะแนน header ให้เอง
+  },
 
-    return { success:true, auditId, locked,
+  /** รูป: เพิ่ม/ลบแบบ atomic ฝั่ง DB — 2 คนแนบรูปข้อเดียวกันพร้อมกัน รูปไม่หาย */
+  async addTeamPhoto({ auditId, criteriaId, url }) {
+    const { data, error } = await _sb.rpc('add_detail_photo',
+      { p_audit_id:auditId, p_criteria_id:criteriaId, p_url:url });
+    if (error) return { success:false, error:error.message };
+    return { success:true, urls:data || [] };
+  },
+  async removeTeamPhoto({ auditId, criteriaId, url }) {
+    const { data, error } = await _sb.rpc('remove_detail_photo',
+      { p_audit_id:auditId, p_criteria_id:criteriaId, p_url:url });
+    if (error) return { success:false, error:error.message };
+    return { success:true, urls:data || [] };
+  },
+
+  /**
+   * ส่งผลของทีม → ล็อก แล้วอ่านคะแนนที่ trigger คำนวณไว้กลับมา
+   * DB ปฏิเสธถ้ายังตอบไม่ครบ ("ยังตอบไม่ครบ N ข้อ") — เพื่อนอาจเพิ่งยกเลิก N/A หลังเราเช็ค
+   */
+  async lockTeamAudit({ auditId }) {
+    const { error } = await _sb.rpc('lock_audit', { p_audit_id:auditId });
+    if (error) return { success:false, error:error.message };
+    const { data, error:e2 } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
+    if (e2) return { success:false, error:e2.message };
+    return { success:true, auditId, locked:true,
       totalScore:data.total_score, maxScore:data.max_score,
       percent:Number(data.percent), status:MAP.auditStatus[data.status]||data.status };
   },
@@ -1315,8 +1354,36 @@ const TRANSLATIONS = {
     'tasks.count_suffix':        'รายการ',
     'tasks.pending_prefix':      'ค้าง',
     'tasks.empty_title':         'ยังไม่มีงานที่ได้รับมอบหมาย',
-    'tasks.empty_desc':          'คุณสามารถเลือกพื้นที่ตรวจเองได้',
+    'tasks.empty_desc':          'รอ Admin มอบหมายงาน — ตรวจได้เฉพาะพื้นที่ที่ได้รับมอบหมายเท่านั้น',
     'tasks.pick_area_btn':       'เลือกพื้นที่ตรวจเอง',
+    // ตรวจแบบทีม (Round 2+)
+    'tasks.state_draft':         'กำลังตรวจ',
+    'tasks.continue':            'ทำต่อ',
+    'team.need_assignment':      'ตรวจได้เฉพาะพื้นที่ที่ได้รับมอบหมาย — เลือกงานจาก "งานที่ได้รับมอบหมาย"',
+    'team.not_assigned':         'ไม่ได้รับมอบหมาย',
+    'team.not_assigned_toast':   'พื้นที่นี้ไม่ได้มอบหมายให้คุณในรอบนี้',
+    'team.already_submitted':    'ทีมส่งผลแล้ว',
+    'team.locked_lost':          'ทีมส่งผลแล้ว — การแก้ไขล่าสุดของคุณที่ยังไม่ได้บันทึกจะไม่ถูกนับ',
+    'team.you':                  'คุณ',
+    'team.last_by':              'แก้ล่าสุด:',
+    'team.refresh':              'ดึงคำตอบล่าสุดของทีม',
+    'team.save_saved':           'บันทึกแล้ว',
+    'team.save_saving':          'กำลังบันทึก…',
+    'team.save_offline':         'ออฟไลน์ — รอส่ง {n}',
+    'team.photo_failed':         'อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง',
+    'team.photo_wait':           'รอรูปอัปโหลดให้เสร็จก่อน',
+    'team.photo_remove_confirm': 'ลบรูปนี้? (ทุกคนในทีมจะไม่เห็นรูปนี้แล้ว)',
+    'team.syncing':              'กำลังบันทึกและดึงคำตอบล่าสุดของทีม…',
+    'team.sync_failed':          'ยังบันทึกคำตอบไม่ครบ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่',
+    'team.session_expired':      'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
+    'team.submit_btn':           'ส่งผลตรวจของทีม',
+    'team.confirm_title':        'ส่งผลตรวจของทีม?',
+    'team.confirm_msg':          'ส่งแล้วทุกคนในทีมจะแก้ไขไม่ได้อีก',
+    'team.back_confirm':         'ยังมีคำตอบที่ยังไม่ได้บันทึก (จะบันทึกต่อเมื่อเปิดหน้านี้อีกครั้ง) ออกจากหน้านี้?',
+    'team.stale_dropped':        'มี {n} ข้อที่คุณแก้ตอนออฟไลน์ แต่เพื่อนในทีมแก้ทับไปแล้ว — ใช้คำตอบของเพื่อน',
+    'sched.team_size':           'งานตรวจแบบทีมต้องมีกรรมการ 2–3 คน',
+    'sched.team_locked':         'ทีมส่งผลตรวจงานนี้แล้ว แก้รายชื่อไม่ได้',
+    'summary.team':              'ผู้ตรวจ',
   },
   en: {
     // Common
@@ -1942,8 +2009,36 @@ const TRANSLATIONS = {
     'tasks.count_suffix':        'item(s)',
     'tasks.pending_prefix':      'Pending',
     'tasks.empty_title':         'No assigned tasks yet',
-    'tasks.empty_desc':          'You can choose an area to audit yourself',
+    'tasks.empty_desc':          'Waiting for an Admin to assign tasks — you can only audit assigned areas',
     'tasks.pick_area_btn':       'Choose an area yourself',
+    // Team audit (Round 2+)
+    'tasks.state_draft':         'In progress',
+    'tasks.continue':            'Continue',
+    'team.need_assignment':      'You can only audit assigned areas — pick a task from "My Tasks"',
+    'team.not_assigned':         'Not assigned',
+    'team.not_assigned_toast':   'This area is not assigned to you in this round',
+    'team.already_submitted':    'Team has submitted',
+    'team.locked_lost':          'Your team has submitted — your latest unsaved edits were not included',
+    'team.you':                  'You',
+    'team.last_by':              'Last edit:',
+    'team.refresh':              'Fetch the team\'s latest answers',
+    'team.save_saved':           'Saved',
+    'team.save_saving':          'Saving…',
+    'team.save_offline':         'Offline — {n} pending',
+    'team.photo_failed':         'Photo upload failed — please try again',
+    'team.photo_wait':           'Please wait for photos to finish uploading',
+    'team.photo_remove_confirm': 'Remove this photo? (it will be removed for the whole team)',
+    'team.syncing':              'Saving and fetching the team\'s latest answers…',
+    'team.sync_failed':          'Some answers are not saved yet — check your connection and try again',
+    'team.session_expired':      'Session expired, please sign in again',
+    'team.submit_btn':           'Submit team audit',
+    'team.confirm_title':        'Submit team audit?',
+    'team.confirm_msg':          'After submitting, no one in the team can edit it',
+    'team.back_confirm':         'Some answers are not saved yet (they will be saved next time you open this page). Leave this page?',
+    'team.stale_dropped':        'Teammates changed {n} item(s) you edited while offline — their answers were kept',
+    'sched.team_size':           'Team audits need 2–3 auditors',
+    'sched.team_locked':         'The team has already submitted this audit — members cannot be changed',
+    'summary.team':              'Auditors',
   }
 };
 
@@ -2325,6 +2420,7 @@ async function initLogin() {
 // กำหนดสถานะงานจากข้อมูลจริง: done / overdue / today / pending
 function taskState(s) {
   if (s.Status === 'Completed') return 'done';
+  if (s.Status === 'InProgress') return 'draft';   // งานทีม: มีคนในทีมเริ่มตรวจแล้ว (ดราฟ)
   if (!s.Audit_Date) return 'pending';
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const d = new Date(s.Audit_Date); d.setHours(0, 0, 0, 0);
@@ -2346,6 +2442,7 @@ function statusSvg(name) {
 
 // ค่าคอนฟิกการแสดงผลของแต่ละสถานะ
 const TASK_STATE_CFG = () => ({
+  draft:   { svg: 'pencil',    label: I18n.t('tasks.state_draft'),   ico_bg: 'var(--amber-bg)',      ico_fg: 'var(--warning)', bd_bg: 'var(--amber-bg)',      bd_fg: 'var(--warning)' },
   today:   { svg: 'pencil',    label: I18n.t('tasks.state_today'),   ico_bg: 'var(--primary-light)', ico_fg: 'var(--primary)', bd_bg: 'var(--primary-light)', bd_fg: 'var(--primary)' },
   pending: { svg: 'clipboard', label: I18n.t('tasks.state_pending'), ico_bg: 'var(--gray-100)',      ico_fg: 'var(--gray-500)', bd_bg: 'var(--gray-100)',      bd_fg: 'var(--gray-600)' },
   overdue: { svg: 'warn',      label: I18n.t('common.overdue'),      ico_bg: '#fdecec',              ico_fg: 'var(--danger)',   bd_bg: '#fdecec',              bd_fg: 'var(--danger)' },
@@ -2369,6 +2466,8 @@ function renderAssignedTaskCards(tasks) {
         ? `navigate('summary.html', { auditId: '${escAttr(s.Audit_ID)}' })`
         : `navigate('history.html')`;
       action = `<button class="btn" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700;background:#fff;border:1.5px solid var(--gray-200);color:var(--dark)" onclick="${doneAction}">${escHtml(I18n.t('tasks.view_result'))}</button>`;
+    } else if (st === 'draft') {
+      action = `<button class="btn btn-primary" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700" onclick="startAssignedAudit(${startArgs})">${escHtml(I18n.t('tasks.continue'))}</button>`;
     } else if (st === 'today') {
       action = `<button class="btn btn-primary" style="flex-shrink:0;height:38px;padding:0 16px;font-size:0.82rem;font-weight:700" onclick="startAssignedAudit(${startArgs})">${escHtml(I18n.t('tasks.start_now'))}</button>`;
     } else {
@@ -2392,7 +2491,7 @@ function renderAssignedTaskCards(tasks) {
 }
 
 // ลำดับความสำคัญของสถานะสำหรับการเรียง
-const TASK_STATE_ORDER = { today: 0, overdue: 1, pending: 2, done: 3 };
+const TASK_STATE_ORDER = { draft: 0, today: 1, overdue: 2, pending: 3, done: 4 };
 
 // โหลด + กรอง schedules ที่ user นี้ถูกมอบหมาย
 function filterMyTasks(schedData, user) {
@@ -2437,10 +2536,7 @@ async function initMyTasks() {
         <div class="card text-center" style="padding:32px 20px">
           <i class="bi bi-clipboard-check" style="font-size:2.4rem;color:var(--gray-500)"></i>
           <div style="margin-top:10px;font-weight:700;color:var(--dark)">${escHtml(I18n.t('tasks.empty_title'))}</div>
-          <div style="font-size:0.82rem;color:var(--gray-600);margin:6px 0 16px">${escHtml(I18n.t('tasks.empty_desc'))}</div>
-          <button class="btn btn-primary btn-block" onclick="navigate('plant.html')" style="height:46px">
-            <i class="bi bi-clipboard-check"></i> ${escHtml(I18n.t('tasks.pick_area_btn'))}
-          </button>
+          <div style="font-size:0.82rem;color:var(--gray-600);margin:6px 0 0">${escHtml(I18n.t('tasks.empty_desc'))}</div>
         </div>`;
     }
   } catch(err) {
@@ -2670,8 +2766,9 @@ async function initArea() {
     };
 
     // สร้างการ์ดพื้นที่ 1 ใบ (badgeText ว่าง = ไม่โชว์ badge)
+    // ไม่มี Schedule_ID = ไม่ได้รับมอบหมายให้ฉัน → ดูได้แต่กดตรวจไม่ได้ (ปิดตรวจนอกงานมอบหมาย 2026-10-20)
     const areaCard = (a, badgeText) => `
-      <div class="area-card area-type-${escHtml(a.Area_Type)}"
+      <div class="area-card area-type-${escHtml(a.Area_Type)}${a.Schedule_ID ? '' : ' area-unassigned'}"
            data-area-id="${escAttr(a.Area_ID)}"
            data-area-name="${escAttr(a.Area_Name)}"
            data-area-type="${escAttr(a.Area_Type)}"
@@ -2685,7 +2782,8 @@ async function initArea() {
         <div class="area-info">
           <div class="area-name">${escHtml(a.Area_Name)}</div>
           ${badgeText ? `<span class="area-type-badge">${escHtml(badgeText)}</span>` : ''}
-          ${a.Audit_Round ? `<span class="area-type-badge" style="margin-left:6px;background:#fff8e1;color:#8a5b00">${escHtml(a.Audit_Round)} ${a.Audit_Date ? '• ' + escHtml(a.Audit_Date) : ''}</span>` : ''}
+          ${a.Audit_Round ? `<span class="area-type-badge" style="margin-left:6px;background:#fff8e1;color:#8a5b00">${escHtml(a.Audit_Round)} ${a.Audit_Date ? '• ' + escHtml(a.Audit_Date) : ''}</span>`
+                          : `<span class="area-type-badge area-unassigned-badge" style="margin-left:6px">${escHtml(I18n.t('team.not_assigned'))}</span>`}
         </div>
         <i class="bi bi-chevron-right text-muted"></i>
       </div>`;
@@ -2717,13 +2815,13 @@ async function initArea() {
 }
 
 function selectAreaFromEl(el) {
+  // ปิดตรวจนอกงานมอบหมาย (2026-10-20) — DB ก็บล็อก (chk_header_schedule) นี่กันไม่ให้เข้าไปเจอ error
+  if (!el.dataset.scheduleId) { UI.toast(I18n.t('team.not_assigned_toast'), 'warning', 4000); return; }
   selectArea(el.dataset.areaId, el.dataset.areaName, el.dataset.areaType, el.dataset.plantId, el.dataset.plantName, el.dataset.scheduleId);
 }
 
-// scheduleId: ถ้าพื้นที่นี้มีงานที่มอบหมายรออยู่ (badge รอบตรวจที่โชว์ในการ์ด) ต้องส่งต่อ
-// ไปด้วย ไม่งั้น audit_headers.schedule_id จะเป็น null แม้ auditor จะตรวจตรงตามที่ได้รับ
-// มอบหมายจริง → งานค้างใน "งานที่ได้รับมอบหมาย" ตลอดไปเพราะนับความคืบหน้าไม่ได้
-// (พบจริง 7 ส.ค. 2569 — ผลตรวจขึ้นประวัติปกติ แต่ assigned task ไม่ขยับ)
+// scheduleId: ต้องส่งต่อเสมอ — หน้าตรวจแบบทีมเปิดผลตรวจจากงานมอบหมาย (ไม่มี = เข้าไม่ได้)
+// (ประวัติ: 7 ส.ค. 2569 เคยลืมส่ง → ผลตรวจขึ้นประวัติแต่ assigned task ไม่ขยับ)
 function selectArea(areaId, areaName, areaType, plantId, plantName, scheduleId) {
   plantId   = plantId   || getParam('plantId');
   plantName = plantName || getParam('plantName') || '';
@@ -2738,72 +2836,150 @@ function selectArea(areaId, areaName, areaType, plantId, plantName, scheduleId) 
 }
 
 // ============================================================
-// AUDIT PAGE
+// AUDIT PAGE — ตรวจแบบทีม (Round 2+ · patches.sql ส่วน K · แผน TEAM_AUDIT_PLAN.md)
 // ============================================================
+//
+// กรรมการ 2–3 คนใช้ผลตรวจใบเดียวกัน (เหมือนไฟล์แชร์):
+//   • ทุกการกดบันทึกลง DB ทันที (ผ่านคิว) → ดราฟไม่หายแม้ปิดแอป/เน็ตหลุด
+//   • กึ่งเรียลไทม์: ดึงเฉพาะข้อที่เปลี่ยน ทุก 10 วิ (เงียบนาน → ยืดถึง 30 วิ) + ดึงพ่วงหลังเราบันทึก
+//     หยุดดึงตอนแท็บไม่ active · ไม่ใช้ Supabase Realtime เพื่อให้ย้าย Dataverse ง่าย
+//   • เห็นต่าง = คนกดล่าสุดชนะ (โชว์ "แก้ล่าสุด: ชื่อ" รายข้อ)
+//   • ใครในทีมกดส่งก็ได้ → lock_audit (DB เช็คว่าตอบครบทุกข้อ)
+//   • ฟอร์มเดียวทุกพื้นที่: โหลดเกณฑ์ active ทั้งหมด ทีมกด N/A หมวดที่ไม่มีในพื้นที่เอง
+// ============================================================
+const TEAM_POLL_MIN     = 10000;   // ความถี่ปกติ
+const TEAM_POLL_MAX     = 30000;   // ความถี่ต่ำสุดตอนไม่มีความเคลื่อนไหว
+const TEAM_POLL_STEP    = 5000;
+const TEAM_IDLE_MS      = 60000;   // เงียบเกินนี้ → เริ่มยืดความถี่
+
+const TeamAudit = {
+  auditId: null, scheduleId: null,
+  nameById: {}, team: [], catOf: {},
+  cursor: null,            // เวลาฝั่ง server ของการดึงครั้งล่าสุด (ลบ overlap แล้ว)
+  dirty: {},               // criteriaId → { score?, na?, remark? } ที่ยังไม่ได้ส่ง
+  inflight: false, retryDelay: 0, flushTimer: null,
+  polling: false, pollTimer: null, pollDelay: TEAM_POLL_MIN, lastChangeAt: 0,
+  photoBusy: 0, locked: false,
+  lastBy: {},              // criteriaId → updated_by ล่าสุด
+  rowSrv: {},              // criteriaId → แถวล่าสุดจาก DB (ใช้ตัดสินคำตอบค้างส่งที่เพื่อนแก้ทับไปแล้ว)
+  seq: 0,                  // ตัวนับลำดับเหตุการณ์ในหน้านี้ (ไม่ใช้เวลา — เกิดใน ms เดียวกันได้)
+  savedSeq: {},            // criteriaId → ลำดับที่บันทึกสำเร็จล่าสุด — กันผลดึงที่ส่งออกก่อนหน้านั้นมาทับของใหม่
+};
+
+// คิวค้างส่งผูกกับ "ผลตรวจ + ผู้ใช้" — เครื่องที่ใช้ร่วมกัน คนถัดไปต้องไม่ส่งคำตอบของคนก่อนในชื่อตัวเอง
+const _teamDirtyKey = () => '5s_team_dirty_' + TeamAudit.auditId + '_' + ((AppState.user && AppState.user.userId) || '');
+function _persistTeamDirty() {
+  try {
+    if (Object.keys(TeamAudit.dirty).length) localStorage.setItem(_teamDirtyKey(), JSON.stringify(TeamAudit.dirty));
+    else localStorage.removeItem(_teamDirtyKey());
+  } catch(_) {}
+}
+function _isLockedError(msg) { return /ถูกล็อกแล้ว|locked/i.test(String(msg || '')); }
+const _sleep = ms => new Promise(r => setTimeout(r, ms));
+
 async function initAudit() {
   if (!Session.requireLogin()) return;
   await Session.refreshRole();   // role อาจถูกเปลี่ยนหลัง login — ต้องดึงใหม่ก่อนเช็ก
-  // viewer ตรวจ 5ส ไม่ได้ (RLS headers_insert บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
+  // viewer ตรวจ 5ส ไม่ได้ (DB บล็อกอยู่แล้ว — นี่กันไม่ให้เข้ามาเจอ error)
   if (isViewer()) { bounceHome('msg.viewer_no_audit'); return; }
   updateUserUI();
 
-  // ---------------------------------------------------------------
-  // กันตรวจซ้ำงานเดิม — เช็ก "ก่อน" ให้กรอก ไม่ใช่ตอนกด submit
-  //
-  // unique(schedule_id, auditor_id) จะปฏิเสธตอน submit อยู่แล้ว แต่ตอนนั้น
-  // ผู้ใช้กรอกครบ ~67 ข้อ + อัปโหลดรูปไปแล้ว (STEP 0 มาก่อน STEP 1)
-  // → เสียแรงเปล่า และเหลือรูปกำพร้าใน Storage
-  //
-  // เข้ามาได้ยังไง: getAreas() แนบ Schedule_ID ให้พื้นที่ที่ schedule ยัง pending
-  // ซึ่งยัง pending อยู่จนกว่าทีมจะตรวจครบ → คนที่ตรวจไปแล้วเลือกพื้นที่นั้นเองได้อีก
-  // ---------------------------------------------------------------
-  const _sid = getParam('scheduleId');
-  const _me  = AppState.user && AppState.user.userId;
-  if (_sid && _me) {
-    const dup = await API.get('hasAuditedSchedule', { scheduleId: _sid, auditorId: _me });
-    if (dup && dup.audited) {
-      UI.toast(I18n.t('err.already_audited'), 'error', 6000);
-      navigate(dup.auditId ? 'summary.html' : 'mytasks.html',
-               dup.auditId ? { auditId: dup.auditId } : {});
-      return;
-    }
-  }
+  // ปิดตรวจนอกงานมอบหมาย (2026-10-20) — ทุกทางเข้าต้องมี scheduleId
+  const scheduleId = getParam('scheduleId');
+  if (!scheduleId) { bounceHome('team.need_assignment'); return; }
 
-  const plantId  = getParam('plantId');
-  const areaId   = getParam('areaId');
-  const areaName = getParam('areaName');
-  const areaType = getParam('areaType');
-
-  if (!plantId || !areaId) { navigate('plant.html'); return; }
-
-  setEl('auditPlantName', getParam('plantName') || plantId);
-  // getParam() decode แล้ว ไม่ต้อง decode ซ้ำ
-  setEl('auditAreaName', areaName || areaId);
-
-  // ตั้ง audit date เป็นวันนี้
-  const todayInput = document.getElementById('auditDate');
-  if (todayInput) todayInput.value = new Date().toISOString().split('T')[0];
+  setEl('auditPlantName', getParam('plantName') || getParam('plantId') || '-');
+  setEl('auditAreaName', getParam('areaName') || getParam('areaId') || '-');
 
   UI.showLoading(I18n.t('msg.loading_checklist'));
   try {
-    const res = await API.get('getCriteria', { areaType });
-    UI.hideLoading();
+    const [openRes, critRes] = await Promise.all([
+      API.post('openTeamAudit', { scheduleId }),
+      API.get('getCriteria', {}),            // ฟอร์มเดียวทุกพื้นที่ — ไม่กรองตาม area_type
+    ]);
+    if (!openRes.success) {
+      UI.hideLoading();
+      UI.toast(openRes.error || I18n.t('msg.load_error'), 'error', 6000);
+      return;
+    }
+    if (openRes.lockedAt) {                  // ทีมส่งผลไปแล้ว → ดูผลแทน
+      UI.hideLoading();
+      navigate('summary.html', { auditId: openRes.auditId });
+      return;
+    }
+    if (!critRes.success) { UI.hideLoading(); UI.toast(critRes.error, 'error'); return; }
 
-    if (!res.success) { UI.toast(res.error, 'error'); return; }
-
-    AppState.criteria = res.data;
-
-    // เริ่มต้น answers ทุกข้อ
-    res.data.forEach(c => {
-      AppState.auditAnswers[c.Criteria_ID] = { score: null, na: false, remark: '', photos: [] };
+    Object.assign(TeamAudit, {
+      auditId: openRes.auditId, scheduleId,
+      nameById: openRes.nameById || {}, team: openRes.team || [],
     });
+    if (openRes.plantName) setEl('auditPlantName', openRes.plantName + (openRes.round ? ' · ' + openRes.round : ''));
+    if (openRes.areaName)  setEl('auditAreaName', openRes.areaName);
 
-    renderChecklist(res.grouped, res.data.length, res.totalMaxScore);
+    AppState.criteria = critRes.data;
+    AppState.auditAnswers = {};
+    TeamAudit.catOf = {};
+    critRes.data.forEach(c => {
+      AppState.auditAnswers[c.Criteria_ID] = { score: null, na: false, remark: '', photos: [] };
+      TeamAudit.catOf[c.Criteria_ID] = c.Category;
+    });
+    renderChecklist(critRes.grouped, critRes.data.length, critRes.totalMaxScore);
+    renderTeamBar();
+
+    // คำตอบที่ทีมทำไว้แล้ว (ดราฟ)
+    const ch = await API.get('teamAuditChanges', { auditId: TeamAudit.auditId, since: null });
+    UI.hideLoading();
+    if (ch.success) applyTeamChanges(ch, true);
+
+    // คิวที่ค้างจากครั้งก่อน (ปิดแอปตอนเน็ตหลุด) — ข้อที่เพื่อนแก้ทับไปแล้วระหว่างนั้นใช้ของเพื่อน ที่เหลือส่งต่อ
+    try {
+      const saved = JSON.parse(localStorage.getItem(_teamDirtyKey()) || '{}');
+      Object.entries(saved).forEach(([cid, fields]) => {
+        if (AppState.auditAnswers[cid]) TeamAudit.dirty[cid] = fields;
+      });
+      dropStaleDirty();
+      Object.entries(TeamAudit.dirty).forEach(([cid, fields]) => {
+        const a = AppState.auditAnswers[cid];
+        if ('score'  in fields) a.score  = fields.score;
+        if ('na'     in fields) a.na     = !!fields.na;
+        if ('remark' in fields) a.remark = fields.remark || '';
+        renderItemState(cid);
+      });
+      new Set(Object.keys(TeamAudit.dirty).map(cid => TeamAudit.catOf[cid])).forEach(cat => syncCategoryNA(cat, true));
+    } catch(_) {}
+
     updateProgress();
+    refreshSaveStatus();
+    if (Object.keys(TeamAudit.dirty).length) flushTeamQueue();
+    schedulePoll(TEAM_POLL_MIN);
+    document.addEventListener('visibilitychange', onTeamVisibility);
+    window.addEventListener('online', () => { flushTeamQueue(); pollTeam(); });
   } catch(err) {
     UI.hideLoading();
     UI.toast(I18n.t('msg.checklist_failed'), 'error');
   }
+}
+
+/** แถบทีม: รายชื่อกรรมการ + สถานะการบันทึก + ปุ่มรีเฟรช */
+function renderTeamBar() {
+  const el = document.getElementById('teamMembers');
+  if (!el) return;
+  const me = AppState.user && AppState.user.userId;
+  el.textContent = TeamAudit.team
+    .map(m => m.id === me ? `${m.name} (${I18n.t('team.you')})` : m.name).join(' · ');
+}
+
+function refreshSaveStatus() {
+  const el = document.getElementById('teamSaveStatus');
+  if (!el) return;
+  const n = Object.keys(TeamAudit.dirty).length + TeamAudit.photoBusy;
+  let cls, text;
+  if (TeamAudit.locked)          { cls = 'saved';   text = I18n.t('team.already_submitted'); }
+  else if (!n)                   { cls = 'saved';   text = '✓ ' + I18n.t('team.save_saved'); }
+  else if (TeamAudit.retryDelay) { cls = 'offline'; text = I18n.t('team.save_offline').replace('{n}', n); }
+  else                           { cls = 'saving';  text = I18n.t('team.save_saving'); }
+  el.className = 'team-save-status ' + cls;
+  el.textContent = text;
 }
 
 /**
@@ -2816,7 +2992,7 @@ function renderChecklist(grouped, totalItems, totalMaxScore) {
   setEl('totalItemCount', totalItems);
 
   container.innerHTML = Object.entries(grouped).map(([category, items]) => `
-    <div class="category-section mb-2" data-category="${escAttr(category)}" id="cat-${escHtml(category).replace(/\s/g,'_')}">
+    <div class="category-section mb-2" data-category="${escAttr(category)}">
       <div class="category-header" onclick="toggleAuditCategory(this)">
         <span><i class="bi bi-clipboard-check me-2"></i>${escHtml(category)}</span>
         <span class="category-head-right">
@@ -2837,74 +3013,353 @@ function renderChecklist(grouped, totalItems, totalMaxScore) {
  * Render แต่ละข้อใน Checklist
  */
 function renderCriteriaItem(c) {
+  const id = escAttr(c.Criteria_ID);
   return `
-    <div class="criteria-item" id="item-${c.Criteria_ID}">
+    <div class="criteria-item" id="item-${id}">
       <div class="criteria-question">
-        <span class="text-muted fw-medium me-1">${c.Criteria_ID}</span>
+        <span class="text-muted fw-medium me-1">${escHtml(c.Criteria_ID)}</span>
         ${escHtml(c.Sub_Category || '')} — ${escHtml(c.Question)}
       </div>
       <div class="criteria-description">${escHtml(c.Description || '')}</div>
 
       <div class="score-buttons">
-        <button class="score-btn" data-score="0" data-id="${c.Criteria_ID}"
-                onclick="setScore('${c.Criteria_ID}', 0, this)">
-          <span class="score-num">0</span>
-          <span class="score-label">${I18n.t('audit.score_0')}</span>
-        </button>
-        <button class="score-btn" data-score="1" data-id="${c.Criteria_ID}"
-                onclick="setScore('${c.Criteria_ID}', 1, this)">
-          <span class="score-num">1</span>
-          <span class="score-label">${I18n.t('audit.score_1')}</span>
-        </button>
-        <button class="score-btn" data-score="2" data-id="${c.Criteria_ID}"
-                onclick="setScore('${c.Criteria_ID}', 2, this)">
-          <span class="score-num">2</span>
-          <span class="score-label">${I18n.t('audit.score_2')}</span>
-        </button>
+        ${[0, 1, 2].map(n => `
+        <button class="score-btn" data-score="${n}" data-id="${id}"
+                onclick="setScore('${id}', ${n}, this)">
+          <span class="score-num">${n}</span>
+          <span class="score-label">${I18n.t('audit.score_' + n)}</span>
+        </button>`).join('')}
       </div>
 
       <div class="criteria-extras">
-        <textarea class="remark-input" placeholder="${I18n.t('audit.remark_ph')}"
-                  oninput="setRemark('${c.Criteria_ID}', this.value)"
+        <textarea class="remark-input" placeholder="${I18n.t('audit.remark_ph')}" maxlength="200"
+                  oninput="setRemark('${id}', this.value)"
                   rows="2"></textarea>
-        <button class="photo-btn" onclick="triggerPhoto('${c.Criteria_ID}')">
+        <button class="photo-btn" onclick="triggerPhoto('${id}')">
           <i class="bi bi-camera"></i> ${I18n.t('audit.photo_btn')}
-          <span id="photoCount-${c.Criteria_ID}" class="badge badge-primary" style="display:none">0</span>
+          <span id="photoCount-${id}" class="badge badge-primary" style="display:none">0</span>
         </button>
-        <div id="photoPreview-${c.Criteria_ID}" class="photo-preview-grid"></div>
+        <div id="photoPreview-${id}" class="photo-preview-grid"></div>
+        <div id="lastBy-${id}" class="criteria-lastby"></div>
       </div>
     </div>
   `;
+}
+
+/** วาดสถานะของข้อเดียวจาก AppState (ใช้ทั้งตอนเรากดเอง และตอนข้อมูลของเพื่อนเข้ามา) */
+function renderItemState(criteriaId) {
+  const a  = AppState.auditAnswers[criteriaId];
+  const el = document.getElementById('item-' + criteriaId);
+  if (!a || !el) return;
+
+  el.querySelectorAll('.score-btn').forEach(b =>
+    b.classList.toggle('selected', !a.na && a.score !== null && Number(b.dataset.score) === a.score));
+  el.style.borderLeft = (a.na || a.score === null) ? ''
+    : a.score === 0 ? '3px solid var(--danger)'
+    : a.score === 1 ? '3px solid var(--warning)'
+    :                 '3px solid var(--score-2)';
+  el.classList.toggle('na-disabled', !!a.na);
+  if (a.na || a.score !== null) el.classList.remove('unanswered');
+
+  const ta = el.querySelector('.remark-input');
+  if (ta && document.activeElement !== ta && ta.value !== (a.remark || '')) ta.value = a.remark || '';
+
+  renderPhotoPreviews(criteriaId);
+  renderLastBy(criteriaId);
+}
+
+function renderLastBy(criteriaId) {
+  const el = document.getElementById('lastBy-' + criteriaId);
+  if (!el) return;
+  const by = TeamAudit.lastBy[criteriaId];
+  if (!by) { el.textContent = ''; return; }
+  const me = AppState.user && AppState.user.userId;
+  const name = by === me ? I18n.t('team.you') : (TeamAudit.nameById[by] || '-');
+  el.textContent = `${I18n.t('team.last_by')} ${name}`;
+}
+
+/** หมวดนี้ N/A ทั้งหมวดไหม → ปุ่ม/การหุบ ต้องตรงกับข้อมูล (เพื่อนอาจเป็นคนกด) */
+function syncCategoryNA(category, instant) {
+  const section = Array.from(document.querySelectorAll('.category-section'))
+    .find(s => s.dataset.category === category);
+  if (!section) return;
+  const items = (AppState.criteria || []).filter(c => c.Category === category);
+  const allNA = items.length > 0 && items.every(c => AppState.auditAnswers[c.Criteria_ID]?.na);
+  const btn = section.querySelector('.cat-na-btn');
+  const was = section.classList.contains('cat-na');
+  if (btn) btn.classList.toggle('active', allNA);
+  section.classList.toggle('cat-na', allNA);
+  const label = section.querySelector('.cat-na-label');
+  if (label) label.textContent = I18n.t(allNA ? 'audit.na_on' : 'audit.na_btn');
+  if (was === allNA) return;
+  const body = section.querySelector('.category-body');
+  if (instant && body) {
+    body.classList.toggle('collapsed', allNA);
+    body.style.maxHeight = allNA ? '0px' : '';
+  } else {
+    slideToggle(body, allNA);
+  }
+  const icon = section.querySelector('.category-header .bi');
+  if (icon) icon.className = allNA ? 'bi bi-chevron-down' : 'bi bi-clipboard-check me-2';
+}
+
+/**
+ * รวมข้อมูลจาก DB (ของเพื่อน + ของเราที่บันทึกแล้ว) เข้าฟอร์ม
+ * ข้ามช่องที่เรายังมีค้างส่ง (ของเรากำลังจะทับอยู่แล้ว) และช่องหมายเหตุที่เรากำลังพิมพ์
+ * @returns {boolean} มีการเปลี่ยนจากคนอื่นไหม (ใช้ปรับความถี่การดึง)
+ */
+function applyTeamChanges(res, initial, startedSeq) {
+  if (!res || !res.success) return false;
+  // cursor มาจาก server (now − 5 วิ) ส่งกลับไปตรงๆ — ไม่ parse วันที่ฝั่ง browser
+  if (res.cursor) TeamAudit.cursor = res.cursor;
+  const me = AppState.user && AppState.user.userId;
+  let byOthers = false;
+  const cats = new Set();
+
+  (res.rows || []).forEach(r => {
+    const cid = r.criteria_id;
+    const a = AppState.auditAnswers[cid];
+    if (!a) return;                                      // เกณฑ์ที่ปิดใช้แล้ว
+    // ผลดึงที่ส่งออกไปก่อนเราบันทึกข้อนี้สำเร็จ = ข้อมูลเก่ากว่าของเรา → ข้าม (รอบถัดไปได้ของใหม่)
+    if (startedSeq && (TeamAudit.savedSeq[cid] || 0) > startedSeq) return;
+    TeamAudit.rowSrv[cid] = r;
+    const pending = TeamAudit.dirty[cid] || {};
+    const ta = document.querySelector(`#item-${cid} .remark-input`);
+    const typing = ta && document.activeElement === ta;
+    const before = JSON.stringify([a.score, a.na, a.remark, (a.photos || []).map(p => p.url)]);
+
+    if (!('score' in pending))           a.score  = (r.score === null || r.score === undefined) ? null : Number(r.score);
+    if (!('na' in pending))              a.na     = !!r.na;
+    if (!('remark' in pending) && !typing) a.remark = r.remark || '';
+    // รูป: DB คือความจริง (เพิ่ม/ลบผ่าน RPC atomic) + รูปของเราที่กำลังอัปโหลดอยู่
+    a.photos = (r.photo_urls || []).map(u => ({ url: u }))
+      .concat((a.photos || []).filter(p => !p.url));
+    TeamAudit.lastBy[cid] = r.updated_by || TeamAudit.lastBy[cid];
+
+    if (JSON.stringify([a.score, a.na, a.remark, a.photos.map(p => p.url)]) !== before) {
+      if (!initial && r.updated_by !== me) byOthers = true;
+      cats.add(TeamAudit.catOf[cid]);
+    }
+    renderItemState(cid);
+  });
+  cats.forEach(cat => syncCategoryNA(cat, initial));
+  if (initial) Object.values(TeamAudit.catOf).filter((v, i, arr) => arr.indexOf(v) === i)
+    .forEach(cat => syncCategoryNA(cat, true));
+
+  if (res.header && res.header.locked_at) onTeamLocked();
+  updateProgress();
+  return byOthers;
 }
 
 /**
  * บันทึกคะแนนแต่ละข้อ
  */
 function setScore(criteriaId, score, btn) {
-  if (AppState.auditAnswers[criteriaId]?.na) return;   // ข้อที่ตัด N/A ให้คะแนนไม่ได้
-  AppState.auditAnswers[criteriaId].score = score;
-
-  // อัปเดต UI ปุ่มคะแนน
-  const item = document.getElementById('item-' + criteriaId);
-  if (item) {
-    item.querySelectorAll('.score-btn').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
-
-    // Highlight กรอบ
-    item.style.borderLeft = score === 0 ? '3px solid var(--danger)' :
-                            score === 1 ? '3px solid var(--warning)' :
-                            '3px solid var(--score-2)';
-    item.classList.remove('unanswered');
-  }
-
+  const a = AppState.auditAnswers[criteriaId];
+  if (!a || a.na || TeamAudit.locked) return;     // ข้อที่ตัด N/A ให้คะแนนไม่ได้
+  a.score = score;
+  TeamAudit.lastBy[criteriaId] = AppState.user && AppState.user.userId;
+  renderItemState(criteriaId);
+  markTeamDirty(criteriaId, { score });
   updateProgress();
+  scheduleFlush(300);
 }
 
 /**
- * บันทึกหมายเหตุ
+ * บันทึกหมายเหตุ (รอพิมพ์เสร็จ ~0.8 วิ ค่อยส่ง)
  */
 function setRemark(criteriaId, value) {
-  AppState.auditAnswers[criteriaId].remark = value;
+  const a = AppState.auditAnswers[criteriaId];
+  if (!a || TeamAudit.locked) return;
+  a.remark = String(value || '').slice(0, 200);
+  markTeamDirty(criteriaId, { remark: a.remark });
+  scheduleFlush(800);
+}
+
+function markTeamDirty(criteriaId, fields) {
+  // แทนด้วย object ใหม่ทุกครั้ง — flush ใช้ identity เช็คว่าถูกแก้ซ้ำระหว่างส่งไหม
+  // _base = updated_at ของแถวใน DB ตอนเราเริ่มแก้ (ไม่ถูกส่งขึ้น DB — saveTeamAnswers เลือกเฉพาะ score/na/remark)
+  const prev = TeamAudit.dirty[criteriaId];
+  const srv  = TeamAudit.rowSrv[criteriaId];
+  const base = prev ? (prev._base || null) : (srv ? srv.updated_at : null);
+  TeamAudit.dirty[criteriaId] = Object.assign({}, prev, fields, { _base: base });
+  TeamAudit.lastChangeAt = Date.now();
+  _persistTeamDirty();
+  refreshSaveStatus();
+}
+
+/**
+ * คำตอบค้างส่ง (เน็ตหลุด/ปิดแอป) ที่เพื่อนแก้ทับไปแล้วระหว่างนั้น → ใช้ของเพื่อน ไม่ส่งของเราทับ
+ * ตัดสินจาก updated_at ของแถวใน DB ตอนเราเริ่มแก้ (_base) เทียบกับล่าสุด และคนแก้ล่าสุดไม่ใช่เรา
+ * (เป็นข้อยกเว้นเดียวของ "คนกดล่าสุดชนะ": ของที่ค้างอยู่ในเครื่องไม่ได้ "กดล่าสุด" จริง แค่ส่งถึงทีหลัง)
+ */
+function dropStaleDirty() {
+  const me = AppState.user && AppState.user.userId;
+  const cats = new Set();
+  let dropped = 0;
+  Object.keys(TeamAudit.dirty).forEach(cid => {
+    const srv = TeamAudit.rowSrv[cid];
+    if (!srv || srv.updated_by === me) return;
+    if ((TeamAudit.dirty[cid]._base || null) === (srv.updated_at || null)) return;
+    delete TeamAudit.dirty[cid];
+    dropped++;
+    const a = AppState.auditAnswers[cid];
+    if (a) {
+      a.score  = (srv.score === null || srv.score === undefined) ? null : Number(srv.score);
+      a.na     = !!srv.na;
+      a.remark = srv.remark || '';
+      renderItemState(cid);
+      cats.add(TeamAudit.catOf[cid]);
+    }
+  });
+  if (!dropped) return;
+  _persistTeamDirty();
+  cats.forEach(cat => syncCategoryNA(cat, false));
+  updateProgress();
+  refreshSaveStatus();
+  UI.toast(I18n.t('team.stale_dropped').replace('{n}', dropped), 'warning', 6000);
+}
+
+function scheduleFlush(ms) {
+  clearTimeout(TeamAudit.flushTimer);
+  TeamAudit.flushTimer = setTimeout(flushTeamQueue, ms);
+}
+
+/**
+ * ส่งคิวคำตอบที่ค้างทั้งหมด — ล้ม (เน็ตหลุด) → เก็บไว้ลองใหม่แบบถอยเวลา (สูงสุด 30 วิ)
+ * กลับมาจากเน็ตหลุด (retryDelay > 0) → ดึงของเพื่อนก่อน แล้วทิ้งข้อที่เพื่อนแก้ทับไปแล้ว (dropStaleDirty)
+ */
+async function flushTeamQueue() {
+  if (TeamAudit.inflight || TeamAudit.locked || !TeamAudit.auditId) return;
+  if (!Object.keys(TeamAudit.dirty).length) { refreshSaveStatus(); return; }
+
+  TeamAudit.inflight = true;
+  let res = null, ids = [];
+  const snapshot = {};
+  try {
+    if (TeamAudit.retryDelay) {
+      const ch = await API.get('teamAuditChanges', { auditId: TeamAudit.auditId, since: TeamAudit.cursor });
+      if (!ch.success) res = ch;
+      else { applyTeamChanges(ch, false); dropStaleDirty(); }
+    }
+    if (!res) {
+      ids = Object.keys(TeamAudit.dirty);
+      ids.forEach(id => { snapshot[id] = TeamAudit.dirty[id]; });
+      refreshSaveStatus();
+      res = ids.length
+        ? await API.post('saveTeamAnswers', {
+            auditId: TeamAudit.auditId,
+            rows: ids.map(id => Object.assign({ criteriaId: id }, snapshot[id])),
+          })
+        : { success: true };
+    }
+  } catch (err) {
+    res = { success: false, error: err.message };
+  } finally {
+    TeamAudit.inflight = false;
+  }
+
+  if (res.success) {
+    const seq = ++TeamAudit.seq;
+    ids.forEach(id => {
+      TeamAudit.savedSeq[id] = seq;
+      if (TeamAudit.dirty[id] === snapshot[id]) delete TeamAudit.dirty[id];
+    });
+    _persistTeamDirty();
+    TeamAudit.retryDelay = 0;
+    refreshSaveStatus();
+    if (Object.keys(TeamAudit.dirty).length) { scheduleFlush(0); return; }
+    if (ids.length) schedulePoll(1500);      // ดึงพ่วง: เห็นของเพื่อนเร็วขึ้นหลังเราบันทึก
+  } else if (_isLockedError(res.error)) {
+    onTeamLocked();
+  } else {
+    TeamAudit.retryDelay = Math.min((TeamAudit.retryDelay || 1000) * 2, 30000);
+    refreshSaveStatus();
+    scheduleFlush(TeamAudit.retryDelay);
+  }
+}
+
+/** รอจนคิวว่าง (ใช้ก่อนส่งผล) — คืน true ถ้าส่งครบ */
+async function flushTeamQueueAndWait(timeoutMs = 20000) {
+  const until = Date.now() + timeoutMs;
+  clearTimeout(TeamAudit.flushTimer);
+  while (Date.now() < until && !TeamAudit.locked) {
+    if (!TeamAudit.inflight) {
+      if (!Object.keys(TeamAudit.dirty).length) return true;
+      await flushTeamQueue();
+      if (TeamAudit.retryDelay) return false;          // ล้ม → ไม่รอวนต่อ
+    } else {
+      await _sleep(200);
+    }
+  }
+  return !Object.keys(TeamAudit.dirty).length;
+}
+
+function schedulePoll(ms) {
+  clearTimeout(TeamAudit.pollTimer);
+  if (TeamAudit.locked) return;
+  TeamAudit.pollTimer = setTimeout(pollTeam, ms);
+}
+
+/** ดึงเฉพาะข้อที่เปลี่ยน · ปรับความถี่: มีความเคลื่อนไหวใน 1 นาที → 10 วิ · เงียบ → ยืดทีละ 5 วิ ถึง 30 วิ */
+async function pollTeam() {
+  if (TeamAudit.locked || !TeamAudit.auditId) return;
+  if (document.hidden) return;                // แท็บไม่ active → หยุด (visibilitychange จะปลุก)
+  if (TeamAudit.polling) return;
+  TeamAudit.polling = true;
+  const startedSeq = ++TeamAudit.seq;
+  try {
+    const res = await API.get('teamAuditChanges', { auditId: TeamAudit.auditId, since: TeamAudit.cursor });
+    if (res.success && applyTeamChanges(res, false, startedSeq)) TeamAudit.lastChangeAt = Date.now();
+  } catch (err) {
+    console.warn('[team] poll error:', err && err.message);   // ไม่ให้การดึงหยุดถาวรเพราะ error ครั้งเดียว
+  } finally {
+    TeamAudit.polling = false;
+    const idle = Date.now() - (TeamAudit.lastChangeAt || 0);
+    TeamAudit.pollDelay = idle < TEAM_IDLE_MS
+      ? TEAM_POLL_MIN
+      : Math.min(TeamAudit.pollDelay + TEAM_POLL_STEP, TEAM_POLL_MAX);
+    schedulePoll(TeamAudit.pollDelay);
+  }
+}
+
+function onTeamVisibility() {
+  if (document.hidden || TeamAudit.locked) return;
+  flushTeamQueue();
+  pollTeam();
+}
+
+/** ปุ่มรีเฟรช — ดึงทันทีและกลับไปความถี่ปกติ */
+function teamRefreshNow() {
+  TeamAudit.lastChangeAt = Date.now();
+  flushTeamQueue();
+  pollTeam();
+}
+
+/** เพื่อนในทีมส่งผลแล้ว (หรือเราเพิ่งส่ง) → หยุดทุกอย่าง แล้วไปหน้าผล */
+function onTeamLocked() {
+  if (TeamAudit.locked) return;
+  TeamAudit.locked = true;
+  clearTimeout(TeamAudit.pollTimer);
+  clearTimeout(TeamAudit.flushTimer);
+  const lost = Object.keys(TeamAudit.dirty).length;
+  TeamAudit.dirty = {};
+  _persistTeamDirty();
+  refreshSaveStatus();
+  document.querySelectorAll('#checklistContainer button, #checklistContainer textarea')
+    .forEach(el => { el.disabled = true; });
+  const btn = document.getElementById('submitBtn');
+  if (btn) btn.disabled = true;
+  if (_auditSubmitting) return;               // เราเป็นคนส่งเอง → submitAudit พาไปหน้าผลเอง
+  UI.toast(I18n.t(lost ? 'team.locked_lost' : 'team.already_submitted'), 'info', 4000);
+  setTimeout(() => navigate('summary.html', { auditId: TeamAudit.auditId }), 2500);
+}
+
+/** ปุ่มย้อนกลับ — คำตอบบันทึกอัตโนมัติแล้ว ถามเฉพาะตอนยังมีค้างส่ง */
+function auditBack() {
+  const pending = Object.keys(TeamAudit.dirty).length + TeamAudit.photoBusy;
+  if (pending && !confirm(I18n.t('team.back_confirm'))) return;
+  history.back();
 }
 
 /**
@@ -2927,16 +3382,17 @@ function updateProgress() {
   renderRemainingPanel(unanswered);
 
   const submitBtn = document.getElementById('submitBtn');
-  if (submitBtn) {
+  if (submitBtn && !TeamAudit.locked) {
     if (total === 0) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = I18n.t('audit.no_criteria_btn');
+      // ทุกหมวด N/A — ส่งได้ (ผลจะเป็น "ไม่มีข้อประเมิน") แต่ต้องตั้งใจกด
+      submitBtn.disabled = false;
+      submitBtn.textContent = I18n.t('team.submit_btn');
     } else if (answered < total) {
       submitBtn.disabled = false;
       submitBtn.textContent = `${I18n.t('audit.answered_prefix')} ${answered}/${total} ${I18n.t('audit.answered_suffix')}`;
     } else {
       submitBtn.disabled = false;
-      submitBtn.textContent = I18n.t('audit.submit_btn');
+      submitBtn.textContent = I18n.t('team.submit_btn');
     }
   }
 }
@@ -3038,16 +3494,15 @@ function toggleAuditCategory(header) {
 
 /**
  * กด "ไม่มีในพื้นที่" ที่ระดับหมวด → ทุกข้อในหมวดถูกตัดออกจากการคำนวณคะแนน (na=true)
- * กดซ้ำ = ยกเลิก (na=false, ต้องให้คะแนนใหม่)
+ * กดซ้ำ = ยกเลิก (na=false, ต้องให้คะแนนใหม่) · ทีมเห็นผลเหมือนกันผ่านการดึงรอบถัดไป
  */
 function toggleCategoryNA(btn) {
+  if (TeamAudit.locked) return;
   const section = btn.closest('.category-section');
   if (!section) return;
   const category = section.dataset.category;
   const willNA   = !btn.classList.contains('active');
-
-  btn.classList.toggle('active', willNA);
-  section.classList.toggle('cat-na', willNA);
+  const me = AppState.user && AppState.user.userId;
 
   (AppState.criteria || [])
     .filter(c => c.Category === category)
@@ -3055,35 +3510,22 @@ function toggleCategoryNA(btn) {
       const a = AppState.auditAnswers[c.Criteria_ID];
       if (!a) return;
       a.na = willNA;
-      if (willNA) a.score = null;   // เคลียร์คะแนนเดิมเมื่อกลายเป็น N/A
-
-      const el = document.getElementById('item-' + c.Criteria_ID);
-      if (el) {
-        el.classList.toggle('na-disabled', willNA);
-        if (willNA) {
-          el.querySelectorAll('.score-btn').forEach(b => b.classList.remove('selected'));
-          el.style.borderLeft = '';
-          el.classList.remove('unanswered');
-        }
-      }
+      a.score = null;               // ตัด N/A = เคลียร์คะแนน · ยกเลิก N/A = ต้องให้คะแนนใหม่
+      TeamAudit.lastBy[c.Criteria_ID] = me;
+      markTeamDirty(c.Criteria_ID, { na: willNA, score: null });
+      renderItemState(c.Criteria_ID);
     });
 
-  const label = btn.querySelector('.cat-na-label');
-  if (label) label.textContent = I18n.t(willNA ? 'audit.na_on' : 'audit.na_btn');
-
-  // หุบข้อย่อยด้วยอนิเมชั่นเมื่อตัด N/A / คลี่กลับเมื่อยกเลิก
-  const body = section.querySelector('.category-body');
-  slideToggle(body, willNA);
-  const icon = section.querySelector('.category-header .bi');
-  if (icon) icon.className = willNA ? 'bi bi-chevron-down' : 'bi bi-clipboard-check me-2';
-
+  syncCategoryNA(category, false);
   updateProgress();
+  scheduleFlush(300);
 }
 
 // ============================================================
-// PHOTO UPLOAD
+// PHOTO UPLOAD — แบบทีม: อัปโหลดทันทีที่แนบ แล้วผูกกับข้อผ่าน RPC (atomic)
 // ============================================================
 function triggerPhoto(criteriaId) {
+  if (TeamAudit.locked) return;
   const input = document.createElement('input');
   input.type   = 'file';
   input.accept = 'image/*';
@@ -3101,29 +3543,44 @@ function triggerPhoto(criteriaId) {
 }
 
 async function addPhoto(criteriaId, file) {
+  const a = AppState.auditAnswers[criteriaId];
+  if (!a || TeamAudit.locked) return;
   const compressed = await compressImage(file, 1024, 0.8);
 
-  if (!AppState.auditAnswers[criteriaId]) {
-    AppState.auditAnswers[criteriaId] = { score: null, remark: '', photos: [] };
-  }
-  if (!AppState.auditAnswers[criteriaId].photos) {
-    AppState.auditAnswers[criteriaId].photos = [];
-  }
-
-  AppState.auditAnswers[criteriaId].photos.push({
-    filename: `photo_${criteriaId}_${Date.now()}.jpg`,
-    preview: compressed,
-    uploaded: false,
-    url: null,
-  });
-
-  // Re-render ทั้งหมด เพื่อให้ index ถูกต้องเสมอ
+  // โชว์ภาพตัวอย่างระหว่างอัปโหลด (ยังไม่มี url)
+  const tmp = { preview: compressed, url: null };
+  a.photos = (a.photos || []).concat(tmp);
+  TeamAudit.photoBusy++;
   renderPhotoPreviews(criteriaId);
+  refreshSaveStatus();
+
+  let ok = false;
+  const url = await uploadToImgBB(compressed);
+  if (url && !TeamAudit.locked) {
+    const r = await API.post('addTeamPhoto', { auditId: TeamAudit.auditId, criteriaId, url });
+    if (r.success) {
+      ok = true;
+      a.photos = (r.urls || []).map(u => ({ url: u }))
+        .concat((a.photos || []).filter(p => !p.url && p !== tmp));
+      TeamAudit.lastBy[criteriaId] = AppState.user && AppState.user.userId;
+      TeamAudit.savedSeq[criteriaId] = ++TeamAudit.seq;
+      TeamAudit.lastChangeAt = Date.now();
+    } else if (_isLockedError(r.error)) {
+      onTeamLocked();
+    }
+  }
+  if (!ok) {
+    a.photos = (a.photos || []).filter(p => p !== tmp);
+    if (!TeamAudit.locked) UI.toast(I18n.t('team.photo_failed'), 'error');
+  }
+  TeamAudit.photoBusy--;
+  renderItemState(criteriaId);
+  refreshSaveStatus();
 }
 
 /**
  * Re-render photo preview grid — ทำให้ index ของ removePhoto ถูกต้องเสมอ
- * แก้ Bug: index stale หลัง splice
+ * รูปจาก DB ผ่าน safeUrl เสมอ (กัน javascript:/data: ที่อาจถูกเขียนลง photo_urls)
  */
 function renderPhotoPreviews(criteriaId) {
   const previewGrid = document.getElementById('photoPreview-' + criteriaId);
@@ -3132,14 +3589,17 @@ function renderPhotoPreviews(criteriaId) {
 
   const photos = AppState.auditAnswers[criteriaId]?.photos || [];
 
-  previewGrid.innerHTML = photos.map((photo, i) => `
-    <div class="photo-thumb">
-      <img src="${photo.preview}" alt="${I18n.t('img.alt_photo')}">
-      <button class="remove-photo" onclick="removePhoto('${criteriaId}', ${i})">
+  previewGrid.innerHTML = photos.map((photo, i) => {
+    const src = photo.url ? safeUrl(photo.url) : photo.preview;
+    if (!src) return '';
+    return `
+    <div class="photo-thumb${photo.url ? '' : ' uploading'}">
+      <img src="${escAttr(src)}" alt="${I18n.t('img.alt_photo')}">
+      ${photo.url ? `<button class="remove-photo" onclick="removePhoto('${escAttr(criteriaId)}', ${i})">
         <i class="bi bi-x"></i>
-      </button>
-    </div>
-  `).join('');
+      </button>` : ''}
+    </div>`;
+  }).join('');
 
   if (countBadge) {
     countBadge.textContent   = photos.length;
@@ -3147,21 +3607,30 @@ function renderPhotoPreviews(criteriaId) {
   }
 }
 
-function removePhoto(criteriaId, idx) {
-  AppState.auditAnswers[criteriaId]?.photos?.splice(idx, 1);
-  // Re-render เพื่อ update index ใหม่ทั้งหมด
-  renderPhotoPreviews(criteriaId);
+async function removePhoto(criteriaId, idx) {
+  const a = AppState.auditAnswers[criteriaId];
+  const photo = a && a.photos && a.photos[idx];
+  if (!photo || !photo.url || TeamAudit.locked) return;
+  if (!confirm(I18n.t('team.photo_remove_confirm'))) return;
+  const r = await API.post('removeTeamPhoto', { auditId: TeamAudit.auditId, criteriaId, url: photo.url });
+  if (r.success) {
+    a.photos = (r.urls || []).map(u => ({ url: u })).concat((a.photos || []).filter(p => !p.url));
+    TeamAudit.lastBy[criteriaId] = AppState.user && AppState.user.userId;
+    TeamAudit.savedSeq[criteriaId] = ++TeamAudit.seq;
+    TeamAudit.lastChangeAt = Date.now();
+    renderItemState(criteriaId);
+  } else if (_isLockedError(r.error)) {
+    onTeamLocked();
+  } else {
+    UI.toast(r.error || I18n.t('msg.error_prefix'), 'error');
+  }
 }
 
 /**
- * Compress image ก่อน upload
- */
-/**
- * Upload รูปไปยัง imgBB (ฟรี, ไม่มี CORS)
- * รับ base64 string → คืน URL ของรูปบน imgBB
+ * อัปโหลดรูปขึ้น Supabase Storage (ชื่อฟังก์ชันเดิมจากสมัยใช้ imgBB)
+ * รับ base64 string → คืน public URL หรือ null ถ้าล้ม
  */
 async function uploadToImgBB(base64) {
-  // ชื่อเดิมเพื่อไม่ต้องแก้ submitAudit() — จริง ๆ อัปโหลดขึ้น Supabase Storage
   try {
     const b64   = base64.replace(/^data:[^;]+;base64,/, '');
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
@@ -3178,6 +3647,9 @@ async function uploadToImgBB(base64) {
   }
 }
 
+/**
+ * Compress image ก่อน upload
+ */
 function compressImage(file, maxSize = 1024, quality = 0.8) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -3199,171 +3671,64 @@ function compressImage(file, maxSize = 1024, quality = 0.8) {
 }
 
 // ============================================================
-// SUBMIT AUDIT
+// SUBMIT AUDIT — ส่งผลของทีม (ใครในทีมกดก็ได้)
 // ============================================================
 let _auditSubmitting = false;
 async function submitAudit() {
-  if (_auditSubmitting) return;   // กันกดซ้ำ (double-submit → ผลตรวจซ้ำ)
-  // Guard: ป้องกัน submit เมื่อไม่มี criteria
-  if (!AppState.criteria || AppState.criteria.length === 0) {
-    UI.toast(I18n.t('msg.no_criteria'), 'error', 5000);
-    return;
-  }
-
-  // Guard: session หลุด/ไม่มี userId → ห้าม submit (กัน auditor_id='unknown' ที่ insert ไม่ผ่าน RLS)
+  if (_auditSubmitting || TeamAudit.locked || !TeamAudit.auditId) return;   // กันกดซ้ำ
   if (!AppState.user || !AppState.user.userId) {
-    UI.toast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'error', 5000);
+    UI.toast(I18n.t('team.session_expired'), 'error', 5000);
     navigate('index.html');
     return;
   }
-
-  const unanswered = getUnansweredCriteria();
-
-  if (unanswered.length > 0) {
-    markUnansweredItems(unanswered);
-    renderRemainingPanel(unanswered);
-    UI.toast(`${I18n.t('audit.unanswered_prefix')} ${unanswered.length} ${I18n.t('audit.answered_suffix')}`, 'warning', 4500);
-    jumpToCriteria(unanswered[0].Criteria_ID);
-    return;
-  }
-
-  const ok = await showConfirm(I18n.t('audit.confirm_title'), I18n.t('audit.confirm_msg'));
-  if (!ok) return;
+  if (TeamAudit.photoBusy > 0) { UI.toast(I18n.t('team.photo_wait'), 'warning'); return; }
 
   _auditSubmitting = true;
   try {
-    // ============================================================
-    // STEP 0: Upload รูปภาพทั้งหมดไปยัง imgBB ก่อน
-    const totalPhotos = Object.values(AppState.auditAnswers)
-      .reduce((sum, a) => sum + (a.photos?.length || 0), 0);
-
-    console.log('[Submit] 📸 จำนวนรูปทั้งหมด:', totalPhotos);
-    let photoFail = 0;
-
-    if (totalPhotos > 0) {
-      UI.showLoading(`${I18n.t('msg.uploading')} (0/${totalPhotos})`);
-      let uploaded = 0;
-
-      for (const [criteriaId, answer] of Object.entries(AppState.auditAnswers)) {
-        for (const photo of (answer.photos || [])) {
-          console.log(`[Submit] รูปของ ${criteriaId}: uploaded=${photo.uploaded}, hasPreview=${!!photo.preview}, previewLen=${photo.preview?.length || 0}`);
-          if (!photo.uploaded && photo.preview) {
-            const url = await uploadToImgBB(photo.preview);
-            if (url) {
-              photo.url      = url;
-              photo.uploaded = true;
-              console.log(`[Submit] ✅ รูป ${criteriaId} → ${url}`);
-            } else {
-              photoFail++;
-              console.warn(`[Submit] ⚠️ Upload รูป ${criteriaId} ล้มเหลว`);
-            }
-            uploaded++;
-            UI.showLoading(`${I18n.t('msg.uploading')} (${uploaded}/${totalPhotos})`);
-          }
-        }
-      }
-    } else {
-      console.log('[Submit] ℹ️ ไม่มีรูปภาพ — ข้ามขั้นตอน Upload');
-    }
-
-    if (photoFail > 0) {
+    // 1) ส่งคำตอบที่ค้างให้หมด แล้วดึงของเพื่อนล่าสุดก่อนเช็คความครบ
+    UI.showLoading(I18n.t('team.syncing'));
+    const flushed = await flushTeamQueueAndWait();
+    if (!flushed) {
       UI.hideLoading();
-      const _en = I18n.getLang() === 'en';
-      const cont = await showConfirm(
-        _en ? 'Some photos failed to upload' : 'อัปโหลดรูปบางส่วนไม่สำเร็จ',
-        _en ? (photoFail + ' photo(s) could not be uploaded (network issue). Continue without them?')
-            : ('มี ' + photoFail + ' รูปที่อัปโหลดไม่สำเร็จ (อาจเน็ตหลุด) — ดำเนินการต่อโดยไม่มีรูปเหล่านั้น?'));
-      if (!cont) return;
+      if (!TeamAudit.locked) UI.toast(I18n.t('team.sync_failed'), 'error', 6000);
+      return;
     }
+    const ch = await API.get('teamAuditChanges', { auditId: TeamAudit.auditId, since: TeamAudit.cursor });
+    UI.hideLoading();
+    if (ch.success) applyTeamChanges(ch, false);
+    if (TeamAudit.locked) { navigate('summary.html', { auditId: TeamAudit.auditId }); return; }
 
-    // STEP 1: สร้าง Audit Header → รับ auditId กลับมา
-    // ============================================================
-    UI.showLoading(I18n.t('msg.loading_step1'));
-
-    const headerRes = await API.get('submitAuditHeader', {
-      plantId:    getParam('plantId'),
-      areaId:     getParam('areaId'),
-      auditorId:  AppState.user?.userId || 'unknown',
-      auditDate:  document.getElementById('auditDate')?.value || new Date().toISOString().split('T')[0],
-      // ผูกกับงานที่มอบหมาย (ว่าง = ตรวจนอกรอบ เลือกพื้นที่เอง)
-      // audit_round ไม่ส่งจาก client — trigger ก๊อปจาก schedules ให้เอง (ปลอมไม่ได้)
-      scheduleId: getParam('scheduleId') || '',
-      totalItems: AppState.criteria.length
-    });
-
-    if (!headerRes.success) {
-      UI.hideLoading();
-      UI.toast(headerRes.error || I18n.t('msg.header_failed'), 'error');
+    // 2) ต้องตอบครบทุกข้อ (ให้คะแนน หรือ N/A) — DB เช็คซ้ำอีกชั้นตอนล็อก
+    const unanswered = getUnansweredCriteria();
+    if (unanswered.length > 0) {
+      markUnansweredItems(unanswered);
+      renderRemainingPanel(unanswered);
+      UI.toast(`${I18n.t('audit.unanswered_prefix')} ${unanswered.length} ${I18n.t('audit.answered_suffix')}`, 'warning', 4500);
+      jumpToCriteria(unanswered[0].Criteria_ID);
       return;
     }
 
-    const auditId = headerRes.auditId;
+    const ok = await showConfirm(I18n.t('team.confirm_title'), I18n.t('team.confirm_msg'));
+    if (!ok) return;
 
-    // Rollback helper — ลบ header/details ที่ค้าง ถ้า submit ล้มเหลวกลางทาง (atomic)
-    const rollbackAudit = async (reason) => {
-      console.warn('[Submit] rollback audit', auditId, reason);
-      try { await API.get('deleteAudit', { auditId }); }
-      catch (e) { console.error('[Submit] rollback failed:', e.message); }
-    };
-
-    // ============================================================
-    // STEP 2: ส่ง Details เป็น Chunk ทีละ 15 ข้อ
-    // แก้ปัญหา URL ยาวเกิน (400 Bad Request)
-    // ============================================================
-    const details = AppState.criteria.map(c => {
-      const a = AppState.auditAnswers[c.Criteria_ID] || {};
-      return {
-        criteriaId: c.Criteria_ID,
-        na:         !!a.na,
-        score:      a.na ? 0 : (a.score ?? 0),
-        remark:     (a.remark || '').slice(0, 200),
-        photoUrl:   (a.photos || []).map(p => p.url).filter(Boolean).join(',')
-      };
-    });
-
-    const CHUNK_SIZE = 15;
-    const totalChunks = Math.ceil(details.length / CHUNK_SIZE);
-
-    for (let i = 0; i < details.length; i += CHUNK_SIZE) {
-      const chunk     = details.slice(i, i + CHUNK_SIZE);
-      const chunkNum  = Math.floor(i / CHUNK_SIZE) + 1;
-
-      UI.showLoading(`${I18n.t('msg.saving_chunk')} (${chunkNum}/${totalChunks})`);
-
-      const detailRes = await API.get('submitAuditDetails', {
-        auditId: auditId,
-        details: JSON.stringify(chunk)
-      });
-
-      if (!detailRes.success) {
-        await rollbackAudit('detail chunk ' + chunkNum + ' failed');
-        UI.hideLoading();
-        console.error('[Submit] chunk', chunkNum, 'error:', detailRes.error, 'payload:', chunk);
-        UI.toast(I18n.t('msg.detail_failed') + chunkNum + (detailRes.error ? ' — ' + detailRes.error : ''), 'error', 8000);
-        return;
-      }
-    }
-
-    // ============================================================
-    // STEP 3: Finalize — คำนวณคะแนนรวมและ Update Header
-    // ============================================================
+    // 3) ล็อก → อ่านคะแนนที่ trigger คำนวณไว้
     UI.showLoading(I18n.t('msg.loading_step3'));
-
-    const finalRes = await API.get('finalizeAudit', { auditId });
-
+    const res = await API.post('lockTeamAudit', { auditId: TeamAudit.auditId });
     UI.hideLoading();
-
-    if (finalRes.success) {
-      // ไม่ต้อง mark schedule เอง — trigger trg_sync_sched_status ทำให้แล้ว (ส่วน H)
-      // (เดิมเรียก completeSchedule() ที่นี่ ซึ่งปิดงานทั้งแถวให้ทุกคน)
-      logEvent('SUBMIT_AUDIT', `ส่งผลตรวจ ${getParam('areaName') || getParam('areaId') || ''} · ${finalRes.percent}%`, 'audit_headers', finalRes.auditId);
-      sessionStorage.setItem('lastAuditResult', JSON.stringify(finalRes));
-      navigate('summary.html', { auditId: finalRes.auditId });
-    } else {
-      await rollbackAudit('finalize failed');
-      UI.toast(finalRes.error || I18n.t('msg.finalize_failed'), 'error');
+    if (!res.success) {
+      // เพื่อนอาจเพิ่งยกเลิก N/A/เคลียร์คะแนนหลังเราเช็ค → ดึงใหม่ทั้งหมดแล้วชี้ข้อที่ขาด
+      UI.toast(res.error || I18n.t('msg.finalize_failed'), 'error', 6000);
+      const all = await API.get('teamAuditChanges', { auditId: TeamAudit.auditId, since: null });
+      if (all.success) applyTeamChanges(all, false);
+      const un = getUnansweredCriteria();
+      if (un.length) { markUnansweredItems(un); jumpToCriteria(un[0].Criteria_ID); }
+      return;
     }
 
+    onTeamLocked();
+    logEvent('SUBMIT_AUDIT', `ส่งผลตรวจทีม ${getParam('areaName') || getParam('areaId') || ''} · ${res.percent}%`, 'audit_headers', res.auditId);
+    sessionStorage.setItem('lastAuditResult', JSON.stringify(res));
+    navigate('summary.html', { auditId: res.auditId });
   } catch(err) {
     UI.hideLoading();
     console.error('submitAudit error:', err);
@@ -3408,6 +3773,16 @@ async function initSummary() {
   }
 
   if (!result) { navigate('home.html'); return; }
+
+  // ผู้ตรวจ — แบบทีมโชว์รายชื่อทีม ณ ตอนส่ง (ดึงแยก ไม่บล็อกการแสดงคะแนน)
+  if (result.auditId) {
+    API.get('getAuditDetail', { auditId: result.auditId }).then(r => {
+      if (!r || !r.success || !r.auditors) return;
+      setEl('resultTeam', r.auditors);
+      const row = document.getElementById('resultTeamRow');
+      if (row) row.style.display = 'block';
+    }).catch(() => {});
+  }
 
   const pct    = parseFloat(result.percent) || 0;
   const noItems = (Number(result.maxScore) || 0) === 0;   // มาร์ค N/A ทั้งหมด → ไม่มีข้อประเมิน
@@ -4428,6 +4803,13 @@ let _schedSelected = new Set();   // Area_IDs ที่ติ๊กเลือ�
 let _schedAudPickSet = new Set(); // ผู้ตรวจที่เลือกในโหมด "ตามคน" (หลายคนได้)
 let _bulkAuds      = new Set();   // ผู้ตรวจที่เลือกใน bulk modal (โหมดตามพื้นที่)
 
+// งานตรวจแบบทีม (Round 2+): กรรมการ 2–3 คนต่อพื้นที่ (ตัดสินใจ 2026-10-20)
+const TEAM_SIZE_MIN = 2;
+const TEAM_SIZE_MAX = 3;
+const _teamSizeOk = n => n >= TEAM_SIZE_MIN && n <= TEAM_SIZE_MAX;
+// งานทีมที่ส่งผลแล้ว → ล็อกรายชื่อ (ชื่อในผลตรวจถูกบันทึกไว้แล้ว แก้งานไปก็ไม่ตรงกัน)
+const _schedTeamLocked = a => a.Team_Mode !== false && !!a.Schedule_ID && a.Sched_Status === 'Completed';
+
 // รอบที่กำลังวางแผน — กระดานโชว์/บันทึกเฉพาะงานของรอบนี้เท่านั้น
 function _schedPlanRound() {
   return document.getElementById('planRound')?.value || 'Round 2';
@@ -4742,6 +5124,10 @@ async function schedSaveBulk() {
   const date  = document.getElementById('bulkDate')?.value || '';
   const round = _schedPlanRound();
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
+  if (areas.some(a => a.Team_Mode !== false) && !_teamSizeOk(_bulkAuds.size)) {
+    UI.toast(I18n.t('sched.team_size'), 'warning'); return;
+  }
+  if (areas.some(_schedTeamLocked)) { UI.toast(I18n.t('sched.team_locked'), 'warning'); return; }
   const btn = document.getElementById('bulkSaveBtn');
   if (btn) { btn.disabled = true; btn.textContent = I18n.t('sched.saving'); }
   try {
@@ -4777,6 +5163,12 @@ async function schedSaveByAuditor() {
   const planDate  = document.getElementById('planDate')?.value || '';
   const planRound = _schedPlanRound();
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
+  if (areas.some(_schedTeamLocked)) { UI.toast(I18n.t('sched.team_locked'), 'warning'); return; }
+  // โหมดเพิ่มคน: ทยอยเพิ่มได้ (ยังไม่ครบ 2 ได้) แต่ห้ามเกิน 3
+  const newSize = a => new Set((a.Auditor_IDs ? a.Auditor_IDs.split(',').map(x => x.trim()).filter(Boolean) : []).concat(uids)).size;
+  if (areas.some(a => a.Team_Mode !== false && newSize(a) > TEAM_SIZE_MAX)) {
+    UI.toast(I18n.t('sched.team_size'), 'warning'); return;
+  }
   const go = document.getElementById('bulkGo');
   if (go) go.style.pointerEvents = 'none';
   try {
@@ -4851,8 +5243,14 @@ function openSchedModal(areaId) {
 
   // Delete button visibility — ลบได้เฉพาะงานที่ยังไม่มีใครตรวจ
   // (FK audit_headers.schedule_id ON DELETE SET NULL → ลบงานที่มีผลตรวจแล้ว ผลตรวจจะหลุดจากงานมอบหมาย)
+  // งานทีมที่เริ่มตรวจแล้ว (มีดราฟ) ก็ห้ามลบ — ดราฟของทีมจะหลุดจากงานไปด้วย
   const delRow = document.getElementById('deleteSchedRow');
-  if (delRow) delRow.style.display = (area.Schedule_ID && !(area.Done_N > 0)) ? 'block' : 'none';
+  if (delRow) delRow.style.display = (area.Schedule_ID && !(area.Done_N > 0) && !area.Team_Started) ? 'block' : 'none';
+
+  // งานทีมที่ส่งผลแล้ว → ดูได้ แก้รายชื่อไม่ได้
+  const saveBtn = document.getElementById('saveSchedBtn');
+  if (saveBtn) saveBtn.disabled = _schedTeamLocked(area);
+  if (_schedTeamLocked(area)) UI.toast(I18n.t('sched.team_locked'), 'info', 4000);
 
   schedRenderAuditorGrid();
   document.getElementById('assignModal').classList.add('show');
@@ -4891,6 +5289,10 @@ async function saveSchedule() {
   const dateVal  = document.getElementById('schedDate')?.value || '';
   const roundVal = _schedPlanRound();
   const audIds   = Array.from(_schedSelectedAuds).join(',');
+  if (_schedTeamLocked(area)) { UI.toast(I18n.t('sched.team_locked'), 'warning'); return; }
+  if (area.Team_Mode !== false && !_teamSizeOk(_schedSelectedAuds.size)) {
+    UI.toast(I18n.t('sched.team_size'), 'warning'); return;
+  }
 
   const btn = document.getElementById('saveSchedBtn');
   if (btn) { btn.disabled = true; btn.textContent = I18n.t('sched.saving'); }
@@ -4925,7 +5327,7 @@ async function saveSchedule() {
 
 async function deleteSchedule() {
   const area = _schedCurrentArea;
-  if (!area || !area.Schedule_ID || area.Done_N > 0) return;
+  if (!area || !area.Schedule_ID || area.Done_N > 0 || area.Team_Started) return;
   if (!confirm(I18n.t('sched.confirm_cancel'))) return;
 
   try {
@@ -5514,7 +5916,10 @@ function buildReportHTML(dash, impItems, opts) {
     const k = it.Area_ID || (it.Plant_Name + '|' + it.Area_Name);
     const grp = (groups[k] = groups[k] || { plant:it.Plant_Name, area:it.Area_Name,
       auditors:[], round:it.Audit_Round, date:it.Audit_Date, list:[] });
-    if (it.Auditor && !grp.auditors.includes(it.Auditor)) grp.auditors.push(it.Auditor);
+    // ผลทีม = "ชื่อ1, ชื่อ2" → แยกทีละชื่อก่อนกันซ้ำ
+    String(it.Auditor || '').split(', ').forEach(n => {
+      if (n && n !== '-' && !grp.auditors.includes(n)) grp.auditors.push(n);
+    });
     grp.list.push(it);
   });
   const groupArr = Object.values(groups).sort((x,y) =>

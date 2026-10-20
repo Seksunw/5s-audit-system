@@ -12,7 +12,7 @@
   <title>ผลการตรวจ | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=55">
+  <link rel="stylesheet" href="css/style.css?v=56">
 </head>
 <body>
 <div id="loadingOverlay" class="loading-overlay">
@@ -44,6 +44,11 @@
     <!-- Score -->
     <div style="color:var(--gray-600);font-size:0.9rem">
       <span data-i18n="summary.score_label">คะแนนที่ได้</span>: <strong id="resultScore">-</strong>
+    </div>
+
+    <!-- ผู้ตรวจ (ตรวจแบบทีม = รายชื่อทีม ณ ตอนส่ง) -->
+    <div id="resultTeamRow" style="display:none;color:var(--gray-700);font-size:0.8rem;margin-top:8px">
+      <i class="bi bi-people-fill"></i> <span data-i18n="summary.team">ผู้ตรวจ</span>: <span id="resultTeam">-</span>
     </div>
 
     <!-- Audit ID -->
@@ -120,6 +125,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=55"></script>
+<script src="js/app.js?v=56"></script>
 </body>
 </html>

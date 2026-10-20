@@ -781,3 +781,30 @@ a:hover{color:var(--primary-dark)}
 .criteria-item.na-disabled{ opacity:.62; }
 .criteria-item.na-disabled .score-buttons{ pointer-events:none; opacity:.5; }
 .criteria-item.na-disabled .criteria-extras{ opacity:.5; }
+
+/* ===== ตรวจแบบทีม (Round 2+) — แถบทีม + สถานะบันทึกอัตโนมัติ + ใครแก้ล่าสุด ===== */
+.team-bar{
+  display:flex;align-items:center;gap:8px;max-width:768px;margin:8px auto 0;
+  font-size:0.74rem;color:var(--gray-700);min-width:0;
+}
+.team-bar .bi-people-fill{color:var(--primary);flex-shrink:0}
+.team-members{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.team-save-status{flex-shrink:0;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.team-save-status.saved{background:var(--green-bg);color:var(--success)}
+.team-save-status.saving{background:var(--primary-light);color:var(--primary)}
+.team-save-status.offline{background:var(--red-bg);color:var(--danger)}
+.team-refresh-btn{
+  flex-shrink:0;width:30px;height:30px;border-radius:8px;border:1px solid var(--gray-300);
+  background:#fff;color:var(--gray-700);display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.team-refresh-btn:active{background:var(--gray-100)}
+.criteria-lastby{font-size:0.68rem;color:var(--gray-600);margin-top:4px;min-height:0}
+.criteria-lastby:empty{display:none}
+.photo-thumb.uploading img{opacity:.45}
+.photo-thumb.uploading::after{
+  content:'';position:absolute;inset:0;margin:auto;width:18px;height:18px;border-radius:50%;
+  border:2px solid var(--primary);border-top-color:transparent;animation:spin 0.8s linear infinite;
+}
+/* พื้นที่ที่ไม่ได้รับมอบหมาย — ตรวจนอกงานมอบหมายปิดแล้ว (2026-10-20) */
+.area-card.area-unassigned{opacity:.55;cursor:not-allowed}
+.area-unassigned-badge{background:var(--gray-100);color:var(--gray-600)}
