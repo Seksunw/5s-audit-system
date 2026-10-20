@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.22'; // v5.22: เซสชัน Supabase หลุด → พากลับหน้า login แทนการโชว์ข้อมูลว่าง (2026-10-20)
+const CACHE_NAME = '5s-audit-v5.23'; // v5.23: ดอกจันแดง = ข้อที่รอบก่อนให้ 0–1 คะแนนหรือมีหมายเหตุ + pop up รายละเอียด (2026-10-20)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

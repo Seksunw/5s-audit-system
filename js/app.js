@@ -836,7 +836,7 @@ const SBH = {
     if (error) return { success:false, error:error.message };
     const [{ data:s }, { data:profs }] = await Promise.all([
       _sb.from('schedules')
-        .select('schedule_id, auditor_ids, audit_round, areas(area_name), plants(plant_name)')
+        .select('schedule_id, area_id, auditor_ids, audit_round, areas(area_name), plants(plant_name)')
         .eq('schedule_id', scheduleId).single(),
       _sb.from('profiles').select('id, name'),
     ]);
@@ -845,7 +845,50 @@ const SBH = {
       team:      ((s && s.auditor_ids) || []).map(id => ({ id, name:nameById[id] || '-' })),
       areaName:  (s && s.areas  && s.areas.area_name)   || '',
       plantName: (s && s.plants && s.plants.plant_name) || '',
-      round:     (s && s.audit_round) || '' };
+      round:     (s && s.audit_round) || '',
+      areaId:    (s && s.area_id) || '' };
+  },
+
+  /**
+   * ผลรอบก่อนหน้าของพื้นที่เดียวกัน — ใช้ขึ้นดอกจันแดงในหน้าตรวจ (ตัดสินใจ 2026-10-20)
+   *
+   * รอบก่อน = รอบที่เลขน้อยกว่ารอบปัจจุบันและใหม่ที่สุดที่มีผลส่งแล้วของพื้นที่นี้ (ย้อนแค่รอบเดียว)
+   * ข้อที่ "มีข้อสังเกต" = มีผลตรวจใบไหนให้ 0–1 คะแนน (ไม่นับ N/A) หรือเขียนหมายเหตุไว้
+   * ไม่ส่งชื่อผู้ตรวจกลับมา — นโยบายเดียวกับรายงาน PDF (ให้พื้นที่ปรับปรุง ไม่ใช่ชี้ตัวคน)
+   * ดึงครั้งเดียวตอนเปิดฟอร์ม (รอบเดี่ยว ~5 ใบ × ~100 ข้อ) — อ่านได้ตาม RLS เดิม ไม่ต้องแก้ DB
+   */
+  async getPrevRoundNotes({ areaId, round }) {
+    if (!areaId) return { success:true, round:'', items:{} };
+    const roundNo = r => { const m = /(\d+)/.exec(String(r || '')); return m ? Number(m[1]) : 0; };
+    const cur = roundNo(round);
+    const { data:heads, error } = await _sb.from('audit_headers')
+      .select('audit_id, audit_round, audit_date')
+      .eq('area_id', areaId).neq('status', 'pending').not('locked_at', 'is', null);
+    if (error) return { success:false, error:error.message };
+
+    const prevNo = Math.max(0, ...(heads || []).map(h => roundNo(h.audit_round)).filter(n => n > 0 && (!cur || n < cur)));
+    if (!prevNo) return { success:true, round:'', items:{} };
+    const H = (heads || []).filter(h => roundNo(h.audit_round) === prevNo);
+
+    const { data:dets, error:dErr } = await _sb.from('audit_details')
+      .select('audit_id, criteria_id, score, na, remark, photo_urls')
+      .in('audit_id', H.map(h => h.audit_id));
+    if (dErr) return { success:false, error:dErr.message };
+
+    const items = {};
+    (dets || []).forEach(d => {
+      const it = items[d.criteria_id] || (items[d.criteria_id] = { entries:[], flagged:false });
+      const remark = String(d.remark || '').trim();
+      const photos = (d.photo_urls || []).filter(Boolean);
+      const score  = (d.na || d.score === null || d.score === undefined) ? null : Number(d.score);
+      it.entries.push({ score, na:!!d.na, remark, photos });
+      if ((score !== null && score <= 1) || remark) it.flagged = true;
+    });
+    Object.keys(items).forEach(k => { if (!items[k].flagged) delete items[k]; });
+
+    const dates = H.map(h => h.audit_date).filter(Boolean).sort();
+    return { success:true, round:H[0].audit_round, nAudits:H.length,
+      dateFrom:dates[0] || '', dateTo:dates[dates.length - 1] || '', items };
   },
 
   /** กึ่งเรียลไทม์: ข้อที่เปลี่ยนหลัง since + สถานะ header ใน request เดียว */
@@ -1385,6 +1428,14 @@ const TRANSLATIONS = {
     'sched.team_size':           'งานตรวจแบบทีมต้องมีกรรมการ 2–3 คน',
     'sched.team_locked':         'ทีมส่งผลตรวจงานนี้แล้ว แก้รายชื่อไม่ได้',
     'summary.team':              'ผู้ตรวจ',
+    // ผลรอบก่อน (ดอกจันแดงในหน้าตรวจ)
+    'prev.badge':                'รอบก่อนมีข้อสังเกต',
+    'prev.title':                'ผลรอบก่อน',
+    'prev.audits':               'จากผลตรวจ {n} ใบ',
+    'prev.dist':                 'คะแนนที่ให้',
+    'prev.no_remark':            '(ไม่มีหมายเหตุ)',
+    'prev.close':                'ปิด',
+    'prev.cat_hint':             'หมวดนี้มี {n} ข้อที่รอบก่อนให้ 0–1 คะแนนหรือมีหมายเหตุ',
   },
   en: {
     // Common
@@ -2041,6 +2092,14 @@ const TRANSLATIONS = {
     'sched.team_size':           'Team audits need 2–3 auditors',
     'sched.team_locked':         'The team has already submitted this audit — members cannot be changed',
     'summary.team':              'Auditors',
+    // Previous-round notes (red asterisk on the audit form)
+    'prev.badge':                'Flagged last round',
+    'prev.title':                'Previous round',
+    'prev.audits':               'from {n} audit(s)',
+    'prev.dist':                 'Scores given',
+    'prev.no_remark':            '(no remark)',
+    'prev.close':                'Close',
+    'prev.cat_hint':             '{n} item(s) in this category scored 0–1 or had remarks last round',
   }
 };
 
@@ -2933,6 +2992,7 @@ async function initAudit() {
     });
     renderChecklist(critRes.grouped, critRes.data.length, critRes.totalMaxScore);
     renderTeamBar();
+    loadPrevRoundNotes(openRes.areaId || getParam('areaId'), openRes.round);   // ไม่ await — ขึ้นทีหลังได้
 
     // คำตอบที่ทีมทำไว้แล้ว (ดราฟ)
     const ch = await API.get('teamAuditChanges', { auditId: TeamAudit.auditId, since: null });
@@ -2966,6 +3026,93 @@ async function initAudit() {
     UI.hideLoading();
     UI.toast(I18n.t('msg.checklist_failed'), 'error');
   }
+}
+
+// ---- ผลรอบก่อน (ดอกจันแดง) ----
+let _prevNotes = null;   // { round, nAudits, dateFrom, dateTo, items: { criteriaId: { entries:[...] } } }
+
+async function loadPrevRoundNotes(areaId, round) {
+  try {
+    const res = await API.get('getPrevRoundNotes', { areaId, round });
+    if (!res.success || !res.round) return;
+    _prevNotes = res;
+    renderPrevMarkers();
+  } catch(_) {}                          // ไม่มีผลรอบก่อนก็ตรวจได้ตามปกติ
+}
+
+function renderPrevMarkers() {
+  if (!_prevNotes) return;
+  const perCat = {};
+  Object.keys(_prevNotes.items).forEach(cid => {
+    const btn = document.getElementById('prevNote-' + cid);
+    if (!btn) return;                    // ข้อที่ปิดใช้แล้ว / ไม่อยู่ในฟอร์มนี้
+    btn.hidden = false;
+    const cat = TeamAudit.catOf[cid];
+    perCat[cat] = (perCat[cat] || 0) + 1;
+  });
+  document.querySelectorAll('.category-section').forEach(sec => {
+    const dot = sec.querySelector('.prev-cat-dot');
+    const n = perCat[sec.dataset.category] || 0;
+    if (!dot) return;
+    dot.hidden = !n;
+    dot.textContent = n ? '* ' + n : '';
+    dot.title = n ? I18n.t('prev.cat_hint').replace('{n}', n) : '';
+  });
+}
+
+/** pop up รายละเอียดผลรอบก่อนของข้อนี้ — ไม่มีชื่อผู้ตรวจ (นโยบายเดียวกับรายงาน PDF) */
+function openPrevNote(criteriaId) {
+  const it = _prevNotes && _prevNotes.items[criteriaId];
+  if (!it) return;
+  const c = (AppState.criteria || []).find(x => x.Criteria_ID === criteriaId) || {};
+  const scored = it.entries.filter(e => e.score !== null);
+  const nNA = it.entries.length - scored.length;
+  const dist = [0, 1, 2].map(n => ({ n, k: scored.filter(e => e.score === n).length })).filter(x => x.k);
+  const dateTxt = _prevNotes.dateFrom === _prevNotes.dateTo
+    ? UI.formatDate(_prevNotes.dateFrom)
+    : UI.formatDate(_prevNotes.dateFrom) + ' – ' + UI.formatDate(_prevNotes.dateTo);
+  // การ์ด: เฉพาะใบที่ให้ 0–1 หรือมีหมายเหตุ/รูป เรียงคะแนนน้อยก่อน
+  const cards = it.entries
+    .filter(e => (e.score !== null && e.score <= 1) || e.remark || e.photos.length)
+    .sort((a, b) => (a.score === null ? 9 : a.score) - (b.score === null ? 9 : b.score));
+
+  closePrevNote();
+  const wrap = document.createElement('div');
+  wrap.className = 'prev-sheet-backdrop';
+  wrap.id = 'prevSheet';
+  wrap.onclick = e => { if (e.target === wrap) closePrevNote(); };
+  wrap.innerHTML = `
+    <div class="prev-sheet" role="dialog" aria-modal="true">
+      <div class="prev-sheet-head">
+        <div>
+          <div class="prev-sheet-title"><span class="prev-star">*</span> ${escHtml(I18n.t('prev.title'))} · ${escHtml(_prevNotes.round)}</div>
+          <div class="prev-sheet-meta">${escHtml(dateTxt)} · ${escHtml(I18n.t('prev.audits').replace('{n}', _prevNotes.nAudits))}</div>
+        </div>
+        <button type="button" class="btn-icon" onclick="closePrevNote()" aria-label="${escAttr(I18n.t('prev.close'))}"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="prev-sheet-q"><b>${escHtml(criteriaId)}</b> ${escHtml(c.Question || '')}</div>
+      <div class="prev-sheet-dist">${escHtml(I18n.t('prev.dist'))}:
+        ${dist.map(x => `<span class="prev-score s${x.n}">${x.n}</span>×${x.k}`).join(' ')}
+        ${nNA ? `<span class="prev-na">N/A×${nNA}</span>` : ''}
+      </div>
+      <div class="prev-sheet-list">
+        ${cards.map(e => `
+          <div class="prev-card">
+            <span class="prev-score s${e.score === null ? 'na' : e.score}">${e.score === null ? 'N/A' : e.score}</span>
+            <div class="prev-card-body">
+              <div class="prev-remark">${e.remark ? escHtml(e.remark) : `<span class="text-muted">${escHtml(I18n.t('prev.no_remark'))}</span>`}</div>
+              ${e.photos.length ? `<div class="prev-photos">${e.photos.map(u => safeUrl(u))
+                  .filter(Boolean).map(u => `<a href="${escAttr(u)}" target="_blank" rel="noopener"><img src="${escAttr(u)}" alt="${escAttr(I18n.t('img.alt_photo'))}" loading="lazy"></a>`).join('')}</div>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+}
+
+function closePrevNote() {
+  const el = document.getElementById('prevSheet');
+  if (el) el.remove();
 }
 
 /** แถบทีม: รายชื่อกรรมการ + สถานะการบันทึก + ปุ่มรีเฟรช */
@@ -3007,6 +3154,7 @@ function renderChecklist(grouped, totalItems, totalMaxScore) {
           <button type="button" class="cat-na-btn" onclick="event.stopPropagation(); toggleCategoryNA(this)">
             <i class="bi bi-slash-circle"></i> <span class="cat-na-label">${I18n.t('audit.na_btn')}</span>
           </button>
+          <span class="prev-cat-dot" hidden></span>
           <span class="category-count">${items.length} ${I18n.t('audit.answered_suffix')}</span>
         </span>
       </div>
@@ -3048,6 +3196,8 @@ function renderCriteriaItem(c) {
           <span id="photoCount-${id}" class="badge badge-primary" style="display:none">0</span>
         </button>
         <div id="photoPreview-${id}" class="photo-preview-grid"></div>
+        <button type="button" class="prev-note-btn" id="prevNote-${id}" hidden
+                onclick="openPrevNote('${id}')"><span class="prev-star">*</span> <span>${I18n.t('prev.badge')}</span></button>
         <div id="lastBy-${id}" class="criteria-lastby"></div>
       </div>
     </div>

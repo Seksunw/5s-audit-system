@@ -808,3 +808,43 @@ a:hover{color:var(--primary-dark)}
 /* พื้นที่ที่ไม่ได้รับมอบหมาย — ตรวจนอกงานมอบหมายปิดแล้ว (2026-10-20) */
 .area-card.area-unassigned{opacity:.55;cursor:not-allowed}
 .area-unassigned-badge{background:var(--gray-100);color:var(--gray-600)}
+
+/* ===== ผลรอบก่อน — ดอกจันแดงใต้ข้อ + จุดแดงที่หัวหมวด + pop up (2026-10-20) ===== */
+.prev-star{color:var(--danger);font-weight:800;font-size:1rem;line-height:1}
+.prev-note-btn{
+  display:inline-flex;align-items:center;gap:2px;margin-top:6px;padding:2px 0;
+  background:none;border:none;color:var(--danger);font-size:0.72rem;font-weight:600;cursor:pointer;font-family:inherit;
+}
+.prev-note-btn[hidden],.prev-cat-dot[hidden]{display:none}
+.prev-note-btn span:last-child{text-decoration:underline;text-underline-offset:2px}
+.prev-cat-dot{
+  display:inline-flex;align-items:center;padding:1px 7px;border-radius:20px;
+  background:var(--red-bg);color:var(--danger);font-size:0.68rem;font-weight:800;white-space:nowrap;
+}
+.prev-sheet-backdrop{
+  position:fixed;inset:0;background:rgba(16,24,40,.45);z-index:2000;
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.prev-sheet{
+  background:#fff;width:100%;max-width:768px;max-height:82vh;overflow:auto;
+  border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+  box-shadow:0 -8px 24px rgba(16,24,40,.18);
+}
+.prev-sheet-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.prev-sheet-title{font-weight:800;font-size:1rem;color:var(--dark)}
+.prev-sheet-meta{font-size:0.75rem;color:var(--gray-600);margin-top:2px}
+.prev-sheet-q{font-size:0.85rem;color:var(--gray-800);background:var(--gray-100);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.prev-sheet-dist{font-size:0.78rem;color:var(--gray-700);margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.prev-score{
+  display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 6px;
+  border-radius:7px;font-weight:800;font-size:0.8rem;flex-shrink:0;
+}
+.prev-score.s0{background:var(--red-bg);color:var(--score-0)}
+.prev-score.s1{background:var(--amber-bg);color:var(--score-1)}
+.prev-score.s2{background:var(--green-bg);color:var(--score-2)}
+.prev-score.sna,.prev-na{background:var(--gray-100);color:var(--gray-600);font-size:0.72rem;padding:2px 6px;border-radius:7px}
+.prev-card{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--gray-200)}
+.prev-card-body{flex:1;min-width:0}
+.prev-remark{font-size:0.85rem;color:var(--dark);white-space:pre-wrap;word-break:break-word}
+.prev-photos{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.prev-photos img{width:64px;height:64px;object-fit:cover;border-radius:9px;border:1px solid var(--gray-200)}
