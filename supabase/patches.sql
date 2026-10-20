@@ -926,3 +926,48 @@ from (values
   ('C-34-8','Ceiling/walls clean, no dead birds on netting','Structure clean and intact','Canteen')
 ) as v(criteria_id, question_en, description_en, category_en)
 where t.criteria_id = v.criteria_id;
+
+
+-- =====================================================================
+-- ส่วน J: ย้ายพื้นที่ "รอบอาคาร" (NIF-OD/POC-OD/SUP-OD) เข้า Plant P&C (CAF)  (20 ต.ค. 2026)
+-- =====================================================================
+-- ที่มา: รอบอาคารทั้ง 3 จุดเป็นพื้นที่รับผิดชอบของทีม P&C จริง
+--   Round 1: แก้ audit_headers.plant_id ของ 9 ผลตรวจเป็น CAF ด้วยมือไปแล้ว (8 ส.ค. 2026)
+--            แต่ areas.plant_id / schedules.plant_id ยังเป็นโรงงานเดิม → ข้อมูลไม่ตรงกัน
+--   ถ้าไม่แก้: ผลตรวจรอบถัดไปจะนับเข้า NIF/POC/SUP อัตโนมัติ (plant_id มาจากพื้นที่)
+--
+-- ทำอะไร:
+--   1. areas: ย้ายเข้า CAF + เปลี่ยนชื่อกันชนกัน ("รอบอาคาร" × 3 ใต้ P&C แยกไม่ออก)
+--   2. schedules: backfill งาน Round 1 ของ 3 พื้นที่นี้ให้เป็น CAF ตรงกับ audit_headers
+--   3. audit_headers: เผื่อมีแถวที่ยังไม่เป็น CAF (ควรเป็น 0 แถว — แก้ไปแล้ว 8 ส.ค.)
+--
+-- ⚠️ area_id คงเดิม (NIF-OD ฯลฯ) — เป็น FK ของ audit_headers/schedules เปลี่ยนไม่ได้ง่าย
+--    prefix ในรหัสเป็นแค่ชื่อ ไม่ได้กำหนดโรงงาน (โค้ดใช้ areas.plant_id ก่อนเสมอ)
+-- idempotent: รันซ้ำได้ (where กันแถวที่แก้แล้ว)
+-- ไม่กระทบคะแนน: ไม่แตะ audit_details → trigger recalc ไม่ทำงาน · audit_headers ไม่มี trigger ล็อก
+
+update public.areas as a
+   set plant_id = 'CAF', area_name = v.new_name
+  from (values
+    ('NIF-OD', 'รอบอาคาร (NIF)'),
+    ('POC-OD', 'รอบอาคาร (POC)'),
+    ('SUP-OD', 'รอบอาคาร (SUP)')
+  ) as v(area_id, new_name)
+ where a.area_id = v.area_id
+   and (a.plant_id is distinct from 'CAF' or a.area_name is distinct from v.new_name);
+
+update public.schedules
+   set plant_id = 'CAF'
+ where area_id in ('NIF-OD','POC-OD','SUP-OD')
+   and plant_id is distinct from 'CAF';
+
+update public.audit_headers
+   set plant_id = 'CAF'
+ where area_id in ('NIF-OD','POC-OD','SUP-OD')
+   and plant_id is distinct from 'CAF';
+
+-- ตรวจผล (ทุกแถวต้องเป็น CAF):
+-- select 'areas' t, area_id, plant_id, area_name, null::bigint n from public.areas where area_id like '%-OD'
+-- union all select 'schedules', area_id, plant_id, null, count(*) from public.schedules where area_id like '%-OD' group by 2,3
+-- union all select 'headers',   area_id, plant_id, null, count(*) from public.audit_headers where area_id like '%-OD' group by 2,3
+-- order by 1, 2;
