@@ -42,3 +42,8 @@ docs/SECURITY_ASSESSMENT.md
 # ต้นฉบับ + สคริปต์สร้างแผนผังระบบ (Artifact บน claude.ai แบบ private) และ PDF — เก็บในเครื่องเท่านั้น
 # มีสถานะงานค้าง/จุดอ่อนที่ยังไม่แก้ ไม่ควรขึ้น repo public
 system-map/
+
+# สำเนาแผนผังระบบ (Artifact) ไว้เปิดในเครื่องที่ root — ไม่ push (ผู้ใช้สั่ง 2026-10-22)
+# สร้างจาก system-map/ ด้วย `npm run render` (คัดลอกมาให้อัตโนมัติ)
+/5s-system-map.html
+/5s-system-map-*.pdf

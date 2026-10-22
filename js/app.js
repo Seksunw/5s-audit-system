@@ -607,8 +607,10 @@ const SBH = {
         const month = String(h.audit_date || '').slice(0, 7);
         const k = [h.plant_id, h.area_id, h.audit_round || ('d:' + h.audit_date), withMonth ? month : '']
           .join('|');
-        const u = g[k] || (g[k] = { plant_id:h.plant_id, area_id:h.area_id, month, pcts:[] });
+        const u = g[k] || (g[k] = { plant_id:h.plant_id, area_id:h.area_id, month,
+                                    round: h.audit_round || h.audit_date || '', team:false, pcts:[] });
         u.pcts.push(pct(h));
+        if (h.is_team) u.team = true;
       });
       return Object.values(g).map(u => ({ ...u, score: meanPct(u.pcts), n: u.pcts.length }));
     };
@@ -643,7 +645,12 @@ const SBH = {
       return Object.entries(g).map(([k, us]) => {
         const raw = meanPct(us.map(uScore));
         return { [label]:labelFn(k), avgScore:Math.round(raw), avgScoreRaw:raw,
-                 n:us.reduce((s, u) => s + u.n, 0) };
+                 n:us.reduce((s, u) => s + u.n, 0),
+                 // ที่มาของคะแนน (กดแถวบน Dashboard) — % รายใบเท่านั้น ไม่มีชื่อผู้ตรวจ (นโยบายเดียวกับ PDF)
+                 units: us.map(u => ({ area: areaName[u.area_id] || u.area_id, round: u.round, team: u.team,
+                                       n: u.n, score: u.score, pcts: u.pcts.slice().sort((a, b) => a - b) }))
+                          .sort((a, b) => String(a.area).localeCompare(String(b.area), 'th')
+                                          || String(a.round).localeCompare(String(b.round))) };
       }).sort((a,b) => b.avgScoreRaw - a.avgScoreRaw);
     };
 
@@ -1257,6 +1264,29 @@ const TRANSLATIONS = {
     // Dashboard — ranking
     'rank.from':                 'จาก',
     'rank.times':                'ครั้ง',
+    'rank.tap_hint':             'ดูที่มาของคะแนน',
+    'rank.detail_plant':         'คะแนนโรงงาน = ค่าเฉลี่ยของ {n} หน่วย (พื้นที่ × รอบ) · ทุกหน่วยน้ำหนักเท่ากัน',
+    'rank.detail_area':          'คะแนนพื้นที่ = ค่าเฉลี่ยของ {n} รอบ · ทุกรอบน้ำหนักเท่ากัน',
+    'rank.detail_area_one':      'คะแนนพื้นที่มาจาก 1 รอบ',
+    'rank.sheets':               'ตรวจเดี่ยว {n} ใบ',
+    'rank.team':                 'ตรวจแบบทีม 1 ใบ',
+    'rank.sheet_pcts':           'แต่ละใบ',
+    'rank.formula':              'คำนวณ',
+    'rank.how_link':             'วิธีให้คะแนนและคำนวณทั้งหมด',
+    'rank.rounding':             'ในอันดับแสดงเป็นทศนิยม 1 ตำแหน่ง = {v}%',
+    'dash.info_btn':             'วิธีให้คะแนนและคำนวณ',
+    'dash.info_title':           'วิธีให้คะแนนและคำนวณ',
+    'dash.info_s1_h':            '1. ให้คะแนนรายข้อ',
+    'dash.info_s1':              'กรรมการให้คะแนนแต่ละข้อ 0 = ไม่ทำ · 1 = ทำบางส่วน · 2 = ผ่าน (เต็มข้อละ 2) · หมวดที่ไม่มีในพื้นที่กด N/A — ข้อ N/A ไม่นับทั้งคะแนนที่ได้และคะแนนเต็ม',
+    'dash.info_s2_h':            '2. คะแนนของผลตรวจ 1 ใบ',
+    'dash.info_s2':              '% = คะแนนที่ได้ ÷ คะแนนเต็มของข้อที่ตรวจ × 100 · เช่น ตรวจ 100 ข้อ (เต็ม 200) ได้ 180 คะแนน = 90% · ฐานข้อมูลคำนวณให้ แก้จากหน้าเว็บไม่ได้',
+    'dash.info_s3_h':            '3. ชั้นที่ 1 · รวมเป็นหน่วย "พื้นที่ × รอบ"',
+    'dash.info_s3':              'ผลตรวจของพื้นที่เดียวกันในรอบเดียวกันเฉลี่ยเป็นค่าเดียว · Round 1 (ตรวจเดี่ยว) มีหลายใบต่อพื้นที่ จึงเฉลี่ย % ของทุกใบ · Round 2 (ตรวจแบบทีม) มีใบเดียว ใช้ % ของใบนั้นเลย',
+    'dash.info_s4_h':            '4. ชั้นที่ 2 · โรงงาน / พื้นที่ / ภาพรวม',
+    'dash.info_s4':              'โรงงาน = เฉลี่ยทุกหน่วยของโรงงาน · พื้นที่ = เฉลี่ยหน่วยของพื้นที่นั้น (ทุกรอบที่เลือก) · ภาพรวม = เฉลี่ยทุกหน่วย · ทุกหน่วยน้ำหนักเท่ากัน ไม่ว่าจะมาจากกี่ใบ',
+    'dash.info_s5_h':            '5. เกณฑ์',
+    'dash.info_s5':              '≥ 90% Excellent · 75–89.9% Good · ต่ำกว่า 75% ต้องปรับปรุง',
+    'dash.info_note':            'นับเฉพาะผลที่ส่งแล้ว (ผลทีมต้องยืนยันครบ) · ตัวเลือก "รอบการตรวจ" ด้านบนเปลี่ยนข้อมูลทั้งหน้า · กดแต่ละแถวใน Ranking เพื่อดูที่มาของคะแนน',
     // Dashboard — พื้นที่ต้องปรับปรุง
     'imp.hint':                  'ข้อที่ตก (0–1) ของทุกพื้นที่ในรอบที่เลือก · แตะแต่ละข้อเพื่อดูหมายเหตุและรูป',
     'imp.all_plants':            '— ทุกโรงงาน —',
@@ -1943,6 +1973,29 @@ const TRANSLATIONS = {
     // Dashboard — ranking
     'rank.from':                 'from',
     'rank.times':                'audit(s)',
+    'rank.tap_hint':             'See how this score was calculated',
+    'rank.detail_plant':         'Plant score = average of {n} units (area × round) · every unit weighs the same',
+    'rank.detail_area':          'Area score = average of {n} rounds · every round weighs the same',
+    'rank.detail_area_one':      'Area score comes from 1 round',
+    'rank.sheets':               '{n} individual audits',
+    'rank.team':                 '1 team audit',
+    'rank.sheet_pcts':           'Each audit',
+    'rank.formula':              'Calculation',
+    'rank.how_link':             'How scoring works',
+    'rank.rounding':             'The ranking shows one decimal place = {v}%',
+    'dash.info_btn':             'How scores are calculated',
+    'dash.info_title':           'How scores are calculated',
+    'dash.info_s1_h':            '1. Scoring each item',
+    'dash.info_s1':              'Auditors score each item 0 = not done · 1 = partly done · 2 = pass (max 2 per item). Categories that do not exist in the area are marked N/A, and N/A items count toward neither the score nor the maximum.',
+    'dash.info_s2_h':            '2. Score of one audit',
+    'dash.info_s2':              '% = points scored ÷ maximum of the items audited × 100. Example: 100 items audited (max 200), 180 points = 90%. The database computes this; the web page cannot change it.',
+    'dash.info_s3_h':            '3. Layer 1 · combine into "area × round" units',
+    'dash.info_s3':              'Audits of the same area in the same round are averaged into one value. Round 1 (individual audits) has several audits per area, so their percentages are averaged. Round 2 (team audit) has one audit, so its percentage is used as is.',
+    'dash.info_s4_h':            '4. Layer 2 · plant / area / overall',
+    'dash.info_s4':              'Plant = average of all its units · Area = average of that area\'s units (all selected rounds) · Overall = average of all units. Every unit weighs the same, however many audits it came from.',
+    'dash.info_s5_h':            '5. Bands',
+    'dash.info_s5':              '≥ 90% Excellent · 75–89.9% Good · below 75% Needs improvement',
+    'dash.info_note':            'Only submitted audits count (team audits need every confirmation). The "Audit round" selector at the top changes the data for the whole page. Tap any ranking row to see where its score comes from.',
     // Dashboard — areas needing improvement
     'imp.hint':                  'Failed items (0–1) across all areas in the selected round · tap an item for notes and photos',
     'imp.all_plants':            '— All plants —',
@@ -4405,11 +4458,11 @@ async function initDashboard() {
       if (wrap) wrap.style.display = (d.rounds || []).length ? 'flex' : 'none';
     }
 
-    // 1) Plant Ranking — แสดงทุกโรงงาน
-    renderRanking('plantRanking', d.plantComparison || [], 'plantName', 100);
+    // 1) Plant Ranking — แสดงทุกโรงงาน · กดแถวดูที่มาของคะแนน
+    renderRanking('plantRanking', d.plantComparison || [], 'plantName', 100, 'plant');
 
     // 2) Area Ranking — แสดงครบทุกพื้นที่ เพื่อหาจุดบกพร่องรายพื้นที่
-    renderRanking('areaRanking', d.areaRanking || [], 'areaName', 100);
+    renderRanking('areaRanking', d.areaRanking || [], 'areaName', 100, 'area');
 
     // 3) พื้นที่ต้องปรับปรุง — ข้อที่ตก (0-1) ของทุกพื้นที่ในรอบนี้ เห็นเลยไม่ต้องหา
     _impItems = (impRes.success && impRes.items) ? impRes.items : [];
@@ -4603,9 +4656,10 @@ function impCloseZoom() {
 }
 
 
-function renderRanking(containerId, items, nameField, limit = 10) {
+function renderRanking(containerId, items, nameField, limit = 10, detailKind = '') {
   const container = document.getElementById(containerId);
   if (!container) return;
+  if (detailKind) _rankDetail[detailKind] = { items, nameField };
 
   if (!items.length) {
     container.innerHTML = `<p class="text-muted text-center">${I18n.t('msg.no_data')}</p>`;
@@ -4623,8 +4677,13 @@ function renderRanking(containerId, items, nameField, limit = 10) {
     // n = จำนวนครั้งที่ตรวจ — บอกว่าคะแนนนี้มาจากกี่ครั้ง
     const meta = item.n ? `${I18n.t('rank.from')} ${item.n} ${I18n.t('rank.times')}` : '';
 
+    // กดแถว = ดูที่มาของคะแนน (มีเฉพาะ Plant/Area Ranking ที่ getDashboard ส่ง units มา)
+    const click = detailKind && item.units
+      ? ` rk-click" role="button" tabindex="0" aria-label="${escAttr((item[nameField] || '-') + ' · ' + I18n.t('rank.tap_hint'))}"
+          onclick="openRankDetail('${detailKind}', ${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openRankDetail('${detailKind}', ${idx})}`
+      : '';
     return `
-    <div class="rk-row">
+    <div class="rk-row${click}">
       <div class="rk-pos ${medal}">${idx + 1}</div>
       <div class="rk-mid">
         <div class="rk-name">${escHtml(item[nameField] || '-')}</div>
@@ -4637,8 +4696,95 @@ function renderRanking(containerId, items, nameField, limit = 10) {
         <div class="rk-pct" style="color:${color}">${band.toFixed(1)}%</div>
         <div class="rk-band" style="color:${color}">${escHtml(label)}</div>
       </div>
+      ${click ? '<i class="bi bi-chevron-right rk-chev" aria-hidden="true"></i>' : ''}
     </div>`;
   }).join('');
+}
+
+// ---- ที่มาของคะแนน + วิธีคิดคะแนน (Dashboard) ----
+//   ไม่แสดงชื่อผู้ตรวจรายใบ — นโยบายเดียวกับรายงาน PDF / ดอกจันรอบก่อน (ให้พื้นที่ปรับปรุง ไม่ชี้ตัวคน)
+const _rankDetail = {};   // { plant|area: { items, nameField } } จาก renderRanking ล่าสุด
+const _f1 = v => (Number(v) || 0).toFixed(1);   // แบบเดียวกับแถว Ranking
+const _f2 = v => (Number(v) || 0).toFixed(2);   // ที่มาของคะแนน — % รายใบเก็บใน DB เป็นทศนิยม 2 ตำแหน่ง
+const _bandOf = v => v >= 90 ? { c: 'var(--excellent)', t: I18n.t('badge.excellent') }
+                   : v >= 75 ? { c: 'var(--warning)',   t: I18n.t('badge.good') }
+                             : { c: 'var(--danger)',    t: I18n.t('badge.need_improve') };
+
+function _dashSheet(id, titleHtml, metaHtml, bodyHtml) {
+  closeDashSheet();
+  const wrap = document.createElement('div');
+  wrap.className = 'prev-sheet-backdrop';
+  wrap.id = 'dashSheet';
+  wrap.onclick = e => { if (e.target === wrap) closeDashSheet(); };
+  wrap.innerHTML = `
+    <div class="prev-sheet dash-sheet" role="dialog" aria-modal="true" aria-labelledby="${id}">
+      <div class="prev-sheet-head">
+        <div>
+          <div class="prev-sheet-title" id="${id}">${titleHtml}</div>
+          ${metaHtml ? `<div class="prev-sheet-meta">${metaHtml}</div>` : ''}
+        </div>
+        <button type="button" class="btn-icon" onclick="closeDashSheet()" aria-label="${escAttr(I18n.t('team.close'))}"><i class="bi bi-x-lg"></i></button>
+      </div>
+      ${bodyHtml}
+    </div>`;
+  document.body.appendChild(wrap);
+}
+
+function closeDashSheet() {
+  const el = document.getElementById('dashSheet');
+  if (el) el.remove();
+}
+
+/** กดแถว Plant/Area Ranking → คะแนนนี้มาจากหน่วย (พื้นที่ × รอบ) ไหนบ้าง และแต่ละหน่วยมาจากผลตรวจกี่ใบ */
+function openRankDetail(kind, idx) {
+  const src = _rankDetail[kind];
+  const item = src && src.items[idx];
+  if (!item || !item.units) return;
+  const total = item.avgScoreRaw != null ? item.avgScoreRaw : item.avgScore;
+  const b = _bandOf(total);
+  const us = item.units;
+
+  const rows = us.map(u => {
+    const ub = _bandOf(u.score);
+    const label = kind === 'plant' ? `${escHtml(u.area)} · ${escHtml(u.round)}` : escHtml(u.round);
+    const from = u.team ? I18n.t('rank.team') : I18n.t('rank.sheets').replace('{n}', u.n);
+    // หลายใบ → โชว์ % รายใบและการเฉลี่ยชั้นที่ 1
+    const sheets = u.n > 1
+      ? `<div class="rd-sheets">${escHtml(I18n.t('rank.sheet_pcts'))}: (${u.pcts.map(_f2).join(' + ')}) ÷ ${u.n}</div>` : '';
+    return `<div class="rd-row">
+        <div class="rd-main"><div class="rd-name">${label}</div><div class="rd-src">${escHtml(from)}</div>${sheets}</div>
+        <div class="rd-val" style="color:${ub.c}">${_f2(u.score)}%</div>
+      </div>`;
+  }).join('');
+
+  const head = kind === 'plant'
+    ? I18n.t('rank.detail_plant').replace('{n}', us.length)
+    : I18n.t(us.length > 1 ? 'rank.detail_area' : 'rank.detail_area_one').replace('{n}', us.length);
+  const formula = (us.length > 1
+    ? `(${us.map(u => _f2(u.score)).join(' + ')}) ÷ ${us.length} = <b style="color:${b.c}">${_f2(total)}%</b>`
+    : `= <b style="color:${b.c}">${_f2(total)}%</b>`)
+    + `<div class="rd-round">${escHtml(I18n.t('rank.rounding').replace('{v}', _f1(total)))}</div>`;
+
+  _dashSheet('rankDetailTitle',
+    `${escHtml(item[src.nameField] || '-')} · <span style="color:${b.c}">${_f1(total)}% ${escHtml(b.t)}</span>`,
+    escHtml(head),
+    `<div class="rd-list">${rows}</div>
+     <div class="rd-formula">${escHtml(I18n.t('rank.formula'))}: ${formula}</div>
+     <button type="button" class="rd-how" onclick="openScoreInfo()"><i class="bi bi-info-circle"></i> ${escHtml(I18n.t('rank.how_link'))}</button>`);
+}
+
+/** ปุ่ม ⓘ — วิธีให้คะแนนรายข้อ → % ต่อใบ → เฉลี่ย 2 ชั้น → เกณฑ์ (ตรงกับ recalc_audit_header + getDashboard) */
+function openScoreInfo() {
+  const sec = (h, t) => `<div class="si-sec"><div class="si-h">${escHtml(I18n.t(h))}</div><div class="si-t">${escHtml(I18n.t(t))}</div></div>`;
+  _dashSheet('scoreInfoTitle', escHtml(I18n.t('dash.info_title')), '',
+    `<div class="si-list">
+       ${sec('dash.info_s1_h', 'dash.info_s1')}
+       ${sec('dash.info_s2_h', 'dash.info_s2')}
+       ${sec('dash.info_s3_h', 'dash.info_s3')}
+       ${sec('dash.info_s4_h', 'dash.info_s4')}
+       ${sec('dash.info_s5_h', 'dash.info_s5')}
+       <div class="si-note">${escHtml(I18n.t('dash.info_note'))}</div>
+     </div>`);
 }
 
 // ============================================================
@@ -6304,6 +6450,7 @@ const REPORT_STR = {
     reportNo:'เลขที่รายงาน', issue:'วันที่ออกรายงาน', prep:'ผู้จัดทำรายงาน',
     roundLbl:'รอบการตรวจ', plants:'โรงงาน', areasUnit:'พื้นที่ (ที่มีผลตรวจ)',
     kpiAvg:'คะแนนรวมเฉลี่ย', kpiPass:'พื้นที่ผ่านเกณฑ์', kpiImp:'ข้อที่ต้องปรับปรุง',
+    calcNote:'วิธีคิดคะแนน: แต่ละข้อให้ 0/1/2 · ผลตรวจ 1 ใบ = คะแนนที่ได้ ÷ คะแนนเต็มของข้อที่ตรวจ (ไม่นับ N/A) · เฉลี่ยผลตรวจของพื้นที่เดียวกันในรอบเดียวกันก่อน แล้วเฉลี่ยเป็นคะแนนโรงงาน/พื้นที่/ภาพรวม (ทุกพื้นที่×รอบน้ำหนักเท่ากัน) · ระดับในรายงาน: ≥ 90% ดีเยี่ยม · ≥ 75% ดี (ผ่านเกณฑ์) · 60–74.9% เฝ้าระวัง · ต่ำกว่า 60% ต้องปรับปรุง',
     passNote:'เกณฑ์ผ่าน ≥ 75%', ofAreas:'ของพื้นที่', failN:'ตก 0 คะแนน', weakN:'1 คะแนน',
     rank:'ระดับ', score:'คะแนน', progress:'ความคืบหน้า', plant:'โรงงาน',
     plantRank:'อันดับโรงงาน (Plant Ranking)', areaRank:'อันดับพื้นที่ (Area Ranking)',
@@ -6327,6 +6474,7 @@ const REPORT_STR = {
     reportNo:'Report No.', issue:'Issue date', prep:'Prepared by',
     roundLbl:'Audit round', plants:'plants', areasUnit:'areas audited',
     kpiAvg:'Overall Average Score', kpiPass:'Areas Passed', kpiImp:'Items to Improve',
+    calcNote:'How scores are calculated: each item scores 0/1/2 · one audit = points ÷ maximum of the items audited (N/A excluded) · audits of the same area and round are averaged first, then averaged into plant / area / overall scores (every area × round weighs the same) · report bands: ≥ 90% Excellent · ≥ 75% Good (pass) · 60–74.9% Watch · below 60% Needs Action',
     passNote:'Pass ≥ 75%', ofAreas:'of all areas', failN:'Score 0', weakN:'Score 1',
     rank:'Rating', score:'Score', progress:'Progress', plant:'Plant',
     plantRank:'Plant Ranking', areaRank:'Area Ranking', areaRankHi:'Top / Bottom',
@@ -6564,7 +6712,8 @@ function buildReportHTML(dash, impItems, opts) {
     </div>
     <div class="rp-sec"><div class="rp-sec-t">${esc(S.plantRank)}</div>
       <table><thead><tr><th style="width:36px">#</th><th>${esc(S.plant)}</th><th>${esc(S.progress)}</th><th style="width:58px">${esc(S.score)}</th><th style="width:92px">${esc(S.rank)}</th></tr></thead>
-      <tbody>${plantRows || `<tr><td colspan="5" style="color:var(--gray-400)">—</td></tr>`}</tbody></table></div>
+      <tbody>${plantRows || `<tr><td colspan="5" style="color:var(--gray-400)">—</td></tr>`}</tbody></table>
+      <div class="rp-calc">${esc(S.calcNote)}</div></div>
     <div class="rp-sec"><div class="rp-sec-t">${esc(S.areaRank)} — ${esc(S.areaRankHi)}</div>
       <table><tbody>${areaRows || `<tr><td colspan="5" style="color:var(--gray-400)">—</td></tr>`}</tbody></table></div>
     <div class="rp-sec"><div class="rp-sec-t">${esc(S.auditors)}</div>
@@ -6611,6 +6760,7 @@ function buildReportHTML(dash, impItems, opts) {
   .rp-kpi .note{ font-size:.69rem; color:var(--gray-500); margin-top:2px }
   .rp-sec{ margin-bottom:13px }
   .rp-sec-t{ font-size:.9rem; font-weight:800; color:var(--brand); margin-bottom:7px; display:flex; align-items:center; gap:7px }
+  .rp-calc{ font-size:.62rem; color:var(--gray-600); line-height:1.45; margin-top:5px }
   .rp-sec-t::before{ content:''; width:4px; height:16px; background:var(--brand); border-radius:3px; display:inline-block }
   table{ width:100%; border-collapse:collapse; font-size:.78rem }
   th{ text-align:left; font-size:.66rem; text-transform:uppercase; letter-spacing:.03em;
