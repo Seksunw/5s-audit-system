@@ -34,3 +34,7 @@ docs/SECURITY_ASSESSMENT.md
 # go-live readiness report — ไม่ขึ้น public (แผนที่ช่องโหว่)
 *READINESS*
 *GO_LIVE*
+
+# ภาพหน้าจอจากการทดสอบ UI — มีชื่อพนักงาน หมายเหตุ และรูปภายในโรงงาน (repo public ห้ามหลุด)
+# กติกา (ผู้ใช้กำหนด 2026-10-22): ภาพหน้าจอทุกภาพต้องเก็บในโฟลเดอร์นี้เท่านั้น
+5s-ui-screenshots/
