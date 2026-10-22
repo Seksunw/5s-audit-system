@@ -6,12 +6,12 @@
   <!-- Security headers (GitHub Pages ตั้ง HTTP header เองไม่ได้ จึงใช้ meta)
        ⚠️ ถ้าหน้าพัง/CDN โหลดไม่ขึ้น ให้ลบ 2 บรรทัดนี้ออกเพื่อย้อนกลับ
        'unsafe-inline' ยังต้องมีเพราะทุกหน้าใช้ inline onclick + <style> -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https://oibjnkngraulcccdqevm.supabase.co; connect-src 'self' https://oibjnkngraulcccdqevm.supabase.co wss://oibjnkngraulcccdqevm.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https://oibjnkngraulcccdqevm.supabase.co; connect-src 'self' https://oibjnkngraulcccdqevm.supabase.co wss://oibjnkngraulcccdqevm.supabase.co; worker-src 'self' blob:; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>ตรวจ 5ส | ระบบตรวจ 5ส</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=58">
+  <link rel="stylesheet" href="css/style.css?v=59">
 </head>
 <body style="padding-bottom:calc(var(--bottom-nav) + 70px)">
 
@@ -54,7 +54,7 @@
     <!-- แถบทีม: รายชื่อกรรมการ + สถานะบันทึกอัตโนมัติ + รีเฟรช (ตรวจแบบทีม) -->
     <div class="team-bar">
       <i class="bi bi-people-fill"></i>
-      <span class="team-members" id="teamMembers">-</span>
+      <button type="button" class="team-members" id="teamMembers" onclick="openTeamSheet()">-</button>
       <span class="team-save-status saved" id="teamSaveStatus"></span>
       <button type="button" class="team-refresh-btn" onclick="teamRefreshNow()" data-i18n-title="team.refresh" title="รีเฟรช">
         <i class="bi bi-arrow-clockwise"></i>
@@ -88,6 +88,6 @@
 </nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=58"></script>
+<script src="js/app.js?v=59"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
  * ระบบตรวจ 5ส โรงงาน
  */
 
-const CACHE_NAME = '5s-audit-v5.23'; // v5.23: ดอกจันแดง = ข้อที่รอบก่อนให้ 0–1 คะแนนหรือมีหมายเหตุ + pop up รายละเอียด (2026-10-20)
+const CACHE_NAME = '5s-audit-v5.24'; // v5.24: ทีม 2–4 คน + ทุกคนต้องกดยืนยันก่อนส่งผล (ส่วน L) + แนบรูป HEIC/HEIF ได้ + แถบแนะนำเปิดนอกแอป LINE บน Android (2026-10-22)
 const STATIC_ASSETS = [
   'index.html',
   'home.html',

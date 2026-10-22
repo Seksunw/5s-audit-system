@@ -211,7 +211,7 @@ const SBH = {
   async getSchedule() {
     const me = (AppState.user && AppState.user.userId) || null;
 
-    const [{ data, error }, { data:prog }, { data:mine }] = await Promise.all([
+    const [{ data, error }, { data:prog }, { data:mine }, { data:confs }] = await Promise.all([
       _sb.from('schedules').select('*, areas(area_name, area_type), plants(plant_name)'),
       _sb.from('schedule_progress').select('schedule_id, done_n, required_n, is_completed, team_mode, team_audit_id, team_locked'),
       me ? _sb.from('audit_headers')
@@ -219,8 +219,12 @@ const SBH = {
              .eq('auditor_id', me)
              .not('schedule_id', 'is', null)
          : Promise.resolve({ data: [] }),
+      // การยืนยันของทีม (ส่วน L) — ยังไม่รัน SQL = error → data null → ไม่โชว์สถานะยืนยัน
+      _sb.from('audit_confirmations').select('audit_id, user_id'),
     ]);
     if (error) throw error;
+    const confByAudit = {};
+    (confs || []).forEach(c => { (confByAudit[c.audit_id] = confByAudit[c.audit_id] || []).push(c.user_id); });
 
     const progBySched = {};
     (prog || []).forEach(p => { progBySched[p.schedule_id] = p; });
@@ -233,7 +237,7 @@ const SBH = {
 
     return { success:true, data:(data || []).map(s => {
       const p    = progBySched[s.schedule_id] || {};
-      // งานทีม (Round 2+): สถานะเป็นของทีม — ผลตรวจใบเดียว ใครในทีมกดส่งก็เสร็จทั้งทีม
+      // งานทีม (Round 2+): สถานะเป็นของทีม — ผลตรวจใบเดียว ทุกคนในทีมยืนยันครบแล้วเสร็จทั้งทีม (ส่วน L)
       //   Pending = ยังไม่มีใครเปิด · InProgress = มีดราฟแล้ว · Completed = ทีมส่งผลแล้ว
       const team   = !!p.team_mode;
       const myId   = team ? (p.team_audit_id || '') : (myAuditBySched[s.schedule_id] || '');
@@ -253,6 +257,9 @@ const SBH = {
         Required_N: Number(p.required_n) || 0,
         Team_Done:  !!p.is_completed,
         Team_Mode:  team,
+        // ดราฟของทีม: ยืนยันแล้วกี่คน / ฉันยืนยันหรือยัง (ทุกคนต้องยืนยันก่อนผลถูกส่ง — ส่วน L)
+        Confirm_N:    team && myId ? (confByAudit[myId] || []).length : 0,
+        Me_Confirmed: !!(team && myId && me && (confByAudit[myId] || []).includes(me)),
       };
     }) };
   },
@@ -758,14 +765,17 @@ const SBH = {
   async getScheduleAdmin({ round } = {}) {
     let sq = _sb.from('schedules').select('*');
     if (round) sq = sq.eq('audit_round', round);
-    const [{ data:areas }, { data:scheds }, { data:prog }, { data:auditors }, { data:plants }] =
+    const [{ data:areas }, { data:scheds }, { data:prog }, { data:auditors }, { data:plants }, { data:confs }] =
       await Promise.all([
         _sb.from('areas').select('*').eq('status','active').order('area_id'),
         sq,
         _sb.from('schedule_progress').select('schedule_id, required_n, done_n, is_completed, team_mode, team_audit_id, team_locked'),
         _sb.from('profiles').select('*').eq('status','active').order('name'),
         _sb.from('plants').select('*').eq('status','active'),
+        _sb.from('audit_confirmations').select('audit_id, user_id'),   // ส่วน L — ยังไม่รัน = null
       ]);
+    const confByAudit = {};
+    (confs || []).forEach(c => { (confByAudit[c.audit_id] = confByAudit[c.audit_id] || []).push(c.user_id); });
 
     // กระดานผูก 1 พื้นที่ = 1 งาน "ต่อรอบ" (D2) — กรองด้วย audit_round ของรอบที่กำลังวางแผน
     //    เดิมผูกทุกรอบรวมกัน → งานรอบเก่า (completed) ถูกส่ง scheduleId ไป UPDATE ทับ
@@ -787,6 +797,9 @@ const SBH = {
         Done_N: doneN, Required_N: reqN,
         Team_Mode: s ? (p.team_mode !== false) : true,   // งานใหม่ = ทีม (default ของ DB)
         Team_Started: !!p.team_audit_id,
+        Team_Audit_ID: p.team_audit_id || null,
+        Team_Locked:   !!p.team_locked,
+        Team_Confirmed: p.team_audit_id ? (confByAudit[p.team_audit_id] || []) : [],
         Sched_Status: !s ? null
                     : p.is_completed        ? 'Completed'
                     : (doneN > 0 || p.team_audit_id) ? 'Partial'
@@ -824,7 +837,7 @@ const SBH = {
   // ---- ตรวจแบบทีม (Round 2+ · patches.sql ส่วน K) ----
   //
   // ผลตรวจ 1 ใบต่องานมอบหมาย ทุกคนในทีมเขียนร่วมกัน · คำตอบบันทึกลง DB ทุกครั้งที่กด
-  // (ดราฟ = header ที่ locked_at is null) · ใครในทีมกดส่งก็ได้ → lock_audit (DB เช็คว่าตอบครบ)
+  // (ดราฟ = header ที่ locked_at is null) · ทุกคนในทีมกดยืนยัน → confirm_team_audit ล็อกเมื่อครบ (ส่วน L, DB เช็คว่าตอบครบ)
   //
   // แทน flow เดิมของการตรวจเดี่ยว (insert header → ส่ง details ทีละ chunk → finalize ตอนจบ)
   // ซึ่งเก็บคำตอบไว้ในหน่วยความจำจนกด submit — ปิดแอป/เน็ตหลุดกลางทาง = หายหมด
@@ -891,11 +904,14 @@ const SBH = {
       dateFrom:dates[0] || '', dateTo:dates[dates.length - 1] || '', items };
   },
 
-  /** กึ่งเรียลไทม์: ข้อที่เปลี่ยนหลัง since + สถานะ header ใน request เดียว */
+  /** กึ่งเรียลไทม์: ข้อที่เปลี่ยนหลัง since + สถานะ header + การยืนยันของทีม ใน request เดียว */
   async teamAuditChanges({ auditId, since }) {
     const { data, error } = await _sb.rpc('team_audit_changes', { p_audit_id:auditId, p_since:since || null });
     if (error) return { success:false, error:error.message };
-    return { success:true, now:data.now, header:data.header || {}, rows:data.rows || [] };
+    return { success:true, now:data.now, cursor:data.cursor, header:data.header || {}, rows:data.rows || [],
+      // ไม่มีคีย์ = DB ยังไม่ได้รันส่วน L → ปล่อยเป็น null (หน้าเว็บไม่แตะสถานะการยืนยัน)
+      confirmed: Array.isArray(data.confirmed) ? data.confirmed : null,
+      required:  Array.isArray(data.required)  ? data.required  : null };
   },
 
   /**
@@ -936,14 +952,33 @@ const SBH = {
   },
 
   /**
-   * ส่งผลของทีม → ล็อก แล้วอ่านคะแนนที่ trigger คำนวณไว้กลับมา
-   * DB ปฏิเสธถ้ายังตอบไม่ครบ ("ยังตอบไม่ครบ N ข้อ") — เพื่อนอาจเพิ่งยกเลิก N/A หลังเราเช็ค
+   * ล็อกผลตรวจทีมตรงๆ — ตั้งแต่ส่วน L (2026-10-22) เหลือแค่ admin ใช้ "ส่งผลแทนทีม" ใน Schedule Board
+   * (กรรมการลาป่วย/ติดต่อไม่ได้) · สมาชิกทีมต้องผ่าน confirmTeamAudit
+   * DB ปฏิเสธถ้ายังตอบไม่ครบ ("ยังตอบไม่ครบ N ข้อ")
    */
   async lockTeamAudit({ auditId }) {
     const { error } = await _sb.rpc('lock_audit', { p_audit_id:auditId });
     if (error) return { success:false, error:error.message };
-    const { data, error:e2 } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
-    if (e2) return { success:false, error:e2.message };
+    return SBH._lockedResult(auditId);
+  },
+
+  /**
+   * กรรมการกดยืนยันผลของทีม (ส่วน L) — คนสุดท้ายที่ยืนยันครบ DB ล็อกให้ทันที
+   * คืน locked:true + คะแนน หรือ locked:false + รายชื่อที่ยืนยันแล้ว/ต้องยืนยัน
+   * DB ปฏิเสธถ้ายังตอบไม่ครบ ("ยังตอบไม่ครบ N ข้อ") — เพื่อนอาจเพิ่งยกเลิก N/A หลังเราเช็ค
+   */
+  async confirmTeamAudit({ auditId }) {
+    const { data, error } = await _sb.rpc('confirm_team_audit', { p_audit_id:auditId });
+    if (error) return { success:false, error:error.message };
+    if (data && data.locked) return SBH._lockedResult(auditId);
+    return { success:true, auditId, locked:false,
+      confirmed:(data && data.confirmed) || [], required:(data && data.required) || [] };
+  },
+
+  /** อ่านคะแนนที่ trigger คำนวณไว้หลังล็อก (ใช้ร่วม lock/confirm) */
+  async _lockedResult(auditId) {
+    const { data, error } = await _sb.from('audit_headers').select('*').eq('audit_id', auditId).single();
+    if (error) return { success:false, error:error.message };
     return { success:true, auditId, locked:true,
       totalScore:data.total_score, maxScore:data.max_score,
       percent:Number(data.percent), status:MAP.auditStatus[data.status]||data.status };
@@ -1348,6 +1383,7 @@ const TRANSLATIONS = {
     'logs.act_login':            'เข้าระบบ',
     'logs.act_logout':           'ออกระบบ',
     'logs.act_submit':           'ส่งผลตรวจ',
+    'logs.act_confirm':          'ยืนยันผลตรวจ',
     'logs.act_insert':           'เพิ่ม',
     'logs.act_update':           'แก้ไข',
     'logs.act_delete':           'ลบ',
@@ -1402,6 +1438,8 @@ const TRANSLATIONS = {
     'tasks.pick_area_btn':       'เลือกพื้นที่ตรวจเอง',
     // ตรวจแบบทีม (Round 2+)
     'tasks.state_draft':         'กำลังตรวจ',
+    'tasks.state_wait_you':      'รอคุณยืนยัน',
+    'tasks.state_confirmed':     'คุณยืนยันแล้ว',
     'tasks.continue':            'ทำต่อ',
     'team.need_assignment':      'ตรวจได้เฉพาะพื้นที่ที่ได้รับมอบหมาย — เลือกงานจาก "งานที่ได้รับมอบหมาย"',
     'team.not_assigned':         'ไม่ได้รับมอบหมาย',
@@ -1416,16 +1454,35 @@ const TRANSLATIONS = {
     'team.save_offline':         'ออฟไลน์ — รอส่ง {n}',
     'team.photo_failed':         'อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง',
     'team.photo_wait':           'รอรูปอัปโหลดให้เสร็จก่อน',
+    'photo.converting':          'กำลังแปลงรูป HEIC… อาจใช้เวลาสักครู่',
+    'photo.heic_failed':         'แปลงรูป HEIC/HEIF ไม่สำเร็จ — ลองถ่ายใหม่ หรือตั้งกล้องให้บันทึกเป็น JPEG',
+    'photo.unsupported':         'เปิดรูปนี้ไม่ได้ — ลองถ่ายใหม่หรือเลือกรูปอื่น',
+    'line.banner':               'คุณเปิดแอปในแอป LINE — แนบรูปจากอัลบั้มอาจใช้ไม่ได้ แนะนำเปิดในเบราว์เซอร์ (Chrome)',
+    'line.open':                 'เปิดในเบราว์เซอร์',
+    'line.close':                'ปิดคำแนะนำ',
     'team.photo_remove_confirm': 'ลบรูปนี้? (ทุกคนในทีมจะไม่เห็นรูปนี้แล้ว)',
     'team.syncing':              'กำลังบันทึกและดึงคำตอบล่าสุดของทีม…',
     'team.sync_failed':          'ยังบันทึกคำตอบไม่ครบ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่',
     'team.session_expired':      'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
-    'team.submit_btn':           'ส่งผลตรวจของทีม',
-    'team.confirm_title':        'ส่งผลตรวจของทีม?',
-    'team.confirm_msg':          'ส่งแล้วทุกคนในทีมจะแก้ไขไม่ได้อีก',
+    'team.submit_btn':           'ยืนยันผลตรวจ',
+    'team.confirm_title':        'ยืนยันผลตรวจของทีม?',
+    'team.confirm_msg':          'ผลจะถูกส่งเมื่อกรรมการทุกคนกดยืนยันครบ · ถ้ามีคนแก้คำตอบหลังจากนี้ ทุกคนต้องยืนยันใหม่ · ส่งแล้วแก้ไขไม่ได้อีก',
+    'team.confirm_progress':     'ยืนยันแล้ว {x}/{n}',
+    'team.confirm_waiting':      'คุณยืนยันแล้ว · รออีก {n} คน',
+    'team.confirm_done_toast':   'ยืนยันแล้ว — รอ {names}',
+    'team.confirm_reset':        'มีการแก้ไขคำตอบหลังยืนยัน — ทุกคนต้องกดยืนยันใหม่',
+    'team.confirmed_mark':       'ยืนยันแล้ว',
+    'team.st_pending':           'ยังไม่ยืนยัน',
+    'team.sheet_title':          'สถานะการยืนยันของทีม',
+    'team.sheet_note':           'ผลจะถูกส่งเมื่อทุกคนยืนยันครบ · แก้คำตอบหลังยืนยัน ทุกคนต้องยืนยันใหม่',
+    'team.close':                'ปิด',
     'team.back_confirm':         'ยังมีคำตอบที่ยังไม่ได้บันทึก (จะบันทึกต่อเมื่อเปิดหน้านี้อีกครั้ง) ออกจากหน้านี้?',
     'team.stale_dropped':        'มี {n} ข้อที่คุณแก้ตอนออฟไลน์ แต่เพื่อนในทีมแก้ทับไปแล้ว — ใช้คำตอบของเพื่อน',
-    'sched.team_size':           'งานตรวจแบบทีมต้องมีกรรมการ 2–3 คน',
+    'sched.team_size':           'งานตรวจแบบทีมต้องมีกรรมการ 2–4 คน',
+    'sched.force_info':          'ทีมยืนยันผลแล้ว {x}/{n} คน · รอ: {names}',
+    'sched.force_btn':           'ส่งผลแทนทีม',
+    'sched.force_confirm':       'ส่งผลแทนทีมโดยไม่รอ {names} ยืนยัน?\nผลจะถูกล็อกทันที (ทีมต้องตอบครบทุกข้อแล้ว)',
+    'sched.force_done':          'ส่งผลแทนทีมแล้ว',
     'sched.team_locked':         'ทีมส่งผลตรวจงานนี้แล้ว แก้รายชื่อไม่ได้',
     'summary.team':              'ผู้ตรวจ',
     // ผลรอบก่อน (ดอกจันแดงในหน้าตรวจ)
@@ -2012,6 +2069,7 @@ const TRANSLATIONS = {
     'logs.act_login':            'Login',
     'logs.act_logout':           'Logout',
     'logs.act_submit':           'Submit audit',
+    'logs.act_confirm':          'Confirm audit',
     'logs.act_insert':           'Insert',
     'logs.act_update':           'Update',
     'logs.act_delete':           'Delete',
@@ -2066,6 +2124,8 @@ const TRANSLATIONS = {
     'tasks.pick_area_btn':       'Choose an area yourself',
     // Team audit (Round 2+)
     'tasks.state_draft':         'In progress',
+    'tasks.state_wait_you':      'Waiting for you',
+    'tasks.state_confirmed':     'You confirmed',
     'tasks.continue':            'Continue',
     'team.need_assignment':      'You can only audit assigned areas — pick a task from "My Tasks"',
     'team.not_assigned':         'Not assigned',
@@ -2080,16 +2140,35 @@ const TRANSLATIONS = {
     'team.save_offline':         'Offline — {n} pending',
     'team.photo_failed':         'Photo upload failed — please try again',
     'team.photo_wait':           'Please wait for photos to finish uploading',
+    'photo.converting':          'Converting HEIC photo… this may take a moment',
+    'photo.heic_failed':         'Could not convert this HEIC/HEIF photo — take a new one, or set the camera to save JPEG',
+    'photo.unsupported':         'This photo cannot be opened — take a new one or choose another',
+    'line.banner':               'You opened the app inside LINE — choosing photos from the gallery may not work. Open it in your browser (Chrome) instead.',
+    'line.open':                 'Open in browser',
+    'line.close':                'Dismiss tip',
     'team.photo_remove_confirm': 'Remove this photo? (it will be removed for the whole team)',
     'team.syncing':              'Saving and fetching the team\'s latest answers…',
     'team.sync_failed':          'Some answers are not saved yet — check your connection and try again',
     'team.session_expired':      'Session expired, please sign in again',
-    'team.submit_btn':           'Submit team audit',
-    'team.confirm_title':        'Submit team audit?',
-    'team.confirm_msg':          'After submitting, no one in the team can edit it',
+    'team.submit_btn':           'Confirm audit',
+    'team.confirm_title':        'Confirm the team audit?',
+    'team.confirm_msg':          'The audit is submitted once every auditor has confirmed. If anyone changes an answer after this, everyone must confirm again. It cannot be edited after submission.',
+    'team.confirm_progress':     'Confirmed {x}/{n}',
+    'team.confirm_waiting':      'You confirmed · waiting for {n} more',
+    'team.confirm_done_toast':   'Confirmed — waiting for {names}',
+    'team.confirm_reset':        'An answer changed after confirming — everyone needs to confirm again',
+    'team.confirmed_mark':       'Confirmed',
+    'team.st_pending':           'Not confirmed yet',
+    'team.sheet_title':          'Team confirmation status',
+    'team.sheet_note':           'The audit is submitted once everyone has confirmed. Changing an answer after confirming means everyone confirms again.',
+    'team.close':                'Close',
     'team.back_confirm':         'Some answers are not saved yet (they will be saved next time you open this page). Leave this page?',
     'team.stale_dropped':        'Teammates changed {n} item(s) you edited while offline — their answers were kept',
-    'sched.team_size':           'Team audits need 2–3 auditors',
+    'sched.team_size':           'Team audits need 2–4 auditors',
+    'sched.force_info':          'Team confirmed {x}/{n} · waiting for: {names}',
+    'sched.force_btn':           'Submit for the team',
+    'sched.force_confirm':       'Submit for the team without waiting for {names} to confirm?\nThe audit locks immediately (all items must already be answered).',
+    'sched.force_done':          'Submitted for the team',
     'sched.team_locked':         'The team has already submitted this audit — members cannot be changed',
     'summary.team':              'Auditors',
     // Previous-round notes (red asterisk on the audit form)
@@ -2521,7 +2600,14 @@ function renderAssignedTaskCards(tasks) {
   const stateCfg = TASK_STATE_CFG();
   return tasks.map(s => {
     const st  = taskState(s);
-    const cfg = stateCfg[st];
+    const cfg = Object.assign({}, stateCfg[st]);
+    // ดราฟของทีม: บอกสถานะการยืนยัน (ทุกคนต้องยืนยันก่อนผลถูกส่ง — ส่วน L)
+    if (st === 'draft' && s.Me_Confirmed) {
+      cfg.label = I18n.t('tasks.state_confirmed') + (s.Required_N ? ` ${s.Confirm_N}/${s.Required_N}` : '');
+    } else if (st === 'draft' && s.Confirm_N > 0) {
+      cfg.label = I18n.t('tasks.state_wait_you') + (s.Required_N ? ` ${s.Confirm_N}/${s.Required_N}` : '');
+      cfg.bd_bg = 'var(--red-bg)'; cfg.bd_fg = 'var(--danger)';
+    }
     const dateLabel = st === 'today' ? I18n.t('tasks.today_label') : UI.formatDate(s.Audit_Date);
     const sub = [s.Plant_Name || s.Plant_ID || '', s.Audit_Round || '', dateLabel]
       .filter(Boolean).map(escHtml).join(' · ');
@@ -2906,12 +2992,13 @@ function selectArea(areaId, areaName, areaType, plantId, plantName, scheduleId) 
 // AUDIT PAGE — ตรวจแบบทีม (Round 2+ · patches.sql ส่วน K · แผน TEAM_AUDIT_PLAN.md)
 // ============================================================
 //
-// กรรมการ 2–3 คนใช้ผลตรวจใบเดียวกัน (เหมือนไฟล์แชร์):
+// กรรมการ 2–4 คนใช้ผลตรวจใบเดียวกัน (เหมือนไฟล์แชร์):
 //   • ทุกการกดบันทึกลง DB ทันที (ผ่านคิว) → ดราฟไม่หายแม้ปิดแอป/เน็ตหลุด
 //   • กึ่งเรียลไทม์: ดึงเฉพาะข้อที่เปลี่ยน ทุก 10 วิ (เงียบนาน → ยืดถึง 30 วิ) + ดึงพ่วงหลังเราบันทึก
 //     หยุดดึงตอนแท็บไม่ active · ไม่ใช้ Supabase Realtime เพื่อให้ย้าย Dataverse ง่าย
 //   • เห็นต่าง = คนกดล่าสุดชนะ (โชว์ "แก้ล่าสุด: ชื่อ" รายข้อ)
-//   • ใครในทีมกดส่งก็ได้ → lock_audit (DB เช็คว่าตอบครบทุกข้อ)
+//   • ทุกคนในทีมต้องกดยืนยัน (confirm_team_audit — DB เช็คตอบครบ) คนสุดท้ายยืนยันครบ = ล็อก (ส่วน L, 2026-10-22)
+//     มีคนแก้คำตอบ/รูปหลังยืนยัน → DB ล้างการยืนยันทั้งหมด ทุกคนยืนยันใหม่ · คนขาด → admin "ส่งผลแทนทีม"
 //   • ฟอร์มเดียวทุกพื้นที่: โหลดเกณฑ์ active ทั้งหมด ทีมกด N/A หมวดที่ไม่มีในพื้นที่เอง
 // ============================================================
 const TEAM_POLL_MIN     = 10000;   // ความถี่ปกติ
@@ -2927,6 +3014,9 @@ const TeamAudit = {
   inflight: false, retryDelay: 0, flushTimer: null,
   polling: false, pollTimer: null, pollDelay: TEAM_POLL_MIN, lastChangeAt: 0,
   photoBusy: 0, locked: false,
+  confirmed: null,         // user_id ที่ยืนยันผลแล้ว (null = DB ยังไม่มีส่วน L)
+  required: [],            // user_id ที่ต้องยืนยัน (สมาชิก active ของงาน ณ ตอนนี้)
+  finishing: false,        // กำลังเรียกยืนยันซ้ำอัตโนมัติ (ยืนยันครบหลัง admin ตัดชื่อคนที่ขาด)
   lastBy: {},              // criteriaId → updated_by ล่าสุด
   rowSrv: {},              // criteriaId → แถวล่าสุดจาก DB (ใช้ตัดสินคำตอบค้างส่งที่เพื่อนแก้ทับไปแล้ว)
   seq: 0,                  // ตัวนับลำดับเหตุการณ์ในหน้านี้ (ไม่ใช้เวลา — เกิดใน ms เดียวกันได้)
@@ -3120,8 +3210,54 @@ function renderTeamBar() {
   const el = document.getElementById('teamMembers');
   if (!el) return;
   const me = AppState.user && AppState.user.userId;
-  el.textContent = TeamAudit.team
-    .map(m => m.id === me ? `${m.name} (${I18n.t('team.you')})` : m.name).join(' · ');
+  const conf = TeamAudit.confirmed || [];
+  // แถบแคบ (ทีม 4 คนบนมือถือ) → ชื่อแรกอย่างเดียว · กดแถบเพื่อดูรายชื่อเต็ม + สถานะยืนยัน (openTeamSheet)
+  const first = m => String(m.name || '-').trim().split(/\s+/)[0];
+  const label = m => (m.id === me ? `${first(m)} (${I18n.t('team.you')})` : first(m));
+  const done  = TeamAudit.team.filter(m => conf.includes(m.id)).length;
+  const chip  = Array.isArray(TeamAudit.confirmed)
+    ? `<span class="team-conf-chip${done ? ' some' : ''}">✓ ${done}/${TeamAudit.team.length}</span> ` : '';
+  // ✓ = ยืนยันผลแล้ว (ส่วน L)
+  el.innerHTML = chip + TeamAudit.team.map(m => conf.includes(m.id)
+      ? `<span class="team-ok">✓ ${escHtml(label(m))}</span>`
+      : `<span>${escHtml(label(m))}</span>`).join(' · ');
+  el.setAttribute('aria-label', I18n.t('team.sheet_title'));
+}
+
+/** รายชื่อทีมเต็ม + ใครยืนยันแล้ว/ยัง (กดจากแถบทีม) */
+function openTeamSheet() {
+  closeTeamSheet();
+  const me = AppState.user && AppState.user.userId;
+  const conf = TeamAudit.confirmed || [];
+  const wrap = document.createElement('div');
+  wrap.className = 'prev-sheet-backdrop';
+  wrap.id = 'teamSheet';
+  wrap.onclick = e => { if (e.target === wrap) closeTeamSheet(); };
+  wrap.innerHTML = `
+    <div class="prev-sheet" role="dialog" aria-modal="true" aria-labelledby="teamSheetTitle">
+      <div class="prev-sheet-head">
+        <div>
+          <div class="prev-sheet-title" id="teamSheetTitle">${escHtml(I18n.t('team.sheet_title'))}</div>
+          <div class="prev-sheet-meta">${escHtml(I18n.t('team.sheet_note'))}</div>
+        </div>
+        <button type="button" class="btn-icon" onclick="closeTeamSheet()" aria-label="${escAttr(I18n.t('team.close'))}"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="team-sheet-list">
+        ${TeamAudit.team.map(m => {
+          const ok = conf.includes(m.id);
+          return `<div class="team-sheet-row">
+            <span class="team-sheet-name">${escHtml(m.name || '-')}${m.id === me ? ` <span class="text-muted">(${escHtml(I18n.t('team.you'))})</span>` : ''}</span>
+            <span class="team-sheet-st ${ok ? 'ok' : ''}">${ok ? '✓ ' + escHtml(I18n.t('team.confirmed_mark')) : escHtml(I18n.t('team.st_pending'))}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+}
+
+function closeTeamSheet() {
+  const el = document.getElementById('teamSheet');
+  if (el) el.remove();
 }
 
 function refreshSaveStatus() {
@@ -3305,8 +3441,38 @@ function applyTeamChanges(res, initial, startedSeq) {
     .forEach(cat => syncCategoryNA(cat, true));
 
   if (res.header && res.header.locked_at) onTeamLocked();
+  else applyTeamConfirmations(res, initial);
   updateProgress();
   return byOthers;
+}
+
+/** สถานะการยืนยันจากรอบดึง — แจ้งเมื่อการยืนยันของเราถูกล้าง (มีคนแก้คำตอบหลังยืนยัน) */
+function applyTeamConfirmations(res, initial) {
+  if (!res || !Array.isArray(res.confirmed)) return;
+  const me = AppState.user && AppState.user.userId;
+  const wasMine = !!(TeamAudit.confirmed && TeamAudit.confirmed.includes(me));
+  TeamAudit.confirmed = res.confirmed;
+  if (Array.isArray(res.required) && res.required.length) {
+    // admin เพิ่ม/ตัดชื่อระหว่างตรวจ → แถบทีมตามงานปัจจุบัน
+    if (res.required.join() !== TeamAudit.required.join()) {
+      TeamAudit.required = res.required.slice();
+      TeamAudit.team = res.required.map(id => ({ id, name: TeamAudit.nameById[id] || '-' }));
+    }
+  }
+  const mine = TeamAudit.confirmed.includes(me);
+  if (wasMine && !mine && !initial) UI.toast(I18n.t('team.confirm_reset'), 'warning', 6000);
+  renderTeamBar();
+
+  // เรายืนยันแล้ว + ทุกคนที่ต้องยืนยันครบ แต่ยังไม่ล็อก (admin เพิ่งตัดชื่อคนที่ขาด) → ยืนยันซ้ำให้ DB ล็อก
+  const req = TeamAudit.required;
+  if (mine && req.length && req.every(id => TeamAudit.confirmed.includes(id))
+      && !TeamAudit.finishing && !_auditSubmitting && !TeamAudit.locked) {
+    TeamAudit.finishing = true;
+    API.post('confirmTeamAudit', { auditId: TeamAudit.auditId })
+      .then(r => { if (r && r.success && r.locked) onTeamLocked(); })
+      .catch(() => {})
+      .finally(() => { TeamAudit.finishing = false; });
+  }
 }
 
 /**
@@ -3541,18 +3707,29 @@ function updateProgress() {
 
   const submitBtn = document.getElementById('submitBtn');
   if (submitBtn && !TeamAudit.locked) {
-    if (total === 0) {
-      // ทุกหมวด N/A — ส่งได้ (ผลจะเป็น "ไม่มีข้อประเมิน") แต่ต้องตั้งใจกด
-      submitBtn.disabled = false;
-      submitBtn.textContent = I18n.t('team.submit_btn');
-    } else if (answered < total) {
-      submitBtn.disabled = false;
+    submitBtn.disabled = false;
+    if (total > 0 && answered < total) {
       submitBtn.textContent = `${I18n.t('audit.answered_prefix')} ${answered}/${total} ${I18n.t('audit.answered_suffix')}`;
     } else {
-      submitBtn.disabled = false;
-      submitBtn.textContent = I18n.t('team.submit_btn');
+      // ตอบครบแล้ว (หรือทุกหมวด N/A — ส่งได้ ผลเป็น "ไม่มีข้อประเมิน" แต่ต้องตั้งใจกด) → ปุ่มยืนยันของทีม
+      submitBtn.textContent = teamConfirmLabel();
     }
   }
+}
+
+/** ข้อความปุ่มยืนยัน: ยังไม่ยืนยัน = "ยืนยันผลตรวจ · ยืนยันแล้ว x/n" · ยืนยันแล้ว = "รออีก k คน" */
+function teamConfirmLabel() {
+  const conf = TeamAudit.confirmed;
+  const req  = TeamAudit.required.length ? TeamAudit.required : TeamAudit.team.map(m => m.id);
+  if (!Array.isArray(conf)) return I18n.t('team.submit_btn');
+  const me = AppState.user && AppState.user.userId;
+  const done = req.filter(id => conf.includes(id)).length;
+  if (conf.includes(me)) {
+    return '✓ ' + I18n.t('team.confirm_waiting').replace('{n}', Math.max(0, req.length - done));
+  }
+  return done
+    ? `${I18n.t('team.submit_btn')} · ${I18n.t('team.confirm_progress').replace('{x}', done).replace('{n}', req.length)}`
+    : I18n.t('team.submit_btn');
 }
 
 function getUnansweredCriteria() {
@@ -3703,14 +3880,30 @@ function triggerPhoto(criteriaId) {
 async function addPhoto(criteriaId, file) {
   const a = AppState.auditAnswers[criteriaId];
   if (!a || TeamAudit.locked) return;
-  const compressed = await compressImage(file, 1024, 0.8);
+
+  // นับเป็นงานค้างตั้งแต่เริ่มย่อ/แปลงรูป (HEIC ใช้เวลาหลายวินาที) — กันกดส่งผลก่อนรูปเสร็จ
+  TeamAudit.photoBusy++;
+  refreshSaveStatus();
+  let compressed;
+  try {
+    compressed = await compressImage(file, 1024, 0.8,
+      () => UI.toast(I18n.t('photo.converting'), 'info', 5000));
+  } catch (e) {
+    TeamAudit.photoBusy--;
+    refreshSaveStatus();
+    UI.toast(I18n.t(e && e.code === 'heic' ? 'photo.heic_failed' : 'photo.unsupported'), 'error', 7000);
+    return;
+  }
+  if (TeamAudit.locked) {                     // ทีมส่งผลไประหว่างแปลงรูป → ไม่อัปโหลดทิ้งไว้เป็นรูปกำพร้า
+    TeamAudit.photoBusy--;
+    refreshSaveStatus();
+    return;
+  }
 
   // โชว์ภาพตัวอย่างระหว่างอัปโหลด (ยังไม่มี url)
   const tmp = { preview: compressed, url: null };
   a.photos = (a.photos || []).concat(tmp);
-  TeamAudit.photoBusy++;
   renderPhotoPreviews(criteriaId);
-  refreshSaveStatus();
 
   let ok = false;
   const url = await uploadToImgBB(compressed);
@@ -3808,28 +4001,77 @@ async function uploadToImgBB(base64) {
 /**
  * Compress image ก่อน upload
  */
-function compressImage(file, maxSize = 1024, quality = 0.8) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img    = new Image();
-      img.onload   = () => {
-        const canvas = document.createElement('canvas');
-        let { width, height } = img;
-        const ratio = Math.min(maxSize / width, maxSize / height, 1);
-        canvas.width  = width  * ratio;
-        canvas.height = height * ratio;
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+/**
+ * ย่อรูปเป็น JPEG (คืน dataURL) · ล้มเหลวโยน Error ที่มี .code
+ *   'decode' = เบราว์เซอร์เปิดไฟล์นี้ไม่ได้ · 'heic' = เป็น HEIC/HEIF แต่แปลงไม่สำเร็จ
+ * เดิมไม่มี onerror → รูปที่เปิดไม่ได้ทำให้ Promise ค้างเงียบ ไม่มีอะไรขึ้นเลย (เจอจริง Round 1:
+ * Android เลือกรูปจากอัลบั้มไม่ได้ แต่ถ่ายใหม่ได้ เพราะ Chrome เปิด HEIF ไม่ได้ ส่วนกล้องส่ง JPEG เสมอ)
+ * onConvert = เรียกเมื่อต้องแปลง HEIC (ให้ผู้ใช้รู้ว่ากำลังทำงาน)
+ */
+async function compressImage(file, maxSize = 1024, quality = 0.8, onConvert) {
+  let img;
+  try {
+    img = await decodeImage(file);
+  } catch (_) {
+    if (!(await isHeicFile(file))) throw photoError('decode');
+    if (onConvert) onConvert();
+    try {
+      const lib  = await loadHeicLib();
+      const jpeg = await withTimeout(lib.heicTo({ blob: file, type: 'image/jpeg', quality: 0.92 }), 90000);
+      img = await decodeImage(jpeg);
+    } catch (e) {
+      console.error('[photo] HEIC convert failed:', e);
+      throw photoError('heic');
+    }
+  }
+  const ratio  = Math.min(maxSize / img.naturalWidth, maxSize / img.naturalHeight, 1);
+  const canvas = document.createElement('canvas');
+  canvas.width  = Math.max(1, Math.round(img.naturalWidth  * ratio));
+  canvas.height = Math.max(1, Math.round(img.naturalHeight * ratio));
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  const out = canvas.toDataURL('image/jpeg', quality);
+  if (!out.startsWith('data:image/jpeg')) throw photoError('decode');   // หน่วยความจำไม่พอ → ได้ "data:,"
+  return out;
+}
+
+function photoError(code) { const e = new Error('photo ' + code); e.code = code; return e; }
+
+/** เปิดรูปจาก Blob/File ผ่าน object URL (ไม่แปลงเป็น base64 ทั้งไฟล์ — ประหยัดหน่วยความจำมือถือ) */
+function decodeImage(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload  = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(photoError('decode')); };
+    img.src = url;
   });
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+}
+
+/** HEIC/HEIF ดูจาก type/นามสกุล หรือหัวไฟล์ 'ftyp<brand>' (บาง Android ส่ง type ว่าง) */
+async function isHeicFile(file) {
+  if (/^image\/hei[cf]/i.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '')) return true;
+  try {
+    const head  = new Uint8Array(await file.slice(4, 12).arrayBuffer());
+    const brand = String.fromCharCode.apply(null, head);
+    return /^ftyp(heic|heix|hevc|hevx|heim|heis|hevm|hevs|mif1|msf1)$/.test(brand);
+  } catch (_) { return false; }
+}
+
+// ตัวแปลง HEIC → JPEG โหลดเฉพาะตอนเจอไฟล์ HEIC ที่เบราว์เซอร์เปิดเองไม่ได้ (~3 MB ครั้งแรก, Safari ไม่ต้องใช้)
+// build "csp" ไม่ใช้ eval/WebAssembly แต่ถอดรหัสใน Worker จาก blob: → ทุกหน้าต้องมี CSP worker-src blob:
+const HEIC_LIB_URL = 'https://cdn.jsdelivr.net/npm/heic-to@1.5.2/dist/csp/heic-to.js';
+let _heicLib = null;
+function loadHeicLib() {
+  if (!_heicLib) _heicLib = import(HEIC_LIB_URL).catch(e => { _heicLib = null; throw e; });
+  return _heicLib;
+}
+
 // ============================================================
-// SUBMIT AUDIT — ส่งผลของทีม (ใครในทีมกดก็ได้)
+// SUBMIT AUDIT — กรรมการกดยืนยันผลของทีม · ทุกคนยืนยันครบ = ส่งผล/ล็อก (ส่วน L, 2026-10-22)
 // ============================================================
 let _auditSubmitting = false;
 async function submitAudit() {
@@ -3866,13 +4108,28 @@ async function submitAudit() {
       return;
     }
 
-    const ok = await showConfirm(I18n.t('team.confirm_title'), I18n.t('team.confirm_msg'));
-    if (!ok) return;
+    // ยืนยันไปแล้ว (ปุ่มขึ้น "รออีก k คน") → กดซ้ำ = เช็คอีกรอบ ไม่ต้องถามซ้ำ
+    const me = AppState.user.userId;
+    const already = Array.isArray(TeamAudit.confirmed) && TeamAudit.confirmed.includes(me);
+    if (!already) {
+      const ok = await showConfirm(I18n.t('team.confirm_title'), I18n.t('team.confirm_msg'));
+      if (!ok) return;
+    }
 
-    // 3) ล็อก → อ่านคะแนนที่ trigger คำนวณไว้
+    // 3) ยืนยัน → คนสุดท้ายที่ครบ DB ล็อกให้ แล้วอ่านคะแนนที่ trigger คำนวณไว้
     UI.showLoading(I18n.t('msg.loading_step3'));
-    const res = await API.post('lockTeamAudit', { auditId: TeamAudit.auditId });
+    const res = await API.post('confirmTeamAudit', { auditId: TeamAudit.auditId });
     UI.hideLoading();
+    if (res.success && !res.locked) {
+      // ยังรอเพื่อน — อยู่หน้านี้ต่อ (ดึงข้อมูลตามปกติ คนสุดท้ายยืนยันแล้วหน้านี้จะพาไปหน้าผลเอง)
+      applyTeamConfirmations({ confirmed: res.confirmed, required: res.required }, false);
+      updateProgress();
+      const waiting = TeamAudit.required.filter(id => !TeamAudit.confirmed.includes(id))
+        .map(id => TeamAudit.nameById[id] || '-');
+      UI.toast(I18n.t('team.confirm_done_toast').replace('{names}', waiting.join(', ')), 'success', 5000);
+      logEvent('CONFIRM_AUDIT', `ยืนยันผลตรวจทีม ${getParam('areaName') || getParam('areaId') || ''}`, 'audit_headers', TeamAudit.auditId);
+      return;
+    }
     if (!res.success) {
       // เพื่อนอาจเพิ่งยกเลิก N/A/เคลียร์คะแนนหลังเราเช็ค → ดึงใหม่ทั้งหมดแล้วชี้ข้อที่ขาด
       UI.toast(res.error || I18n.t('msg.finalize_failed'), 'error', 6000);
@@ -4962,9 +5219,10 @@ let _schedSelected = new Set();   // Area_IDs ที่ติ๊กเลือ�
 let _schedAudPickSet = new Set(); // ผู้ตรวจที่เลือกในโหมด "ตามคน" (หลายคนได้)
 let _bulkAuds      = new Set();   // ผู้ตรวจที่เลือกใน bulk modal (โหมดตามพื้นที่)
 
-// งานตรวจแบบทีม (Round 2+): กรรมการ 2–3 คนต่อพื้นที่ (ตัดสินใจ 2026-10-20)
+// งานตรวจแบบทีม (Round 2+): กรรมการ 2–4 คนต่อพื้นที่ (2026-10-20 ตั้ง 2–3 · ผู้ใช้ขยายเป็น 4 เมื่อ 2026-10-22)
+// จำกัดที่หน้าเว็บเท่านั้น — DB ไม่จำกัดจำนวน
 const TEAM_SIZE_MIN = 2;
-const TEAM_SIZE_MAX = 3;
+const TEAM_SIZE_MAX = 4;
 const _teamSizeOk = n => n >= TEAM_SIZE_MIN && n <= TEAM_SIZE_MAX;
 // งานทีมที่ส่งผลแล้ว → ล็อกรายชื่อ (ชื่อในผลตรวจถูกบันทึกไว้แล้ว แก้งานไปก็ไม่ตรงกัน)
 const _schedTeamLocked = a => a.Team_Mode !== false && !!a.Schedule_ID && a.Sched_Status === 'Completed';
@@ -5323,7 +5581,7 @@ async function schedSaveByAuditor() {
   const planRound = _schedPlanRound();
   const areas = [..._schedSelected].map(id => _schedAllAreas.find(a => a.Area_ID === id)).filter(Boolean);
   if (areas.some(_schedTeamLocked)) { UI.toast(I18n.t('sched.team_locked'), 'warning'); return; }
-  // โหมดเพิ่มคน: ทยอยเพิ่มได้ (ยังไม่ครบ 2 ได้) แต่ห้ามเกิน 3
+  // โหมดเพิ่มคน: ทยอยเพิ่มได้ (ยังไม่ครบ 2 ได้) แต่ห้ามเกิน TEAM_SIZE_MAX
   const newSize = a => new Set((a.Auditor_IDs ? a.Auditor_IDs.split(',').map(x => x.trim()).filter(Boolean) : []).concat(uids)).size;
   if (areas.some(a => a.Team_Mode !== false && newSize(a) > TEAM_SIZE_MAX)) {
     UI.toast(I18n.t('sched.team_size'), 'warning'); return;
@@ -5411,6 +5669,8 @@ function openSchedModal(areaId) {
   if (saveBtn) saveBtn.disabled = _schedTeamLocked(area);
   if (_schedTeamLocked(area)) UI.toast(I18n.t('sched.team_locked'), 'info', 4000);
 
+  schedRenderForceLock(area);
+
   schedRenderAuditorGrid();
   document.getElementById('assignModal').classList.add('show');
 }
@@ -5482,6 +5742,53 @@ async function saveSchedule() {
     UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
   }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> ' + escHtml(I18n.t('sched.save_assignment')); }
+}
+
+/**
+ * "ส่งผลแทนทีม" (admin) — งานทีมที่เริ่มตรวจแล้วแต่ยังยืนยันไม่ครบ (ส่วน L)
+ * ใช้เมื่อกรรมการลาป่วย/ติดต่อไม่ได้ · DB ยังบังคับตอบครบทุกข้อ (lock_audit)
+ * ทางเลือกที่ไม่ข้ามการยืนยัน: ตัดชื่อคนที่ขาดออกจากทีมแล้วให้คนที่ยืนยันแล้วกดยืนยันอีกครั้ง
+ */
+function schedRenderForceLock(area) {
+  const row = document.getElementById('forceLockRow');
+  if (!row) return;
+  const show = !!(area && area.Team_Mode !== false && area.Team_Audit_ID && !area.Team_Locked);
+  row.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  const t = _schedTeamConfirm(area);
+  setEl('forceLockInfo', I18n.t('sched.force_info')
+    .replace('{x}', t.done).replace('{n}', t.total).replace('{names}', t.waiting.join(', ') || '-'));
+}
+
+/** คนที่ต้องยืนยัน = สมาชิกงานที่ยัง active และไม่ใช่ viewer (ตรงกับ team_required_ids ใน DB) */
+function _schedTeamConfirm(area) {
+  const conf = area.Team_Confirmed || [];
+  const ids = (area.Auditor_IDs || '').split(',').map(x => x.trim())
+    .filter(id => id && _schedAuditors.some(u => u.User_ID === id));
+  const nameOf = id => (_schedAuditors.find(u => u.User_ID === id) || {}).Name || '-';
+  return { total: ids.length, done: ids.filter(id => conf.includes(id)).length,
+           waiting: ids.filter(id => !conf.includes(id)).map(nameOf) };
+}
+
+async function forceLockTeam() {
+  const area = _schedCurrentArea;
+  if (!area || !area.Team_Audit_ID || area.Team_Locked) return;
+  const waiting = _schedTeamConfirm(area).waiting;
+  if (!confirm(I18n.t('sched.force_confirm').replace('{names}', waiting.join(', ') || '-'))) return;
+  const btn = document.getElementById('forceLockBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await API.post('lockTeamAudit', { auditId: area.Team_Audit_ID });
+    if (!res.success) { UI.toast(res.error || I18n.t('msg.finalize_failed'), 'error', 6000); return; }
+    logEvent('SUBMIT_AUDIT', `ส่งผลแทนทีม ${area.Area_Name || area.Area_ID} · ${res.percent}%`, 'audit_headers', area.Team_Audit_ID);
+    UI.toast(I18n.t('sched.force_done'), 'success');
+    closeAssignModal();
+    schedChangeRound();                       // โหลดกระดานใหม่ให้สถานะเป็น "เสร็จ"
+  } catch (err) {
+    UI.toast(I18n.t('msg.error_prefix') + err.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function deleteSchedule() {
@@ -5840,6 +6147,7 @@ function renderLogs() {
     LOGIN:        { icon:'bi-box-arrow-in-right', cls:'ok',   label:I18n.t('logs.act_login') },
     LOGOUT:       { icon:'bi-box-arrow-right',    cls:'muted',label:I18n.t('logs.act_logout') },
     SUBMIT_AUDIT: { icon:'bi-clipboard-check',    cls:'ok',   label:I18n.t('logs.act_submit') },
+    CONFIRM_AUDIT:{ icon:'bi-person-check',       cls:'ok',   label:I18n.t('logs.act_confirm') },
     INSERT:       { icon:'bi-plus-circle',        cls:'ok',   label:I18n.t('logs.act_insert') },
     UPDATE:       { icon:'bi-pencil',             cls:'warn', label:I18n.t('logs.act_update') },
     DELETE:       { icon:'bi-trash3',             cls:'danger',label:I18n.t('logs.act_delete') },
@@ -5912,9 +6220,49 @@ try {
   });
 } catch(_) {}
 
+// ============================================================
+// เปิดผ่านเบราว์เซอร์ในแอป LINE (Android) → แนะนำให้เปิดในเบราว์เซอร์จริง
+//   Round 1: กรรมการ Android หลายคนเปิดลิงก์จาก LINE (เช็คจาก auth.sessions) และแนบรูปจากอัลบั้มไม่ได้
+//   ตัวเลือกไฟล์ในแอป LINE เป็นของ LINE เอง แอปเราคุมไม่ได้ · iPhone ใน LINE ใช้ตัวเลือกของระบบ ไม่มีปัญหา
+//   ?openExternalBrowser=1 = พารามิเตอร์ของ LINE สั่งให้เปิดลิงก์ในเบราว์เซอร์หลักของเครื่อง
+// ============================================================
+function isLineAndroid() {
+  const ua = navigator.userAgent || '';
+  return /\bLine\/\d/i.test(ua) && /Android/i.test(ua);
+}
+
+function showLineBanner() {
+  if (!isLineAndroid()) {
+    // เปิดในเบราว์เซอร์จริงแล้ว → เอาพารามิเตอร์ของ LINE ออกจาก URL
+    if (/[?&]openExternalBrowser=/.test(location.search)) {
+      const u = new URL(location.href);
+      u.searchParams.delete('openExternalBrowser');
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    }
+    return;
+  }
+  try { if (sessionStorage.getItem('5s_line_banner_off')) return; } catch (_) {}
+  const ext = new URL(location.href);
+  ext.searchParams.set('openExternalBrowser', '1');
+  const bar = document.createElement('div');
+  bar.className = 'line-banner';
+  bar.setAttribute('role', 'note');
+  bar.innerHTML = `
+    <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+    <span class="line-banner-text">${escHtml(I18n.t('line.banner'))}</span>
+    <a class="line-banner-open" href="${escAttr(ext.toString())}">${escHtml(I18n.t('line.open'))}</a>
+    <button type="button" class="line-banner-close" aria-label="${escAttr(I18n.t('line.close'))}"><i class="bi bi-x-lg" aria-hidden="true"></i></button>`;
+  bar.querySelector('.line-banner-close').onclick = () => {
+    bar.remove();
+    try { sessionStorage.setItem('5s_line_banner_off', '1'); } catch (_) {}
+  };
+  (document.querySelector('.page-content, .login-page') || document.body).prepend(bar);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Apply ภาษาที่เลือกไว้ทุกหน้า
   I18n.apply();
+  showLineBanner();
 
   const page = window.location.pathname.split('/').pop().replace('.html','');
 

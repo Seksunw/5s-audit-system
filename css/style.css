@@ -756,6 +756,26 @@ a:hover{color:var(--primary-dark)}
 .pwa-banner.show{transform:translateY(0)}
 .pwa-banner .pwa-text{flex:1;font-size:.82rem}
 
+/* แถบแนะนำเมื่อเปิดในแอป LINE บน Android (showLineBanner) */
+.line-banner{
+  position:relative;z-index:2;display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;
+  margin:0 0 12px;padding:10px 12px;border-radius:var(--radius-md);
+  background:var(--amber-bg);border:1px solid var(--amber-bd);color:var(--gray-800);
+  font-size:.82rem;line-height:1.45;text-align:left;
+}
+.line-banner > .bi-exclamation-triangle-fill{color:var(--warning);font-size:1rem}
+.line-banner-text{flex:1 1 180px}
+.line-banner-open{
+  display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border-radius:999px;
+  background:var(--primary);color:#fff;font-weight:600;white-space:nowrap;
+}
+.line-banner-open:hover{color:#fff;background:var(--primary-dark)}
+.line-banner-close{
+  border:0;background:none;color:var(--gray-700);width:36px;height:36px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.line-banner-close:focus-visible,.line-banner-open:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
 /* ============================================================
    MOBILE ONLY — ไม่มี desktop sidebar
    จอกว้างขึ้นแค่จำกัดความกว้างคอนเทนต์ให้อ่านสบาย
@@ -848,3 +868,20 @@ a:hover{color:var(--primary-dark)}
 .prev-remark{font-size:0.85rem;color:var(--dark);white-space:pre-wrap;word-break:break-word}
 .prev-photos{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .prev-photos img{width:64px;height:64px;object-fit:cover;border-radius:9px;border:1px solid var(--gray-200)}
+
+/* ตรวจแบบทีม: ทุกคนต้องยืนยัน (ส่วน L) — ✓ ในแถบทีม + แถว "ส่งผลแทนทีม" ใน Schedule Board */
+.team-ok{color:var(--success);font-weight:700}
+.force-lock-row{margin:10px 0 4px;padding:10px 12px;border:1px solid var(--amber-bd);background:var(--amber-bg);border-radius:10px}
+.force-lock-info{font-size:0.78rem;color:var(--gray-800);margin-bottom:8px;line-height:1.45}
+.force-lock-btn{height:38px;padding:0 14px;font-size:0.8rem;font-weight:700;background:#fff;border:1.5px solid var(--warning);color:var(--warning)}
+.force-lock-btn:disabled{opacity:.6}
+button.team-members{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+button.team-members:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+.team-conf-chip{display:inline-block;font-weight:700;padding:0 6px;border-radius:10px;background:var(--gray-100);color:var(--gray-700)}
+.team-conf-chip.some{background:var(--green-bg);color:var(--success)}
+.team-sheet-list{display:flex;flex-direction:column}
+.team-sheet-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 2px;border-bottom:1px solid var(--gray-200);font-size:0.88rem}
+.team-sheet-row:last-child{border-bottom:0}
+.team-sheet-name{min-width:0;color:var(--dark)}
+.team-sheet-st{flex-shrink:0;font-size:0.76rem;font-weight:700;color:var(--gray-600)}
+.team-sheet-st.ok{color:var(--success)}
