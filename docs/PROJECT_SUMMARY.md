@@ -181,7 +181,8 @@ email(unique), role, status, `assigned_plants text[]`, `assigned_areas text[]`, 
 **`plants`** — plant_id(PK), plant_name, status · **`areas`** — area_id(PK), plant_id(FK), area_name, area_type, status
 
 **`criteria`** — criteria_id(PK), category, sub_category, question, description, `area_types text[]`,
-max_score, active · **132 ข้อ / 34 หมวด** (มาตรฐาน R.00 16.06.2026)
+max_score, active · **ใช้อยู่ 169 ข้อ / 38 หมวด** (มาตรฐาน Draft 22.10.2026 · ทั้งตาราง 175 แถว รวมข้อที่ตัด `active=false` 6 ข้อ) ·
+รหัส `criteria_id` ไม่ได้เรียงตามเอกสาร — แสดง/เรียงด้วยเลขข้อ `sub_category` ผ่าน `critNoKey()`
 
 **`audit_headers`** — audit_id(uuid PK), legacy_audit_id, plant_id, area_id, auditor_id(FK profiles),
 audit_date, total_score, max_score, percent, status(audit_status), created_at

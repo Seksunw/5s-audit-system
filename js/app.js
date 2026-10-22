@@ -493,7 +493,7 @@ const SBH = {
     const [{ data:dets, error:dErr }, { data:areas }, { data:plants }, { data:profs }] =
       await Promise.all([
         _sb.from('audit_details')
-          .select('audit_id, criteria_id, score, na, remark, photo_urls, criteria(question, question_en, category, category_en, sub_category)')
+          .select('audit_id, criteria_id, score, na, remark, photo_urls, criteria(question, question_en, category, category_en, sub_category, active)')
           .in('audit_id', auditIds).eq('na', false).lte('score', 1),
         _sb.from('areas').select('area_id, area_name, status'),
         _sb.from('plants').select('plant_id, plant_name'),
@@ -523,6 +523,8 @@ const SBH = {
         Score:      Number(d.score),
         Category:   d.criteria && ((en && d.criteria.category_en) || d.criteria.category),
         Sub_Category: (d.criteria && d.criteria.sub_category) || '',
+        // ข้อที่ตัดออกจากมาตรฐานแล้ว — เลขข้ออาจซ้ำกับข้อใหม่ (เช่น 6.3 เดิม ≠ 6.3 ฉบับ 22.10.2026)
+        Retired:    !!(d.criteria && d.criteria.active === false),
         Question:   (d.criteria && ((en && d.criteria.question_en) || d.criteria.question)) || '-',
         Remark:     d.remark || '',
         Photos:     (d.photo_urls || []).filter(Boolean),
@@ -3243,7 +3245,7 @@ function openPrevNote(criteriaId) {
         </div>
         <button type="button" class="btn-icon" onclick="closePrevNote()" aria-label="${escAttr(I18n.t('prev.close'))}"><i class="bi bi-x-lg"></i></button>
       </div>
-      <div class="prev-sheet-q"><b>${escHtml(criteriaId)}</b> ${escHtml(c.Question || '')}</div>
+      <div class="prev-sheet-q"><b>${escHtml(c.Sub_Category || criteriaId)}</b> ${escHtml(c.Question || '')}</div>
       <div class="prev-sheet-dist">${escHtml(I18n.t('prev.dist'))}:
         ${dist.map(x => `<span class="prev-score s${x.n}">${x.n}</span>×${x.k}`).join(' ')}
         ${nNA ? `<span class="prev-na">N/A×${nNA}</span>` : ''}
@@ -3823,7 +3825,7 @@ function renderRemainingPanel(unanswered = getUnansweredCriteria()) {
     <div class="audit-remaining-list">
       ${visible.map(c => `
         <button type="button" class="audit-remaining-chip" onclick="jumpToCriteria('${escAttr(c.Criteria_ID)}')">
-          ${escHtml(c.Criteria_ID)}
+          ${escHtml(c.Sub_Category || c.Criteria_ID)}
         </button>
       `).join('')}
       ${more > 0 ? `<span class="audit-remaining-chip">+${more}</span>` : ''}
@@ -6034,6 +6036,7 @@ function criteriaRender(searchQ = '') {
       (c.Question    || '').toLowerCase().includes(q) ||
       (c.Description || '').toLowerCase().includes(q) ||
       (c.Category    || '').toLowerCase().includes(q) ||
+      (c.Sub_Category || '').toLowerCase().includes(q) ||
       (c.Criteria_ID || '').toLowerCase().includes(q)
     );
   }
@@ -6064,7 +6067,7 @@ function criteriaRender(searchQ = '') {
   container.innerHTML = Object.entries(grouped).map(([cat, list], idx) => {
     const items = list.map(c => `
       <div class="criteria-item-view">
-        <span class="criteria-num">${escHtml(c.Criteria_ID || '')}</span>
+        <span class="criteria-num" title="${escAttr(c.Criteria_ID || '')}">${escHtml(c.Sub_Category || c.Criteria_ID || '')}</span>
         <div class="criteria-text">
           <div class="criteria-question">${escHtml(c.Question || '')}</div>
           ${c.Description ? `<div class="criteria-desc">${escHtml(c.Description)}</div>` : ''}
@@ -6471,7 +6474,7 @@ const REPORT_STR = {
     caTitle:'ใบแจ้งพื้นที่ต้องปรับปรุง (Corrective Action)', roundShort:'รอบตรวจ', areaSeq:'ลำดับพื้นที่',
     owner:'เจ้าของพื้นที่', auditDate:'วันที่ตรวจ', due:'กำหนดแก้ไข', within:'ภายใน',
     areaScore:'คะแนนพื้นที่', found:'พบข้อที่ตก', itemsUnit:'ข้อ', urgent:'ต้องปรับปรุงเร่งด่วน',
-    item:'ข้อ', scoreWord:'คะแนน', remarkLbl:'หมายเหตุผู้ตรวจ', dupTag:'ตรวจซ้ำ {n} ครั้ง',
+    item:'ข้อ', oldStd:'(มาตรฐานฉบับเดิม)', scoreWord:'คะแนน', remarkLbl:'หมายเหตุผู้ตรวจ', dupTag:'ตรวจซ้ำ {n} ครั้ง',
     planTitle:'แผนการแก้ไขโดยเจ้าของพื้นที่', colAction:'แนวทางแก้ไข', colResp:'ผู้รับผิดชอบ',
     colDue:'กำหนดเสร็จ', colStatus:'สถานะ',
     signAuditor:'ผู้ตรวจประเมิน', signOwner:'เจ้าของพื้นที่ (รับทราบ)', signMgr:'ผู้จัดการโรงงาน (อนุมัติ)',
@@ -6494,7 +6497,7 @@ const REPORT_STR = {
     caTitle:'Corrective Action Sheet', roundShort:'Round', areaSeq:'Area',
     owner:'Area Owner', auditDate:'Audit Date', due:'Due Date', within:'By',
     areaScore:'Area score', found:'items below standard', itemsUnit:'', urgent:'Urgent action required',
-    item:'Item', scoreWord:'Score', remarkLbl:'Auditor note', dupTag:'Checked {n} times',
+    item:'Item', oldStd:'(previous standard)', scoreWord:'Score', remarkLbl:'Auditor note', dupTag:'Checked {n} times',
     planTitle:'Corrective Action Plan (by Area Owner)', colAction:'Corrective Action', colResp:'Responsible',
     colDue:'Due', colStatus:'Status',
     signAuditor:'Auditor', signOwner:'Area Owner (Acknowledged)', signMgr:'Plant Manager (Approved)',
@@ -6642,7 +6645,8 @@ function buildReportHTML(dash, impItems, opts) {
 
     const failCards = topicsInArea.map((topic, i) => {
         const s = topic.Score, cls = s === 0 ? 's0' : 's1';
-        const cat = [topic.Category, topic.Sub_Category ? `${S.item} ${topic.Sub_Category}` : '']
+        const cat = [topic.Category, topic.Sub_Category
+            ? `${S.item} ${topic.Sub_Category}${topic.Retired ? ' ' + S.oldStd : ''}` : '']
           .filter(Boolean).join(' · ');
         const sources = topic._sources;
         const merged = sources.length > 1;
