@@ -71,6 +71,12 @@ const REV = {
 const mapPlant = p => ({ Plant_ID:p.plant_id, Plant_Name:p.plant_name, Status:MAP.status[p.status]||p.status });
 const mapArea  = a => ({ Area_ID:a.area_id, Plant_ID:a.plant_id, Area_Name:a.area_name, Area_Type:MAP.areaType[a.area_type]||a.area_type, Status:MAP.status[a.status]||a.status });
 const _critType = arr => (!arr || !arr.length) ? 'All' : arr.map(t => MAP.areaType[t]||t).join(',');
+/** ลำดับเลขข้อ "หมวด.ข้อ" เป็นตัวเลข (6.3 < 6.10 < 10.1) — ใช้เรียงเกณฑ์แทนรหัส */
+function critNoKey(no) {
+  const m = /^(\d+)\.(\d+)/.exec(String(no || ''));
+  return m ? Number(m[1]) * 1000 + Number(m[2]) : 1e9;
+}
+
 // มาตรฐาน (Category/Question/Description) รองรับ EN ผ่านคอลัมน์ _en คู่กัน — fallback เป็นไทยถ้าแถวนั้นยังไม่มีคำแปล
 const mapCriteria = c => {
   const en = I18n.getLang() === 'en';
@@ -183,7 +189,10 @@ const SBH = {
   async getCriteria({ areaType } = {}) {
     const { data, error } = await _sb.from('criteria').select('*').eq('active', true).order('criteria_id');
     if (error) throw error;
-    let items = data;
+    // เรียงตามเลขข้อในมาตรฐาน ไม่ใช่รหัส — ตั้งแต่มาตรฐานฉบับ 22.10.2026 ข้อใหม่ที่แทรกกลางหมวดได้รหัสต่อท้าย
+    // (เช่น 27.1 ใหม่ = C-27-6) และเรียงแบบ string จะได้ C-38-10 ก่อน C-38-2
+    let items = (data || []).slice().sort((a, b) => critNoKey(a.sub_category) - critNoKey(b.sub_category)
+                                                  || String(a.criteria_id).localeCompare(String(b.criteria_id)));
     const at = areaType || 'All';
     if (at && at !== 'All') {
       const low = String(at).toLowerCase();
@@ -549,9 +558,10 @@ const SBH = {
     const details = (d||[]).map(x => ({
       Detail_ID:x.detail_id, Criteria_ID:x.criteria_id, Score:x.score, Na:x.na, Remark:x.remark,
       Photo_URL:(x.photo_urls||[]).join(','),
+      Sub_Category:(x.criteria && x.criteria.sub_category) || '',
       Question:x.criteria && ((en && x.criteria.question_en) || x.criteria.question),
       Category:x.criteria && ((en && x.criteria.category_en) || x.criteria.category)
-    }));
+    })).sort((a, b) => critNoKey(a.Sub_Category) - critNoKey(b.Sub_Category));   // ผลทีมบันทึกตามลำดับที่กด
     return { success:true, header:mapHeader(h), details, auditors:auditorNamesOf(h, nameById) };
   },
 
@@ -1446,7 +1456,7 @@ const TRANSLATIONS = {
     'users.select_all_areas':    'เลือกทั้งหมด',
     'users.areas_hint':          'ไม่เลือกพื้นที่ = ตรวจได้ทุกพื้นที่ตามสิทธิ์ / เลือกได้หลายพื้นที่',
     // Login page เพิ่มเติม
-    'login.footer_version':      'v1.0.0 | มาตรฐาน 5ส Draft 26.05.2026',
+    'login.footer_version':      'v1.0.0 | มาตรฐาน 5ส Draft 22.10.2026',
     // Dashboard เพิ่มเติม
     'dash.export_pdf_title':     'Export PDF / ออกรายงาน PDF',
     'dash.lightbox_close':       'ปิด',
@@ -2155,7 +2165,7 @@ const TRANSLATIONS = {
     'users.select_all_areas':    'Select all',
     'users.areas_hint':          'No areas selected = can audit any area per role / multiple areas selectable',
     // Login page extras
-    'login.footer_version':      'v1.0.0 | 5S Standard Draft 26.05.2026',
+    'login.footer_version':      'v1.0.0 | 5S Standard Draft 22.10.2026',
     // Dashboard extras
     'dash.export_pdf_title':     'Export PDF / Export report as PDF',
     'dash.lightbox_close':       'Close',
