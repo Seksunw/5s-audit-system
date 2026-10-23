@@ -3764,6 +3764,7 @@ function updateProgress() {
 
   setEl('progressPct', pct + '%');
   setEl('answeredCount', answered);
+  setEl('totalItemCount', total);   // ตัวหารเดียวกับ % และปุ่มส่ง — ข้อ N/A ไม่ต้องตอบ (เดิมค้าง 169 → ตอบครบแล้วยังขึ้น 2/169)
 
   const fill = document.getElementById('progressFill');
   if (fill) fill.style.width = pct + '%';
