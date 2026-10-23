@@ -128,9 +128,11 @@ GitHub Pages (hosting, branch main, root ของ repo, .nojekyll)
 
 ---
 
-## 4. Current state (save point — last updated 2026-10-20)
+## 4. Current state (save point — last updated 2026-10-23)
 
-**สถานะล่าสุด (2026-10-22 เย็น): v62 — แก้ 4 ข้อที่ code-checker เจอจากการตรวจย้อนหลัง v61 (`b94dd5a..b87488b`, ผล PASS ไม่มี BLOCKER)** — **push แล้ว `092b9ad`** (พร้อมระบบตรวจโค้ด `332fe99`) · push แรกที่ผ่าน code-checker (PASS, stamp sha HEAD) + pre-push hook · เว็บจริงเสิร์ฟ v62 / sw 5.27 แล้ว
+**สถานะล่าสุด (2026-10-22 ค่ำ): `tools/agent-watch.py` — ดู agent ทำงานสด (ผู้ใช้ขอ "อยากเห็นตอนที่ agent ทำงาน")** — ยังไม่ commit · อ่าน transcript ในเครื่อง `~/.claude/projects/<repo>/<session>/subagents/agent-*.jsonl` (+ `.meta.json` มี `description`/`finished`) แล้วพิมพ์ทีละขั้น (อ่านไฟล์/รันคำสั่ง/ผลย่อ 1 บรรทัด/ข้อความ agent/รายงานที่ส่งกลับ) · ไม่ใส่ argument = รอ agent ตัวถัดไปแล้วโชว์สด · `--last`, `--list`, `--id <prefix>` · อ่านอย่างเดียว · ทดสอบเล่นซ้ำ 2 รอบล่าสุดแล้วถูกต้อง (ยังไม่ได้ทดสอบโหมดสดกับ agent ที่กำลังรันจริง) · ทางเลือก native: `claude --agent code-checker` ใน Terminal
+
+**(ก่อนหน้า) 2026-10-22 เย็น: v62 — แก้ 4 ข้อที่ code-checker เจอจากการตรวจย้อนหลัง v61 (`b94dd5a..b87488b`, ผล PASS ไม่มี BLOCKER)** — **push แล้ว `092b9ad`** (พร้อมระบบตรวจโค้ด `332fe99`) · push แรกที่ผ่าน code-checker (PASS, stamp sha HEAD) + pre-push hook · เว็บจริงเสิร์ฟ v62 / sw 5.27 แล้ว
 - **code-checker เสนอแก้เครื่องมือ (ไม่บล็อก ยังไม่ทำ):** (1) `precheck.py` ควรเรียก `git -c core.quotepath=off` — clone ใหม่ที่ quotepath ค่าเริ่มต้น ไฟล์ชื่อไทยหลุดตัวตรวจไฟล์ต้องห้าม/secret (เครื่องนี้ตั้ง false ไว้แล้ว) (2) hook กับ agent ใช้ `git rev-parse --git-common-dir` ให้ตรงกัน (worktree push ไม่ได้) (3) อ่านไฟล์ด้วย `errors='replace'` กัน crash ถ้าวันหน้า track binary อื่น (4) SAFE regex รู้จัก `esc(` ของ PDF · CLAUDE.md ตาราง "push ขึ้น" เพิ่ม `tools/`, `.claude/agents/` (5) ค้นหาเลขข้อเป็น substring ("6.3" เจอ 16.3 ด้วย)
 - ผล Round 1 ใน PDF: ข้อที่เปลี่ยนเลข (เช่น C-06-4 เดิม 6.4) พิมพ์เลขใหม่ (6.3) ไม่มีป้าย — ผลของการตัดสินใจ v61 (ใช้เลขตามเอกสารใหม่) ข้อความคำถามเดิม
 - **ป้ายเลขข้อ:** หน้า `criteria.html` (`criteriaRender`), ปุ่มข้อที่ยังไม่ตอบ (`renderRemainingPanel`) และหัว popup ผลรอบก่อน (`openPrevNote`) แสดง `Sub_Category` แทน `Criteria_ID` (หลังส่วน M มี 26 ข้อที่รหัสไม่ตรงเลขในเอกสาร → ป้ายเรียงสลับ C-27-6, C-27-1, …) · หน้ามาตรฐานค้นหาด้วยเลขข้อได้ · รหัสยังอยู่ใน tooltip ของป้าย · ฟอร์มตรวจโชว์ทั้งรหัสและเลขข้ออยู่แล้ว ไม่แก้
